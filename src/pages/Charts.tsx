@@ -1,11 +1,95 @@
-import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, FileText, ClipboardList, ChevronRight, Loader2 } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
-import type { ChartRecord } from '../types';
+import { getDb, queryToObjects } from '../lib/localDb';
+import { InitialChartView } from '../components/InitialChartView';
+import { ProgressNoteView } from '../components/ProgressNoteView';
+import type { InitialChart } from '../types';
+
+interface MedicalRecord {
+  id: string;
+  patient_id: string;
+  chief_complaint: string;
+  chart_date: string;
+  created_at: string;
+}
 
 export function Charts() {
-  const { selectedPatient, chartRecords, createChartRecord } = usePatientStore();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { selectedPatient } = usePatientStore();
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInitialChart, setShowInitialChart] = useState(false);
+  const [showProgressNotes, setShowProgressNotes] = useState(false);
+  const [forceNewChart, setForceNewChart] = useState(false);
+
+  useEffect(() => {
+    if (selectedPatient) {
+      loadRecords();
+    }
+  }, [selectedPatient]);
+
+  const loadRecords = async () => {
+    if (!selectedPatient) return;
+
+    try {
+      setLoading(true);
+      const db = getDb();
+      if (!db) {
+        setLoading(false);
+        return;
+      }
+
+      const data = queryToObjects<InitialChart>(
+        db,
+        'SELECT * FROM initial_charts WHERE patient_id = ? ORDER BY chart_date DESC',
+        [selectedPatient.id]
+      );
+
+      const recordsData: MedicalRecord[] = data.map(chart => ({
+        id: chart.id,
+        patient_id: chart.patient_id,
+        chief_complaint: extractChiefComplaint(chart.notes || ''),
+        chart_date: chart.chart_date,
+        created_at: chart.created_at
+      }));
+
+      setRecords(recordsData);
+    } catch (error) {
+      console.error('진료기록 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractChiefComplaint = (notes: string): string => {
+    if (!notes) return '-';
+
+    const sectionMatch = notes.match(/\[주소증\]\s*([^\[]+)/);
+    if (!sectionMatch) return '-';
+
+    const sectionText = sectionMatch[1].trim();
+    const lines = sectionText.split('\n');
+
+    const numberedItems: string[] = [];
+
+    for (const line of lines) {
+      const numberedMatch = line.match(/^\d+\.\s*(.+)/);
+      if (numberedMatch) {
+        numberedItems.push(numberedMatch[1].trim());
+      }
+    }
+
+    if (numberedItems.length === 0) return '-';
+
+    const result = numberedItems.join(', ');
+    return result.length > 60 ? result.substring(0, 60) + '...' : result;
+  };
+
+  const handleCloseChart = () => {
+    setShowInitialChart(false);
+    setForceNewChart(false);
+    loadRecords();
+  };
 
   if (!selectedPatient) {
     return (
@@ -28,222 +112,128 @@ export function Charts() {
             환자: <span className="font-medium">{selectedPatient.name}</span>
           </p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          새 차트
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setForceNewChart(true);
+              setShowInitialChart(true);
+            }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            새 진료 시작
+          </button>
+        </div>
+      </div>
+
+      {/* 차트 액션 버튼들 */}
+      <div className="grid grid-cols-2 gap-4">
+        <button
+          onClick={() => {
+            setForceNewChart(false);
+            setShowInitialChart(true);
+          }}
+          className="card hover:shadow-md transition-shadow p-6 text-left"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900">초진차트</h3>
+              <p className="text-sm text-gray-500">환자의 초진 기록 확인 및 작성</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => setShowProgressNotes(true)}
+          className="card hover:shadow-md transition-shadow p-6 text-left"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+              <ClipboardList className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900">경과기록 (SOAP)</h3>
+              <p className="text-sm text-gray-500">SOAP 형식의 경과기록 작성</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </div>
         </button>
       </div>
 
-      {/* 차트 기록 */}
-      <div className="space-y-4">
-        {chartRecords.length > 0 ? (
-          chartRecords.map((record) => (
-            <div key={record.id} className="card">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {new Date(record.visit_date).toLocaleDateString('ko-KR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </h3>
+      {/* 진료 기록 목록 */}
+      <div className="card">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">진료 기록</h2>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+            <span className="ml-3 text-gray-500">로딩 중...</span>
+          </div>
+        ) : records.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">등록된 진료기록이 없습니다</p>
+            <button
+              onClick={() => {
+                setForceNewChart(true);
+                setShowInitialChart(true);
+              }}
+              className="btn-primary mt-4"
+            >
+              첫 진료 시작하기
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {records.map((record) => (
+              <div
+                key={record.id}
+                onClick={() => {
+                  setForceNewChart(false);
+                  setShowInitialChart(true);
+                }}
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-primary-500 cursor-pointer transition-all"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="bg-primary-600 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                        {new Date(record.chart_date).toLocaleDateString('ko-KR')}
+                      </span>
+                    </div>
+                    <p className="text-gray-900 font-medium">
+                      {record.chief_complaint}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
               </div>
-
-              <div className="space-y-3">
-                {record.chief_complaint && (
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">주소증: </span>
-                    <span className="text-sm text-gray-600">{record.chief_complaint}</span>
-                  </div>
-                )}
-                {record.symptoms && (
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">증상: </span>
-                    <span className="text-sm text-gray-600">{record.symptoms}</span>
-                  </div>
-                )}
-                {record.diagnosis && (
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">진단: </span>
-                    <span className="text-sm text-gray-600">{record.diagnosis}</span>
-                  </div>
-                )}
-                {record.treatment && (
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">치료: </span>
-                    <span className="text-sm text-gray-600">{record.treatment}</span>
-                  </div>
-                )}
-                {record.notes && (
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">메모: </span>
-                    <span className="text-sm text-gray-500">{record.notes}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="card text-center py-12">
-            <p className="text-gray-500">등록된 차트 기록이 없습니다.</p>
+            ))}
           </div>
         )}
       </div>
 
-      {/* 차트 등록 모달 */}
-      {isModalOpen && (
-        <ChartModal
+      {/* 초진차트 모달 */}
+      {showInitialChart && (
+        <InitialChartView
           patientId={selectedPatient.id}
-          onSave={async (record) => {
-            await createChartRecord(record);
-            setIsModalOpen(false);
-          }}
-          onClose={() => setIsModalOpen(false)}
+          patientName={selectedPatient.name}
+          onClose={handleCloseChart}
+          forceNew={forceNewChart}
         />
       )}
-    </div>
-  );
-}
 
-interface ChartModalProps {
-  patientId: string;
-  onSave: (record: ChartRecord) => Promise<void>;
-  onClose: () => void;
-}
-
-function ChartModal({ patientId, onSave, onClose }: ChartModalProps) {
-  const [formData, setFormData] = useState({
-    visit_date: new Date().toISOString().split('T')[0],
-    chief_complaint: '',
-    symptoms: '',
-    diagnosis: '',
-    treatment: '',
-    notes: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    const now = new Date().toISOString();
-    const record: ChartRecord = {
-      id: crypto.randomUUID(),
-      patient_id: patientId,
-      visit_date: new Date(formData.visit_date).toISOString(),
-      chief_complaint: formData.chief_complaint || undefined,
-      symptoms: formData.symptoms || undefined,
-      diagnosis: formData.diagnosis || undefined,
-      treatment: formData.treatment || undefined,
-      notes: formData.notes || undefined,
-      created_at: now,
-      updated_at: now,
-    };
-
-    await onSave(record);
-    setIsSubmitting(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">새 차트 기록</h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              내원일 <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={formData.visit_date}
-              onChange={(e) => setFormData({ ...formData, visit_date: e.target.value })}
-              className="input-field"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              주소증
-            </label>
-            <input
-              type="text"
-              value={formData.chief_complaint}
-              onChange={(e) => setFormData({ ...formData, chief_complaint: e.target.value })}
-              className="input-field"
-              placeholder="환자의 주요 호소"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              증상
-            </label>
-            <textarea
-              value={formData.symptoms}
-              onChange={(e) => setFormData({ ...formData, symptoms: e.target.value })}
-              className="input-field"
-              rows={2}
-              placeholder="관찰된 증상들"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              진단
-            </label>
-            <input
-              type="text"
-              value={formData.diagnosis}
-              onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
-              className="input-field"
-              placeholder="진단명"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              치료
-            </label>
-            <textarea
-              value={formData.treatment}
-              onChange={(e) => setFormData({ ...formData, treatment: e.target.value })}
-              className="input-field"
-              rows={2}
-              placeholder="시행한 치료 내용"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              메모
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="input-field"
-              rows={2}
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">
-              취소
-            </button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 btn-primary">
-              {isSubmitting ? '저장 중...' : '저장'}
-            </button>
-          </div>
-        </form>
-      </div>
+      {/* 경과기록 모달 */}
+      {showProgressNotes && (
+        <ProgressNoteView
+          patientId={selectedPatient.id}
+          patientName={selectedPatient.name}
+          onClose={() => setShowProgressNotes(false)}
+        />
+      )}
     </div>
   );
 }

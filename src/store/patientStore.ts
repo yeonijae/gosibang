@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import type { Patient, Prescription, ChartRecord } from '../types';
 
 interface PatientStore {
@@ -17,7 +17,6 @@ interface PatientStore {
   updatePatient: (patient: Patient) => Promise<void>;
   deletePatient: (id: string) => Promise<void>;
   loadPrescriptions: (patientId: string) => Promise<void>;
-  createPrescription: (prescription: Omit<Prescription, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   loadChartRecords: (patientId: string) => Promise<void>;
   createChartRecord: (record: Omit<ChartRecord, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   clearError: () => void;
@@ -34,18 +33,20 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   loadPatients: async (search?: string) => {
     set({ isLoading: true, error: null });
     try {
-      let query = supabase
-        .from('patients')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      let sql = 'SELECT * FROM patients';
+      const params: string[] = [];
 
       if (search) {
-        query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
+        sql += ' WHERE name LIKE ? OR phone LIKE ?';
+        params.push(`%${search}%`, `%${search}%`);
       }
+      sql += ' ORDER BY created_at DESC';
 
-      const { data, error } = await query;
-      if (error) throw error;
-      set({ patients: data || [], isLoading: false });
+      const patients = queryToObjects<Patient>(db, sql, params);
+      set({ patients, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
     }
@@ -62,11 +63,20 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   createPatient: async (patient) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
-        .from('patients')
-        .insert(patient);
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      if (error) throw error;
+      const id = generateUUID();
+      const now = new Date().toISOString();
+
+      db.run(
+        `INSERT INTO patients (id, name, birth_date, gender, phone, address, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, patient.name, patient.birth_date || null, patient.gender || null,
+         patient.phone || null, patient.address || null, patient.notes || null, now, now]
+      );
+      saveDb();
+
       await get().loadPatients();
       set({ isLoading: false });
     } catch (error) {
@@ -78,15 +88,19 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   updatePatient: async (patient: Patient) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
-        .from('patients')
-        .update({
-          ...patient,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', patient.id);
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      if (error) throw error;
+      const now = new Date().toISOString();
+
+      db.run(
+        `UPDATE patients SET name = ?, birth_date = ?, gender = ?, phone = ?, address = ?, notes = ?, updated_at = ?
+         WHERE id = ?`,
+        [patient.name, patient.birth_date || null, patient.gender || null,
+         patient.phone || null, patient.address || null, patient.notes || null, now, patient.id]
+      );
+      saveDb();
+
       await get().loadPatients();
       set({ isLoading: false });
     } catch (error) {
@@ -98,12 +112,12 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   deletePatient: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
-        .from('patients')
-        .delete()
-        .eq('id', id);
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      if (error) throw error;
+      db.run('DELETE FROM patients WHERE id = ?', [id]);
+      saveDb();
+
       await get().loadPatients();
       if (get().selectedPatient?.id === id) {
         set({ selectedPatient: null });
@@ -117,47 +131,37 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   loadPrescriptions: async (patientId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('created_at', { ascending: false });
+      const db = getDb();
+      if (!db) return;
 
-      if (error) throw error;
-      set({ prescriptions: data || [] });
+      const prescriptions = queryToObjects<Prescription>(
+        db,
+        'SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY created_at DESC',
+        [patientId]
+      ).map((p) => ({
+        ...p,
+        merged_herbs: typeof p.merged_herbs === 'string' ? JSON.parse(p.merged_herbs) : p.merged_herbs || [],
+        final_herbs: typeof p.final_herbs === 'string' ? JSON.parse(p.final_herbs) : p.final_herbs || [],
+      }));
+
+      set({ prescriptions });
     } catch (error) {
       console.error('Failed to load prescriptions:', error);
     }
   },
 
-  createPrescription: async (prescription) => {
-    set({ isLoading: true, error: null });
-    try {
-      const { error } = await supabase
-        .from('prescriptions')
-        .insert(prescription);
-
-      if (error) throw error;
-      if (get().selectedPatient) {
-        await get().loadPrescriptions(get().selectedPatient!.id);
-      }
-      set({ isLoading: false });
-    } catch (error) {
-      set({ error: String(error), isLoading: false });
-      throw error;
-    }
-  },
-
   loadChartRecords: async (patientId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('chart_records')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('visit_date', { ascending: false });
+      const db = getDb();
+      if (!db) return;
 
-      if (error) throw error;
-      set({ chartRecords: data || [] });
+      const chartRecords = queryToObjects<ChartRecord>(
+        db,
+        'SELECT * FROM chart_records WHERE patient_id = ? ORDER BY visit_date DESC',
+        [patientId]
+      );
+
+      set({ chartRecords });
     } catch (error) {
       console.error('Failed to load chart records:', error);
     }
@@ -166,11 +170,21 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   createChartRecord: async (record) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
-        .from('chart_records')
-        .insert(record);
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      if (error) throw error;
+      const id = generateUUID();
+      const now = new Date().toISOString();
+
+      db.run(
+        `INSERT INTO chart_records (id, patient_id, visit_date, chief_complaint, symptoms, diagnosis, treatment, prescription_id, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, record.patient_id, record.visit_date, record.chief_complaint || null,
+         record.symptoms || null, record.diagnosis || null, record.treatment || null,
+         record.prescription_id || null, record.notes || null, now, now]
+      );
+      saveDb();
+
       if (get().selectedPatient) {
         await get().loadChartRecords(get().selectedPatient!.id);
       }

@@ -14,6 +14,7 @@ export interface ClinicSettings {
 export interface Patient {
   id: string;
   name: string;
+  chart_number?: string;
   birth_date?: string;
   gender?: 'M' | 'F';
   phone?: string;
@@ -23,27 +24,114 @@ export interface Patient {
   updated_at: string;
 }
 
-// 약재 항목
-export interface HerbItem {
+// ===== 약재 관련 타입 =====
+
+// 약재 (개별 재료)
+export interface Herb {
+  id: number;
+  name: string;
+  default_dosage?: number;
+  unit?: string;
+  description?: string;
+  created_at?: string;
+}
+
+// 처방 템플릿의 약재 구성
+export interface PrescriptionHerb {
+  herb_id: number;
   herb_name: string;
-  amount: number;
+  dosage: number;
   unit: string;
 }
 
-// 처방
+// 처방 템플릿 (기본 처방 - 예: 소시호탕, 반하사심탕)
+export interface PrescriptionTemplate {
+  id: number;
+  name: string;
+  alias?: string;
+  herbs: PrescriptionHerb[];
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// 최종 약재 (조정 후)
+export interface FinalHerb {
+  herb_id: number;
+  name: string;
+  amount: number;
+}
+
+// ===== 처방전 타입 =====
+
+// 처방전 (실제 환자에게 발급하는 처방)
 export interface Prescription {
   id: string;
-  patient_id: string;
-  prescription_name: string;
-  herbs: HerbItem[];
-  dosage_instructions?: string;
-  total_days: number;
+  patient_id?: string;
+  patient_name?: string;
+  chart_number?: string;
+  patient_age?: number;
+  patient_gender?: string;
+  source_type?: 'initial_chart' | 'progress_note';
+  source_id?: string;
+  formula: string;
+  merged_herbs: PrescriptionHerb[];
+  final_herbs: FinalHerb[];
+  total_doses: number;
+  days: number;
+  doses_per_day: number;
+  total_packs: number;
+  pack_volume?: number;
+  water_amount?: number;
+  herb_adjustment?: string;
+  total_dosage: number;
+  final_total_amount: number;
   notes?: string;
+  status: 'draft' | 'issued' | 'completed';
+  issued_at?: string;
+  chief_complaint?: string;
+  created_by?: string;
   created_at: string;
   updated_at: string;
 }
 
-// 차팅 기록
+// ===== 차트 타입 =====
+
+// 초진차트
+export interface InitialChart {
+  id: string;
+  patient_id: string;
+  doctor_name?: string;
+  chart_date: string;
+  chief_complaint?: string;
+  present_illness?: string;
+  past_medical_history?: string;
+  notes?: string;
+  prescription_issued?: boolean;
+  prescription_issued_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// 경과기록 (SOAP)
+export interface ProgressNote {
+  id: string;
+  patient_id: string;
+  doctor_name?: string;
+  note_date: string;
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+  follow_up_plan?: string;
+  notes?: string;
+  prescription_issued?: boolean;
+  prescription_issued_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// 차팅 기록 (레거시 호환용)
 export interface ChartRecord {
   id: string;
   patient_id: string;

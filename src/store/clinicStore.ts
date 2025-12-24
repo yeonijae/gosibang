@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
 import type { ClinicSettings } from '../types';
 
 interface ClinicStore {
@@ -21,20 +21,18 @@ export const useClinicStore = create<ClinicStore>((set) => ({
   loadSettings: async () => {
     set({ isLoading: true, error: null });
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const db = getDb();
+      if (!db) {
         set({ settings: null, isLoading: false });
         return;
       }
 
-      const { data, error } = await supabase
-        .from('clinic_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      const settings = queryOne<ClinicSettings>(
+        db,
+        'SELECT * FROM clinic_settings LIMIT 1'
+      );
 
-      if (error && error.code !== 'PGRST116') throw error;
-      set({ settings: data, isLoading: false });
+      set({ settings, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
     }
@@ -43,19 +41,31 @@ export const useClinicStore = create<ClinicStore>((set) => ({
   saveSettings: async (settings: ClinicSettings) => {
     set({ isLoading: true, error: null });
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('인증되지 않은 사용자입니다.');
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      const { error } = await supabase
-        .from('clinic_settings')
-        .upsert({
-          ...settings,
-          user_id: user.id,
-          updated_at: new Date().toISOString(),
-        });
+      const now = new Date().toISOString();
+      const existing = queryOne<ClinicSettings>(db, 'SELECT * FROM clinic_settings LIMIT 1');
 
-      if (error) throw error;
-      set({ settings, isLoading: false });
+      if (existing) {
+        db.run(
+          `UPDATE clinic_settings SET clinic_name = ?, clinic_address = ?, clinic_phone = ?, doctor_name = ?, license_number = ?, updated_at = ?
+           WHERE id = ?`,
+          [settings.clinic_name, settings.clinic_address || null, settings.clinic_phone || null,
+           settings.doctor_name || null, settings.license_number || null, now, existing.id]
+        );
+      } else {
+        const id = settings.id || generateUUID();
+        db.run(
+          `INSERT INTO clinic_settings (id, clinic_name, clinic_address, clinic_phone, doctor_name, license_number, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, settings.clinic_name, settings.clinic_address || null, settings.clinic_phone || null,
+           settings.doctor_name || null, settings.license_number || null, now, now]
+        );
+      }
+      saveDb();
+
+      set({ settings: { ...settings, updated_at: now }, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
       throw error;

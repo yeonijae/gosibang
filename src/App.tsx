@@ -7,12 +7,14 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Patients } from './pages/Patients';
 import { Prescriptions } from './pages/Prescriptions';
+import { PrescriptionDefinitions } from './pages/PrescriptionDefinitions';
 import { Charts } from './pages/Charts';
 import { Medications } from './pages/Medications';
 import { Settings } from './pages/Settings';
 
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
+import { initLocalDb, ensureSampleData } from './lib/localDb';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -23,10 +25,16 @@ function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // 인증 상태 확인
+        // 로컬 DB 초기화
+        await initLocalDb();
+
+        // 기본 처방 템플릿 확인 및 삽입
+        ensureSampleData();
+
+        // 인증 상태 확인 (Supabase)
         await checkAuth();
 
-        // 설정 로드
+        // 설정 로드 (로컬 DB)
         await loadSettings();
       } catch (error) {
         console.error('Initialization error:', error);
@@ -97,6 +105,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/patients" element={<Patients />} />
           <Route path="/prescriptions" element={<Prescriptions />} />
+          <Route path="/prescription-definitions" element={<PrescriptionDefinitions />} />
           <Route path="/charts" element={<Charts />} />
           <Route path="/medications" element={<Medications />} />
           <Route path="/settings" element={<Settings />} />

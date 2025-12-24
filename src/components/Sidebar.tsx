@@ -6,7 +6,8 @@ import {
   ClipboardList,
   Pill,
   Settings,
-  LogOut
+  LogOut,
+  BookOpen
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useClinicStore } from '../store/clinicStore';
@@ -15,6 +16,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: '대시보드' },
   { to: '/patients', icon: Users, label: '환자 관리' },
   { to: '/prescriptions', icon: FileText, label: '처방 관리' },
+  { to: '/prescription-definitions', icon: BookOpen, label: '처방 정의' },
   { to: '/charts', icon: ClipboardList, label: '차팅 관리' },
   { to: '/medications', icon: Pill, label: '복약 관리' },
   { to: '/settings', icon: Settings, label: '설정' },
