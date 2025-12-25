@@ -7,10 +7,16 @@ import {
   Pill,
   Settings,
   LogOut,
-  BookOpen
+  BookOpen,
+  ClipboardCheck,
+  MessageSquare,
+  Crown
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useClinicStore } from '../store/clinicStore';
+
+// 관리자 이메일 목록
+const ADMIN_EMAILS = ['crimmy@naver.com'];
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '대시보드' },
@@ -18,13 +24,21 @@ const navItems = [
   { to: '/prescriptions', icon: FileText, label: '처방 관리' },
   { to: '/prescription-definitions', icon: BookOpen, label: '처방 정의' },
   { to: '/charts', icon: ClipboardList, label: '차팅 관리' },
+  { to: '/survey-templates', icon: ClipboardCheck, label: '설문 템플릿' },
+  { to: '/survey-responses', icon: MessageSquare, label: '설문 응답' },
   { to: '/medications', icon: Pill, label: '복약 관리' },
   { to: '/settings', icon: Settings, label: '설정' },
+];
+
+const adminNavItems = [
+  { to: '/admin/subscriptions', icon: Crown, label: '구독자 관리' },
 ];
 
 export function Sidebar() {
   const { authState, logout } = useAuthStore();
   const { settings } = useClinicStore();
+
+  const isAdmin = ADMIN_EMAILS.includes(authState?.user_email || '');
 
   const handleLogout = async () => {
     if (confirm('로그아웃 하시겠습니까?')) {
@@ -43,7 +57,7 @@ export function Sidebar() {
       </div>
 
       {/* 네비게이션 */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -60,17 +74,40 @@ export function Sidebar() {
             <span>{item.label}</span>
           </NavLink>
         ))}
+
+        {/* 관리자 메뉴 */}
+        {isAdmin && (
+          <>
+            <div className="border-t border-gray-200 my-2 pt-2">
+              <p className="px-3 text-xs font-medium text-gray-400 uppercase">관리자</p>
+            </div>
+            {adminNavItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-purple-50 text-purple-700 font-medium'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`
+                }
+              >
+                <item.icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       {/* 사용자 정보 및 로그아웃 */}
       <div className="p-4 border-t border-gray-200">
-        <div className="text-sm text-gray-600 mb-2">
+        <div className="text-sm text-gray-600 mb-2 truncate">
           {authState?.user_email}
         </div>
-        {authState?.subscription && (
-          <div className="text-xs text-gray-500 mb-3">
-            구독: {authState.subscription.plan}
-          </div>
+        {isAdmin && (
+          <div className="text-xs text-purple-600 mb-2">관리자</div>
         )}
         <button
           onClick={handleLogout}

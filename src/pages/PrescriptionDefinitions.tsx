@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown } from 'lucide-react';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
-import { CATEGORIES, SOURCES } from '../lib/prescriptionData';
+import { SOURCES } from '../lib/prescriptionData';
 
 interface PrescriptionDefinition {
   id: number;
@@ -15,17 +15,28 @@ interface PrescriptionDefinition {
   updated_at?: string;
 }
 
+interface PrescriptionCategory {
+  id: number;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at?: string;
+}
+
 export function PrescriptionDefinitions() {
   const [definitions, setDefinitions] = useState<PrescriptionDefinition[]>([]);
+  const [categories, setCategories] = useState<PrescriptionCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedDef, setSelectedDef] = useState<PrescriptionDefinition | null>(null);
   const [editingDef, setEditingDef] = useState<PrescriptionDefinition | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
   useEffect(() => {
     loadDefinitions();
+    loadCategories();
   }, []);
 
   const loadDefinitions = async () => {
@@ -43,6 +54,21 @@ export function PrescriptionDefinitions() {
       console.error('처방 정의 로드 실패:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const data = queryToObjects<PrescriptionCategory>(
+        db,
+        'SELECT * FROM prescription_categories ORDER BY sort_order, name'
+      );
+      setCategories(data);
+    } catch (error) {
+      console.error('카테고리 로드 실패:', error);
     }
   };
 
@@ -128,15 +154,20 @@ export function PrescriptionDefinitions() {
     return stats;
   }, [definitions]);
 
-  // 모든 카테고리 목록 (카테고리 + 출전 통합)
-  const allCategories = useMemo(() => {
-    const cats = new Set<string>();
+  // 데이터에서 추출한 추가 카테고리 (DB 카테고리에 없는 것들)
+  const extraCategories = useMemo(() => {
+    const dbCategoryNames = new Set(categories.map(c => c.name));
+    const extra = new Set<string>();
     definitions.forEach(def => {
-      if (def.category) cats.add(def.category);
-      if (def.source) cats.add(def.source);
+      if (def.category && !dbCategoryNames.has(def.category)) {
+        extra.add(def.category);
+      }
+      if (def.source && !dbCategoryNames.has(def.source)) {
+        extra.add(def.source);
+      }
     });
-    return Array.from(cats).sort();
-  }, [definitions]);
+    return Array.from(extra).sort();
+  }, [definitions, categories]);
 
   // 구성 파싱
   const parseComposition = (composition: string) => {
@@ -187,18 +218,25 @@ export function PrescriptionDefinitions() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="처방명, 별명, 구성 약재로 검색..."
-          className="input-field pl-10"
+          className="input-field !pl-11"
         />
       </div>
 
       {/* 3-컬럼 레이아웃 */}
       <div className="flex-1 grid grid-cols-12 gap-4 min-h-0">
         {/* 왼쪽: 카테고리 사이드바 */}
-        <div className="col-span-2 bg-white rounded-lg border border-gray-200 overflow-y-auto">
-          <div className="p-3 border-b border-gray-200 bg-gray-50">
+        <div className="col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-700">카테고리</h3>
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+              title="카테고리 관리"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
-          <div className="p-2">
+          <div className="flex-1 overflow-y-auto p-2">
             <button
               onClick={() => setSelectedCategory('all')}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
@@ -210,19 +248,48 @@ export function PrescriptionDefinitions() {
               전체 ({categoryStats.all || 0})
             </button>
 
-            {allCategories.map(cat => (
+            {/* DB 카테고리 */}
+            {categories.map(cat => (
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                  selectedCategory === cat
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.name)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                  selectedCategory === cat.name
                     ? 'bg-primary-50 text-primary-700 font-medium'
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {cat} ({categoryStats[cat] || 0})
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: cat.color }}
+                />
+                <span className="flex-1 truncate">{cat.name}</span>
+                <span className="text-xs text-gray-400">
+                  {categoryStats[cat.name] || 0}
+                </span>
               </button>
             ))}
+
+            {/* 추가 카테고리 (DB에 없는 것들) */}
+            {extraCategories.length > 0 && (
+              <>
+                <div className="border-t border-gray-200 my-2" />
+                <div className="px-3 py-1 text-xs text-gray-400">기타</div>
+                {extraCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                      selectedCategory === cat
+                        ? 'bg-primary-50 text-primary-700 font-medium'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {cat} ({categoryStats[cat] || 0})
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
@@ -367,11 +434,21 @@ export function PrescriptionDefinitions() {
       {isModalOpen && editingDef && (
         <DefinitionModal
           definition={editingDef}
+          categories={categories}
           onSave={handleSave}
           onClose={() => {
             setIsModalOpen(false);
             setEditingDef(null);
           }}
+        />
+      )}
+
+      {/* 카테고리 관리 모달 */}
+      {isCategoryModalOpen && (
+        <CategoryManagementModal
+          categories={categories}
+          onClose={() => setIsCategoryModalOpen(false)}
+          onUpdate={loadCategories}
         />
       )}
     </div>
@@ -381,11 +458,12 @@ export function PrescriptionDefinitions() {
 // 처방 정의 수정/추가 모달
 interface DefinitionModalProps {
   definition: PrescriptionDefinition;
+  categories: PrescriptionCategory[];
   onSave: (def: PrescriptionDefinition) => void;
   onClose: () => void;
 }
 
-function DefinitionModal({ definition, onSave, onClose }: DefinitionModalProps) {
+function DefinitionModal({ definition, categories, onSave, onClose }: DefinitionModalProps) {
   const [formData, setFormData] = useState<PrescriptionDefinition>(definition);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -457,8 +535,8 @@ function DefinitionModal({ definition, onSave, onClose }: DefinitionModalProps) 
                 className="input-field"
               >
                 <option value="">선택 안함</option>
-                {CATEGORIES.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.name}>{cat.name}</option>
                 ))}
               </select>
             </div>
@@ -531,6 +609,291 @@ function DefinitionModal({ definition, onSave, onClose }: DefinitionModalProps) 
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// 카테고리 관리 모달
+interface CategoryManagementModalProps {
+  categories: PrescriptionCategory[];
+  onClose: () => void;
+  onUpdate: () => void;
+}
+
+function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryManagementModalProps) {
+  const [editingCategory, setEditingCategory] = useState<PrescriptionCategory | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#3b82f6');
+  const [isAdding, setIsAdding] = useState(false);
+
+  const colorPresets = [
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#06b6d4',
+    '#64748b', '#a855f7', '#10b981', '#f59e0b', '#6366f1',
+  ];
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) {
+      alert('카테고리명을 입력해주세요.');
+      return;
+    }
+
+    const db = getDb();
+    if (!db) return;
+
+    try {
+      const maxOrder = categories.length > 0
+        ? Math.max(...categories.map(c => c.sort_order)) + 1
+        : 0;
+
+      db.run(
+        'INSERT INTO prescription_categories (name, color, sort_order) VALUES (?, ?, ?)',
+        [newCategoryName.trim(), newCategoryColor, maxOrder]
+      );
+      saveDb();
+      setNewCategoryName('');
+      setNewCategoryColor('#3b82f6');
+      setIsAdding(false);
+      onUpdate();
+    } catch (error) {
+      console.error('카테고리 추가 실패:', error);
+      alert('카테고리 추가에 실패했습니다. 이미 존재하는 이름일 수 있습니다.');
+    }
+  };
+
+  const handleUpdateCategory = () => {
+    if (!editingCategory) return;
+    if (!editingCategory.name.trim()) {
+      alert('카테고리명을 입력해주세요.');
+      return;
+    }
+
+    const db = getDb();
+    if (!db) return;
+
+    try {
+      db.run(
+        'UPDATE prescription_categories SET name = ?, color = ? WHERE id = ?',
+        [editingCategory.name.trim(), editingCategory.color, editingCategory.id]
+      );
+      saveDb();
+      setEditingCategory(null);
+      onUpdate();
+    } catch (error) {
+      console.error('카테고리 수정 실패:', error);
+      alert('카테고리 수정에 실패했습니다.');
+    }
+  };
+
+  const handleDeleteCategory = (category: PrescriptionCategory) => {
+    if (!confirm(`"${category.name}" 카테고리를 삭제하시겠습니까?\n(처방의 카테고리는 유지됩니다)`)) {
+      return;
+    }
+
+    const db = getDb();
+    if (!db) return;
+
+    try {
+      db.run('DELETE FROM prescription_categories WHERE id = ?', [category.id]);
+      saveDb();
+      onUpdate();
+    } catch (error) {
+      console.error('카테고리 삭제 실패:', error);
+      alert('카테고리 삭제에 실패했습니다.');
+    }
+  };
+
+  const handleMoveCategory = (category: PrescriptionCategory, direction: 'up' | 'down') => {
+    const db = getDb();
+    if (!db) return;
+
+    const currentIndex = categories.findIndex(c => c.id === category.id);
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= categories.length) return;
+
+    const targetCategory = categories[targetIndex];
+
+    try {
+      // 두 카테고리의 sort_order를 교환
+      db.run(
+        'UPDATE prescription_categories SET sort_order = ? WHERE id = ?',
+        [targetCategory.sort_order, category.id]
+      );
+      db.run(
+        'UPDATE prescription_categories SET sort_order = ? WHERE id = ?',
+        [category.sort_order, targetCategory.id]
+      );
+      saveDb();
+      onUpdate();
+    } catch (error) {
+      console.error('순서 변경 실패:', error);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">카테고리 관리</h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {/* 카테고리 목록 */}
+          <div className="space-y-2">
+            {categories.map((category, index) => (
+              <div
+                key={category.id}
+                className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg group"
+              >
+                {editingCategory?.id === category.id ? (
+                  <>
+                    <input
+                      type="color"
+                      value={editingCategory.color}
+                      onChange={(e) => setEditingCategory({ ...editingCategory, color: e.target.value })}
+                      className="w-8 h-8 rounded cursor-pointer border-0"
+                    />
+                    <input
+                      type="text"
+                      value={editingCategory.name}
+                      onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                      className="flex-1 input-field py-1"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleUpdateCategory}
+                      className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setEditingCategory(null)}
+                      className="p-1.5 text-gray-400 hover:bg-gray-100 rounded"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        onClick={() => handleMoveCategory(category, 'up')}
+                        disabled={index === 0}
+                        className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                      >
+                        <ChevronUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveCategory(category, 'down')}
+                        disabled={index === categories.length - 1}
+                        className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                      >
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <span
+                      className="w-4 h-4 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: category.color }}
+                    />
+                    <span className="flex-1 text-sm font-medium text-gray-700">
+                      {category.name}
+                    </span>
+                    <button
+                      onClick={() => setEditingCategory(category)}
+                      className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCategory(category)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* 새 카테고리 추가 */}
+          {isAdding ? (
+            <div className="mt-4 p-3 border border-dashed border-gray-300 rounded-lg space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  카테고리명
+                </label>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="input-field"
+                  placeholder="새 카테고리 이름"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  색상
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {colorPresets.map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setNewCategoryColor(color)}
+                      className={`w-6 h-6 rounded-full transition-transform ${
+                        newCategoryColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
+                      }`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={newCategoryColor}
+                    onChange={(e) => setNewCategoryColor(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border-0"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setIsAdding(false);
+                    setNewCategoryName('');
+                  }}
+                  className="flex-1 btn-secondary text-sm py-1.5"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleAddCategory}
+                  className="flex-1 btn-primary text-sm py-1.5"
+                >
+                  추가
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsAdding(true)}
+              className="mt-4 w-full py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-primary-400 hover:text-primary-600 transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              새 카테고리 추가
+            </button>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-200">
+          <button onClick={onClose} className="w-full btn-secondary">
+            닫기
+          </button>
+        </div>
       </div>
     </div>
   );

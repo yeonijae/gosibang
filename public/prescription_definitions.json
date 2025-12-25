@@ -1,0 +1,1857 @@
+[
+  {
+    "name": "갈근가반하탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6/반하:16"
+  },
+  {
+    "name": "갈근탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6"
+  },
+  {
+    "name": "갈근탕가천궁신이",
+    "alias": "갈근가천신",
+    "category": null,
+    "source": "후세방",
+    "composition": "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6/천궁:4/신이:4"
+  },
+  {
+    "name": "갈근황금황련탕",
+    "alias": "갈금련",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "갈근:16/황련:6/황금:6/자감초:6"
+  },
+  {
+    "name": "감맥대조탕",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "생감초:6/대추:5/부소맥:28"
+  },
+  {
+    "name": "감수반하탕",
+    "alias": null,
+    "category": "함흉제",
+    "source": "상한금궤",
+    "composition": "감수:0.6/반하:2/작약:2/자감초:1.4"
+  },
+  {
+    "name": "감초건강탕",
+    "alias": null,
+    "category": "건강제",
+    "source": "상한금궤",
+    "composition": "자감초:8/건강:6"
+  },
+  {
+    "name": "감초부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:8/자감초:4/부자:2/백출:4"
+  },
+  {
+    "name": "감초사심탕",
+    "alias": "감사",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:2/황금:6/인삼:6/반하:16/자감초:8/대추:6/건강:6"
+  },
+  {
+    "name": "감초탕",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "생감초:4"
+  },
+  {
+    "name": "강삼조이",
+    "alias": null,
+    "category": "기능성약물",
+    "source": "후세방",
+    "composition": "생강:6/대추:6"
+  },
+  {
+    "name": "건강부자탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "건강:2/부자:2"
+  },
+  {
+    "name": "건강황금황련인삼탕",
+    "alias": "강금련인",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "건강:6/황금:6/황련:6/인삼:6"
+  },
+  {
+    "name": "계강조초황신부탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/마황:4/세신:4/부자:1"
+  },
+  {
+    "name": "계마각반탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:2/계지:3/자감초:2/행인:7/작약:2/대추:2/생강:2"
+  },
+  {
+    "name": "계작지모탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:8/작약:6/자감초:4/생강:10/지모:8/방풍:8/마황:4/백출:10/부자:2"
+  },
+  {
+    "name": "계지가갈근탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/생강:6/갈근:8"
+  },
+  {
+    "name": "계지가계탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:10/작약:6/자감초:4/대추:6/생강:6"
+  },
+  {
+    "name": "계지가대황탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:4/대추:6/생강:6/대황:4"
+  },
+  {
+    "name": "계지가부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:6/대추:6/생강:6/부자:1"
+  },
+  {
+    "name": "계지가용골모려탕",
+    "alias": "계용모",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/생강:6/용골:6/모려:6"
+  },
+  {
+    "name": "계지가작약생강인삼신가탕",
+    "alias": "신가탕",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:8/자감초:4/대추:6/생강:8/인삼:6"
+  },
+  {
+    "name": "계지가작약탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:4/대추:6/생강:6"
+  },
+  {
+    "name": "계지가황기탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/생강:6/황기:4"
+  },
+  {
+    "name": "계지가후박행자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/생강:6/후박:4/행인:15"
+  },
+  {
+    "name": "계지거계가복령백출탕",
+    "alias": "거계가영출탕",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "작약:6/자감초:4/대추:6/생강:6/백출:6/복령:6"
+  },
+  {
+    "name": "계지거작약가부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/자감초:4/생강:6/대추:6/부자:1"
+  },
+  {
+    "name": "계지거작약탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/자감초:4/대추:6/생강:6"
+  },
+  {
+    "name": "계지복령환",
+    "alias": "계령",
+    "category": "도인제",
+    "source": "상한금궤",
+    "composition": "계지:6/복령:8/도인:6/목단피:6/작약:6"
+  },
+  {
+    "name": "계지부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:8/자감초:4/대추:6/생강:6/부자:3"
+  },
+  {
+    "name": "계지생강지실탕",
+    "alias": "계생지",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/생강:6/지실:10"
+  },
+  {
+    "name": "계지인삼탕",
+    "alias": null,
+    "category": "건강제",
+    "source": "상한금궤",
+    "composition": "인삼:6/백출:6/자감초:8/건강:6/계지:8"
+  },
+  {
+    "name": "계지탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:6/생강:6"
+  },
+  {
+    "name": "과루계지탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "괄루근:4/계지:6/작약:6/자감초:4/생강:6/대추:6"
+  },
+  {
+    "name": "과루해백반하탕",
+    "alias": null,
+    "category": "해백제",
+    "source": "상한금궤",
+    "composition": "해백:6/과루인:16/반하:16"
+  },
+  {
+    "name": "과루해백백주탕",
+    "alias": null,
+    "category": "해백제",
+    "source": "상한금궤",
+    "composition": "해백:16/과루인:16"
+  },
+  {
+    "name": "곽향정기산",
+    "alias": "곽정",
+    "category": null,
+    "source": "후세방",
+    "composition": "곽향:7.5/자소엽:5/백지:2.5/대복피:2.5/복령:2.5/후박:2.5/백출:2.5/귤피:2.5/반하:2.5/길경:2.5/자감초:2.5/생강:3/대추:3"
+  },
+  {
+    "name": "교애사물탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "당귀:6/작약:8/천궁:4/아교주:4/자감초:4/애엽:6/숙지황:8"
+  },
+  {
+    "name": "구미강활탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "강활:7.5/방풍:7.5/천궁:6/백지:6/백출:6/황금:6/건지황:6/세신:2.5/자감초:2.5"
+  },
+  {
+    "name": "궁귀교애탕",
+    "alias": null,
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "당귀:6/작약:8/천궁:4/아교주:4/자감초:4/애엽:6/건지황:8"
+  },
+  {
+    "name": "귀비온담탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "귀비탕+온담탕"
+  },
+  {
+    "name": "귀비탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "당귀:5/용안육:5/산조인:5/원지:5/인삼:5/황기:5/백출:5/복령:5/목향:2.5/자감초:1.5/생강:3/대추:3"
+  },
+  {
+    "name": "귀비탕2",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "당귀:5/용안육:5/길초근:2/원지:5/인삼:5/황기:5/백출:5/복령:5/목향:2.5/자감초:1.5/생강:3/대추:3"
+  },
+  {
+    "name": "귀출파징탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "향부자:7.5/삼릉:5/봉출:5/작약:5/당귀미:5/청피:5/오약:3.5/홍화:2.5/소목:2.5/육계:2.5"
+  },
+  {
+    "name": "귤피대황박초탕",
+    "alias": null,
+    "category": "귤피제",
+    "source": "상한금궤",
+    "composition": "귤피:3/대황:6/망초:6"
+  },
+  {
+    "name": "귤피죽여탕",
+    "alias": "귤죽",
+    "category": "귤피제",
+    "source": "상한금궤",
+    "composition": "귤피:16/죽여:4/대추:15/생강:16/자감초:10/인삼:2"
+  },
+  {
+    "name": "귤피지실생강탕",
+    "alias": "귤지생",
+    "category": "귤피제",
+    "source": "상한금궤",
+    "composition": "귤피:32/지실:6/생강:16"
+  },
+  {
+    "name": "귤피탕",
+    "alias": null,
+    "category": "귤피제",
+    "source": "상한금궤",
+    "composition": "귤피:8/생강:16"
+  },
+  {
+    "name": "금은화연교",
+    "alias": null,
+    "category": "기능성약물",
+    "source": "후세방",
+    "composition": "금은화:16/연교:8"
+  },
+  {
+    "name": "길경탕",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "생감초:4/길경:2"
+  },
+  {
+    "name": "녹용쌍금탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3/뉴분골:2"
+  },
+  {
+    "name": "녹용쌍패탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/복령:5/자감초:5/생강:3/대추:3/박하:3/뉴분골:2"
+  },
+  {
+    "name": "녹용쌍화탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/계지:3.5/자감초:3.5/작약:12.5/생강:3/대추:3/뉴분골:2.5"
+  },
+  {
+    "name": "당귀건중탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:4/대추:6/생강:6/당귀:8"
+  },
+  {
+    "name": "당귀사역가오수유생강탕",
+    "alias": "당사오",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:12/생강:16/당귀:6/목통:4/세신:6/오수유:4"
+  },
+  {
+    "name": "당귀사역탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:6/자감초:4/대추:12/당귀:6/목통:4/세신:6"
+  },
+  {
+    "name": "당귀수산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "당귀미:7.5/적작약:5/오약:5/향부자:5/소목:5/홍화:4/도인:3.5/육계:3/자감초:2.5"
+  },
+  {
+    "name": "당귀작약산",
+    "alias": "당작",
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "당귀:6/작약:12/천궁:12/복령:8/백출:8/택사:12"
+  },
+  {
+    "name": "대건중탕",
+    "alias": null,
+    "category": "건강제",
+    "source": "상한금궤",
+    "composition": "인삼:4/건강:8/교이:20/촉초:2"
+  },
+  {
+    "name": "대승기탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:8/망초:7/후박:16/지실:10"
+  },
+  {
+    "name": "대시함",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "대시호탕+소함흉탕"
+  },
+  {
+    "name": "대시함마",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "대시호탕+소함흉탕+마행의감"
+  },
+  {
+    "name": "대시함박",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "대시호탕+소함흉탕+반하후박탕"
+  },
+  {
+    "name": "대시호가망초탕",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/반하:16/황금:6/지실:8/작약:6/대황:4/생강:10/대추:6/망초:4"
+  },
+  {
+    "name": "대시호탕",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/반하:16/황금:6/지실:8/작약:6/대황:4/생강:10/대추:6"
+  },
+  {
+    "name": "대영전",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:15/당귀:10/구기자:10/두충:10/우슬:7.5/육계:5/자감초:5"
+  },
+  {
+    "name": "대청룡탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:12/계지:4/자감초:4/행인:12/석고:24/대추:5/생강:6"
+  },
+  {
+    "name": "대탕포방기",
+    "alias": "대포",
+    "category": null,
+    "source": "고시방",
+    "composition": "대함흉탕+목방기탕+방기황기탕+방기복령탕+방기지황탕"
+  },
+  {
+    "name": "대함흉탕",
+    "alias": null,
+    "category": "함흉제",
+    "source": "상한금궤",
+    "composition": "대황:12/망초:24/감수:2"
+  },
+  {
+    "name": "대함흉환",
+    "alias": null,
+    "category": "함흉제",
+    "source": "상한금궤",
+    "composition": "대황:16/정력자:16/망초:12/행인:10/감수:2"
+  },
+  {
+    "name": "대함흉환급탕",
+    "alias": "대함환급탕",
+    "category": null,
+    "source": "고시방",
+    "composition": "대함흉탕+대함흉환"
+  },
+  {
+    "name": "대황감수탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:8/감수:4/아교주:4"
+  },
+  {
+    "name": "대황망초탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:8/황백:8/망초:8/치자:3"
+  },
+  {
+    "name": "대황목단피탕",
+    "alias": null,
+    "category": "도인제",
+    "source": "상한금궤",
+    "composition": "도인:8/망초:8/대황:8/목단피:6/동과자:12"
+  },
+  {
+    "name": "대황부자탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:6/부자:3/세신:4"
+  },
+  {
+    "name": "대황황련사심탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:2/황금:2/대황:4"
+  },
+  {
+    "name": "도핵승기탕",
+    "alias": null,
+    "category": "도인제",
+    "source": "상한금궤",
+    "composition": "도인:6/계지:4/망초:4/대황:8/자감초:4"
+  },
+  {
+    "name": "도화탕",
+    "alias": null,
+    "category": "기타고방",
+    "source": "상한금궤",
+    "composition": "적석지:32/건강:2/갱미:30"
+  },
+  {
+    "name": "독활기생탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "독활:7/당귀:7/작약:7/상기생:7/숙지황:5/천궁:5/인삼:5/복령:5/우슬:5/두충:5/진교:5/세신:5/방풍:5/육계:5/자감초:3/생강:3"
+  },
+  {
+    "name": "독활지황탕",
+    "alias": null,
+    "category": null,
+    "source": "사상방",
+    "composition": "숙지황:16/산수유:8/복령:6/택사:6/목단피:4/방풍:4/독활:4"
+  },
+  {
+    "name": "두충우슬",
+    "alias": null,
+    "category": "기능성약물",
+    "source": "후세방",
+    "composition": "두충:6/우슬:6"
+  },
+  {
+    "name": "마자인환",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "마자인:32/작약:16/지실:16/대황:32/후박:20/행인:20"
+  },
+  {
+    "name": "마행감석탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:8/행인:15/자감초:4/석고:16"
+  },
+  {
+    "name": "마행의감2",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:8/행인:4/의이인:24/자감초:4"
+  },
+  {
+    "name": "마행의감3",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:8/행인:4/의이인:36/자감초:4"
+  },
+  {
+    "name": "마행의감탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:8/행인:4/의이인:12/자감초:4"
+  },
+  {
+    "name": "마황가출탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:4/자감초:2/행인:21/백출:8"
+  },
+  {
+    "name": "마황부자감초탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:4/자감초:4/부자:1"
+  },
+  {
+    "name": "마황부자세신탕",
+    "alias": "마부신/마신부",
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:4/부자:1/세신:4"
+  },
+  {
+    "name": "마황연교적소두탕",
+    "alias": "마연적",
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:4/연교:4/행인:4/적소두:28/대추:6/상백피:20/생강:4/자감초:4"
+  },
+  {
+    "name": "마황탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:4/자감초:2/행인:21"
+  },
+  {
+    "name": "맥문동탕",
+    "alias": null,
+    "category": "반하제",
+    "source": "상한금궤",
+    "composition": "반하:32/인삼:6/대추:6/자감초:4/갱미:9/맥문동:15"
+  },
+  {
+    "name": "맥문후박탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "맥문동탕+반하후박탕"
+  },
+  {
+    "name": "목방기탕",
+    "alias": null,
+    "category": "방기제",
+    "source": "상한금궤",
+    "composition": "방기:6/계지:4/석고:24/인삼:8"
+  },
+  {
+    "name": "목방기탕거석고가복령망초탕",
+    "alias": "거석복망/복망탕/복망",
+    "category": "방기제",
+    "source": "상한금궤",
+    "composition": "방기:4/계지:4/인삼:8/망초:8/복령:8"
+  },
+  {
+    "name": "반하백출천마탕",
+    "alias": "반백천",
+    "category": null,
+    "source": "후세방",
+    "composition": "반하:7/귤피:7/맥아:7/백출:5/신곡:5/인삼:2.5/황기:2.5/천마:2.5/복령:2.5/택사:2.5/건강:1.5/황백:1/생강:3"
+  },
+  {
+    "name": "반하백출천마탕2",
+    "alias": "반백천2",
+    "category": null,
+    "source": "후세방",
+    "composition": "반하:7/귤피:7/맥아:7/백출:5/신곡:5/인삼:2.5/황기:2.5/천마:2.5/복령:2.5/택사:2.5/건강:1.5/황금:2/생강:3"
+  },
+  {
+    "name": "반하사심탕",
+    "alias": "반사",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:2/황금:6/인삼:6/반하:16/자감초:6/대추:6/건강:6"
+  },
+  {
+    "name": "반하후박탕",
+    "alias": null,
+    "category": "반하제",
+    "source": "상한금궤",
+    "composition": "반하:32/생강:10/복령:8/후박:6/자소엽:4"
+  },
+  {
+    "name": "방기복령탕",
+    "alias": "방복",
+    "category": "방기제",
+    "source": "상한금궤",
+    "composition": "방기:6/계지:6/황기:6/자감초:4/복령:12"
+  },
+  {
+    "name": "방기지황탕",
+    "alias": "방지",
+    "category": "방기제",
+    "source": "상한금궤",
+    "composition": "방기:6/계지:6/자감초:2/건지황:8/방풍:6"
+  },
+  {
+    "name": "방기황기탕",
+    "alias": "방황",
+    "category": "방기제",
+    "source": "상한금궤",
+    "composition": "방기:8/황기:9/백출:6/자감초:4"
+  },
+  {
+    "name": "배농산",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "길경:2/작약:6/지실:10"
+  },
+  {
+    "name": "배농산급탕",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "생감초:4/길경:6/대추:5/생강:2/작약:6/지실:10"
+  },
+  {
+    "name": "배농탕",
+    "alias": null,
+    "category": "감초제",
+    "source": "상한금궤",
+    "composition": "생감초:4/길경:6/대추:5/생강:2"
+  },
+  {
+    "name": "백대갈",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "백호탕+대시호탕+갈금련"
+  },
+  {
+    "name": "백엽탕",
+    "alias": null,
+    "category": "기타고방",
+    "source": "상한금궤",
+    "composition": "측백엽:9/건강:9/애엽:9"
+  },
+  {
+    "name": "백인2",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:64/지모:24/갱미:18/자감초:4/인삼:6"
+  },
+  {
+    "name": "백인3",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:96/지모:36/갱미:18/자감초:4/인삼:6"
+  },
+  {
+    "name": "백자팔",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "백인+자감+팔미"
+  },
+  {
+    "name": "백출부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "자감초:4/대추:6/생강:6/부자:3/백출:8"
+  },
+  {
+    "name": "백호2",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:64/지모:24/갱미:18/자감초:4"
+  },
+  {
+    "name": "백호3",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:96/지모:36/갱미:18/자감초:4"
+  },
+  {
+    "name": "백호가계지탕",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:32/지모:12/갱미:6/자감초:4/계지:6"
+  },
+  {
+    "name": "백호가인삼탕",
+    "alias": "백인",
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:32/지모:12/갱미:18/자감초:4/인삼:6"
+  },
+  {
+    "name": "백호탕",
+    "alias": null,
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:32/지모:12/갱미:18/자감초:4"
+  },
+  {
+    "name": "보중익기탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "황기:7.5/인삼:5/백출:5/자감초:5/당귀:2.5/귤피:2.5/승마:1.5/시호:1.5"
+  },
+  {
+    "name": "보중치습탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:5/백출:5/창출:3.5/귤피:3.5/복령:3.5/맥문동:3.5/목통:3.5/당귀:3.5/황금:2.5/후박:1.5/승마:1.5"
+  },
+  {
+    "name": "보화탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "귤피:7.5/나복자:5/맥아:5/산사:5/향부자:5/후박:5/자감초:2.5/연교:2.5/"
+  },
+  {
+    "name": "복령사역탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:2/자감초:4/건강:3/인삼:2/복령:8"
+  },
+  {
+    "name": "복령음",
+    "alias": null,
+    "category": "귤피제",
+    "source": "상한금궤",
+    "composition": "인삼:6/백출:6/복령:6/지실:4/귤피:5/생강:8"
+  },
+  {
+    "name": "복령택사탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:16/계지:4/자감초:2/백출:6/택사:8/생강:8"
+  },
+  {
+    "name": "복령행인감초탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:6/행인:4/자감초:2"
+  },
+  {
+    "name": "부자갱미탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:1/자감초:2/반하:16/대추:5/갱미:15"
+  },
+  {
+    "name": "부자사심탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "대황:4/황련:2/황금:2/부자:2"
+  },
+  {
+    "name": "부자탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:2/인삼:4/백출:8/복령:6/작약:6"
+  },
+  {
+    "name": "불수산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "당귀:30/천궁:20"
+  },
+  {
+    "name": "불환금정기산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3"
+  },
+  {
+    "name": "사간마황탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "사간:6/마황:8/생강:8/세신:6/자완:6/관동화:6/오미자:6/대추:3/반하:16"
+  },
+  {
+    "name": "사군자탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:6/백출:6/복령:6/자감초:6"
+  },
+  {
+    "name": "사물탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:6/당귀:6/천궁:6/작약:6"
+  },
+  {
+    "name": "사역가인삼탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:2/자감초:4/건강:3/인삼:2"
+  },
+  {
+    "name": "사역산",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/지실:16/작약:16/자감초:16"
+  },
+  {
+    "name": "사역탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:2/자감초:4/건강:3"
+  },
+  {
+    "name": "산조인탕",
+    "alias": null,
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "산조인:9/자감초:2/지모:4/복령:4/천궁:4"
+  },
+  {
+    "name": "삼단탕",
+    "alias": null,
+    "category": null,
+    "source": "현대처방",
+    "composition": "단삼:6/적작약:6/홍화:6"
+  },
+  {
+    "name": "삼릉봉출",
+    "alias": null,
+    "category": "기능성약물",
+    "source": "후세방",
+    "composition": "삼릉:6/봉출:6"
+  },
+  {
+    "name": "삼물황금탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황금:2/고삼:4/건지황:8"
+  },
+  {
+    "name": "삼방기탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "방기황기탕+방기복령탕+방기지황탕"
+  },
+  {
+    "name": "삼출건비탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:5/백출:5/복령:5/후박:5/귤피:5/산사:5/지실:4/작약:4/사인:2.5/신곡:2.5/맥아:2.5/자감초:2.5/생강:3/대추:3"
+  },
+  {
+    "name": "삼황사심탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:6/황금:6/대황:6"
+  },
+  {
+    "name": "생간건비탕1",
+    "alias": null,
+    "category": null,
+    "source": "현대처방",
+    "composition": "인진호:12/갈근:8/울금:6/단삼:6/하수오:6/구기자:10/산사:6/백출:6/귤피:6/후박:6/자감초:3/곽향:3/신곡:3/맥아:3"
+  },
+  {
+    "name": "생강감초탕",
+    "alias": null,
+    "category": "건강제",
+    "source": "상한금궤",
+    "composition": "생강:10/인삼:6/자감초:8/대추:6"
+  },
+  {
+    "name": "생강사심탕",
+    "alias": "생사",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:2/황금:6/인삼:6/반하:16/자감초:6/대추:6/건강:2/생강:8"
+  },
+  {
+    "name": "생맥산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "맥문동:10/인삼:5/오미자:5"
+  },
+  {
+    "name": "선복대자석탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "선복화:6/인삼:4/생강:10/대자석:2/자감초:6/반하:10/대추:6"
+  },
+  {
+    "name": "소건중탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:4/대추:6/생강:6/교이:40"
+  },
+  {
+    "name": "소건중탕2",
+    "alias": "소건중2",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:4/대추:6/생강:6/교이:20"
+  },
+  {
+    "name": "소목홍화",
+    "alias": null,
+    "category": "기능성약물",
+    "source": "후세방",
+    "composition": "소목:6/홍화:6"
+  },
+  {
+    "name": "소반하가복령탕",
+    "alias": null,
+    "category": "반하제",
+    "source": "상한금궤",
+    "composition": "반하:32/생강:16/복령:6"
+  },
+  {
+    "name": "소반하탕",
+    "alias": null,
+    "category": "반하제",
+    "source": "상한금궤",
+    "composition": "반하:32/생강:16"
+  },
+  {
+    "name": "소승기탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:8/후박:4/지실:6"
+  },
+  {
+    "name": "소시호가망초탕",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/반하:16/황금:6/인삼:6/자감초:6/생강:6/대추:6/망초:4"
+  },
+  {
+    "name": "소시호탕",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/반하:16/황금:6/인삼:6/자감초:6/생강:6/대추:6"
+  },
+  {
+    "name": "소청룡가석고탕",
+    "alias": "소청룡석고",
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:6/자감초:6/작약:6/오미자:6/반하:16/건강:6/세신:6/석고:4"
+  },
+  {
+    "name": "소청룡탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:6/계지:6/자감초:6/작약:6/오미자:6/반하:16/건강:6/세신:6"
+  },
+  {
+    "name": "소함흉탕",
+    "alias": null,
+    "category": "함흉제",
+    "source": "상한금궤",
+    "composition": "황련:3/반하:16/과루인:16"
+  },
+  {
+    "name": "소함흉탕2",
+    "alias": "소함흉2",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:3/반하:16/과루실:16"
+  },
+  {
+    "name": "승마갈근탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "갈근:10/승마:5/작약:5/자감초:5/생강:5"
+  },
+  {
+    "name": "시령탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "소시호탕+오령산"
+  },
+  {
+    "name": "시박탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "소시호탕+반하후박탕"
+  },
+  {
+    "name": "시평탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "소시호탕+평위산"
+  },
+  {
+    "name": "시함마",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "소시호탕+소함흉탕+마행의감탕"
+  },
+  {
+    "name": "시함마농",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "시함마+배농산급탕"
+  },
+  {
+    "name": "시함박",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "소시호탕+소함흉탕+반하후박탕"
+  },
+  {
+    "name": "시함박농",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "시함박+배농산급탕"
+  },
+  {
+    "name": "시함은화탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "시함마농+시함박농+금은화연교"
+  },
+  {
+    "name": "시함중",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "시함탕+이중탕"
+  },
+  {
+    "name": "시함탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "소시호탕+소함흉탕"
+  },
+  {
+    "name": "시호가용골모려탕",
+    "alias": "시용모/시모",
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:8/반하:8/황금:3/인삼:3/생강:3/대추:3/대황:4/복령:3/계지:3/용골:3/모려:3"
+  },
+  {
+    "name": "시호거반하가과루탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "시호:16/인삼:6/황금:6/자감초:6/괄루근:8/생강:4/대추:6"
+  },
+  {
+    "name": "시호계지건강탕",
+    "alias": "시계건",
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/계지:6/건강:4/괄루근:8/황금:6/모려:4/자감초:4"
+  },
+  {
+    "name": "시호계지탕",
+    "alias": "시계",
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:8/반하:8/황금:3/인삼:3/자감초:2/생강:3/대추:3/작약:3/계지:3"
+  },
+  {
+    "name": "십미패독산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "시호:5/화피:5/길경:5/천궁:5/복령:5/독활:3.5/방풍:3.5/형개:2.5/생감초:2.5/생강:3.5"
+  },
+  {
+    "name": "십전대보탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:6/백출:6/복령:6/자감초:6/숙지황:6/작약:6/천궁:6/당귀:6/황기:5/육계:5/생강:5/대추:5"
+  },
+  {
+    "name": "쌍갈탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "원방쌍화탕+갈근탕"
+  },
+  {
+    "name": "쌍금탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3"
+  },
+  {
+    "name": "쌍패탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "원방쌍화탕+인삼패독산"
+  },
+  {
+    "name": "억간산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "백출:10/복령:10/당귀:7.5/천궁:7.5/조구등:7.5/시호:5/자감초:4"
+  },
+  {
+    "name": "연령고본단",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "구기자:10/두충:10/맥문동:10/목향:10/백자인:10/복령:10/복분자:7.5/산수유:10/산약:10/건지황:10/석창포:5/숙지황:10/오미자:10/우슬:10/원지:5/육종용:20/인삼:10/지골피:7.5/차전자:7.5/천문동:10/천초:5/택사:5/토사자:20/파극천:10"
+  },
+  {
+    "name": "영감강미신탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/자감초:6/건강:6/오미자:6/세신:6"
+  },
+  {
+    "name": "영감강미신하인탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16/행인:6"
+  },
+  {
+    "name": "영감강미신하인황탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16/행인:6/대황:6"
+  },
+  {
+    "name": "영감강미신하탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16"
+  },
+  {
+    "name": "영강출감탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/자감초:4/건강:8/백출:4"
+  },
+  {
+    "name": "영계감조탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:16/계지:8/자감초:4/대추:8"
+  },
+  {
+    "name": "영계미감탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/계지:8/오미자:6/자감초:6"
+  },
+  {
+    "name": "영계출감탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:8/계지:6/자감초:4/백출:4"
+  },
+  {
+    "name": "오령산",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:6/계지:4/백출:6/택사:10/저령:6"
+  },
+  {
+    "name": "오매환",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "오매:6/건강:6/당귀:6/세신:4/계지:4/인삼:4/황련:4/황백:3/촉초:2/부자:2"
+  },
+  {
+    "name": "오수유탕",
+    "alias": null,
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "오수유:5/인삼:6/대추:6/생강:12"
+  },
+  {
+    "name": "오자탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "사상자:5/육종용:5/복분자:5/구기자:5/토사자:5"
+  },
+  {
+    "name": "온경탕",
+    "alias": null,
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "당귀:4/작약:4/천궁:4/아교주:4/자감초:4/인삼:4/계지:4/생강:4/목단피:4/반하:16/맥문동:5/오수유:6"
+  },
+  {
+    "name": "온담탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "반하:10/귤피:10/복령:10/지실:10/죽여:5/자감초:2.5/생강:3/대추:3"
+  },
+  {
+    "name": "원방쌍화탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/자감초:3.5/작약:12.5/생강:3/대추:3"
+  },
+  {
+    "name": "월비가반하탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:12/석고:16/생강:6/대추:8/자감초:4/반하:16"
+  },
+  {
+    "name": "월비가출탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:12/자감초:4/석고:16/대추:8/생강:6/백출:8"
+  },
+  {
+    "name": "월비탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "마황:12/자감초:4/석고:16/대추:8/생강:6"
+  },
+  {
+    "name": "육군자탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "반하:7.5/백출:7.5/귤피:5/복령:5/인삼:5/자감초:2.5"
+  },
+  {
+    "name": "육미지황탕",
+    "alias": "육미",
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6"
+  },
+  {
+    "name": "육미지황탕2",
+    "alias": "육미2",
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "숙지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6"
+  },
+  {
+    "name": "의이부자패장산",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:2/의이인:16/패장:8"
+  },
+  {
+    "name": "이진탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "반하:10/귤피:5/복령:5/자감초:2.5"
+  },
+  {
+    "name": "인삼탕",
+    "alias": "이중탕",
+    "category": "건강제",
+    "source": "상한금궤",
+    "composition": "인삼:6/백출:6/자감초:6/건강:6"
+  },
+  {
+    "name": "인삼패독산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/천궁:5/복령:5/자감초:5/생강:3/박하:3"
+  },
+  {
+    "name": "인숙산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "백자인:8/숙지황:8/인삼:6/지각:6/오미자:6/계지:6/산수유:6/감국:6/복령:6/구기자:6"
+  },
+  {
+    "name": "인진오령산",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "인진호:12/택사:8/복령:8/백출:6/계지:6/저령:6"
+  },
+  {
+    "name": "인진호탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/대황:4/인진호:12"
+  },
+  {
+    "name": "일반쌍화탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:5/황기:5/당귀:5/천궁:5/계지:3.5/자감초:3.5/작약:12.5/생강:3/대추:3"
+  },
+  {
+    "name": "자감초탕",
+    "alias": "자감",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/자감초:8/대추:10/생강:6/인삼:4/맥문동:10/건지황:8/마자인:8/아교주:4"
+  },
+  {
+    "name": "자음강화탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "작약:6.5/당귀:6/숙지황:5/천문동:5/맥문동:5/백출:5/건지황:4/귤피:3.5/지모:2.5/황백:2.5/자감초:2.5/생강:3/대추:3"
+  },
+  {
+    "name": "작약감초부자탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "작약:6/자감초:6/부자:1"
+  },
+  {
+    "name": "작약감초탕",
+    "alias": "작감탕",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "작약:8/자감초:8"
+  },
+  {
+    "name": "저령차전자탕",
+    "alias": null,
+    "category": null,
+    "source": "사상방",
+    "composition": "택사:10/복령:10/저령:7.5/차전자:7.5/지모:5/석고:5/강활:5/독활:5/형개:5/방풍:5"
+  },
+  {
+    "name": "저령탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "복령:6/택사:6/저령:6/아교주:6"
+  },
+  {
+    "name": "적소두당귀산",
+    "alias": null,
+    "category": "당귀제",
+    "source": "상한금궤",
+    "composition": "적소두:42/당귀:3"
+  },
+  {
+    "name": "조경종옥탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "숙지황:7.5/향부자:7.5/당귀:5/오수유:5/천궁:5/작약:4/복령:4/귤피:4/현호색:4/목단피:4/건강:4/육계:2.5/애엽:2.5/생강:3"
+  },
+  {
+    "name": "조위승기탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:8/망초:12/자감초:4"
+  },
+  {
+    "name": "죽엽석고탕",
+    "alias": "죽석",
+    "category": "석고제",
+    "source": "상한금궤",
+    "composition": "석고:32/갱미:15/자감초:4/죽엽:4/인삼:4/맥문동:20/반하:16"
+  },
+  {
+    "name": "중시호가망초탕",
+    "alias": null,
+    "category": null,
+    "source": "시호제",
+    "composition": "소시호가망초탕+대시호가망초탕"
+  },
+  {
+    "name": "중시호탕",
+    "alias": null,
+    "category": "시호제",
+    "source": "상한금궤",
+    "composition": "시호:16/반하:16/황금:6/인삼:6/자감초:6/지실:8/작약:6/대황:4/생강:10/대추:6"
+  },
+  {
+    "name": "지백지황환",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/지모:4/황백:4"
+  },
+  {
+    "name": "지실치자탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "지실:6/치자:14/두시:3"
+  },
+  {
+    "name": "지실해백계지탕",
+    "alias": null,
+    "category": "해백제",
+    "source": "상한금궤",
+    "composition": "해백:16/과루인:16/계지:2/후박:8/지실:8"
+  },
+  {
+    "name": "지출탕",
+    "alias": null,
+    "category": "기타고방",
+    "source": "상한금궤",
+    "composition": "지실:10/백출:8"
+  },
+  {
+    "name": "진무탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:1/백출:4/복령:6/작약:6/생강:6"
+  },
+  {
+    "name": "천마구등음",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "조구등:12/천마:9/황금:9/복령:9/익모초:9/야교등:9/석결명:18/상기생:9/치자:9/두충:9/우슬:12"
+  },
+  {
+    "name": "천왕보심단",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "길경:2.5/단삼:2.5/당귀:5/맥문동:5/백자인:5/복령:2.5/산조인:5/건지황:5/오미자:5/원지:2.5/인삼:2.5/천문동:5/현삼:2.5"
+  },
+  {
+    "name": "체감탕",
+    "alias": "체감탕",
+    "category": "다이어트",
+    "source": null,
+    "composition": "의이인:300/숙지황:160/용안육:120/당귀:120/황기:120/괄루근:80/산약:80/상백피:80/귤피:80/천궁:60"
+  },
+  {
+    "name": "총명탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "원지:10/석창포:10/복령:10"
+  },
+  {
+    "name": "축천환",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "오약:5/익지인:5"
+  },
+  {
+    "name": "치자감초시탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/자감초:4/두시:20"
+  },
+  {
+    "name": "치자건강탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/건강:2"
+  },
+  {
+    "name": "치자대황탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/대황:2/지실:10/두시:20"
+  },
+  {
+    "name": "치자벽피탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/황백:4/자감초:2"
+  },
+  {
+    "name": "치자생강시탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/생강:10/두시:20"
+  },
+  {
+    "name": "치자시탕",
+    "alias": "치시",
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/두시:20"
+  },
+  {
+    "name": "치자시탕2",
+    "alias": "치자시2",
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:6/두시:20"
+  },
+  {
+    "name": "치자후박탕",
+    "alias": null,
+    "category": "치자제",
+    "source": "상한금궤",
+    "composition": "치자:14/후박:8/지실:8"
+  },
+  {
+    "name": "택사탕",
+    "alias": null,
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "백출:4/택사:10"
+  },
+  {
+    "name": "통맥사역탕",
+    "alias": null,
+    "category": "부자제",
+    "source": "상한금궤",
+    "composition": "부자:3/자감초:4/건강:6"
+  },
+  {
+    "name": "팔미환",
+    "alias": "팔미",
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/계지:2/부자:2"
+  },
+  {
+    "name": "팔미환2",
+    "alias": "팔미2",
+    "category": "복령제",
+    "source": "상한금궤",
+    "composition": "숙지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/육계:2/부자:2"
+  },
+  {
+    "name": "평위산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "백출:10/귤피:7/후박:5/자감초:3/생강:3/대추:3"
+  },
+  {
+    "name": "포방기탕",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "목방기탕+방기황기탕+방기복령탕+방기지황탕"
+  },
+  {
+    "name": "향사갈금련",
+    "alias": null,
+    "category": null,
+    "source": "고시방",
+    "composition": "향사평위산+갈금련"
+  },
+  {
+    "name": "향사육군자탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "향부자:5/백출:5/복령:5/반하:5/귤피:5/백두구:5/후박:5/사인:2.5/인삼:2.5/목향:2.5/익지인:2.5/자감초:2.5/생강:3/대추:3"
+  },
+  {
+    "name": "향사평위산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "백출:10/귤피:5/향부자:5/지실:4/곽향:4/후박:3.5/사인:3.5/목향:2.5/자감초:2.5/생강:3"
+  },
+  {
+    "name": "현부이경탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "육계:3.5/귤피:5/당귀:5/도인:5/목향:3.5/작약:5/봉출:5/생강:6/오약:7.5/지각:5/백출:7.5/천궁:5/향부자:15/현호색:5/홍화:3.5"
+  },
+  {
+    "name": "형방사백산",
+    "alias": null,
+    "category": null,
+    "source": "사상방",
+    "composition": "건지황:10/복령:10/택사:10/석고:5/지모:5/강활:5/독활:5/형개:5/방풍:5"
+  },
+  {
+    "name": "형방지황탕",
+    "alias": null,
+    "category": null,
+    "source": "사상방",
+    "composition": "숙지황:10/산수유:10/복령:10/택사:10/차전자:5/강활:5/독활:5/형개:5/방풍:5"
+  },
+  {
+    "name": "형방패독산",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/천궁:5/복령:5/자감초:5/형개:5/방풍:5"
+  },
+  {
+    "name": "환탕포방기",
+    "alias": "환포",
+    "category": null,
+    "source": "고시방",
+    "composition": "대함흉탕+대함흉환+목방기탕+방기황기탕+방기복령탕+방기지황탕"
+  },
+  {
+    "name": "황금탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황금:6/작약:4/자감초:4/대추:6"
+  },
+  {
+    "name": "황기건중탕",
+    "alias": null,
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:6/대추:6/생강:6/교이:40/황기:3"
+  },
+  {
+    "name": "황기건중탕2",
+    "alias": "황기건중2",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "계지:6/작약:12/자감초:6/대추:6/생강:6/교이:20/황기:6"
+  },
+  {
+    "name": "황기계지오물탕",
+    "alias": "황계오물탕/황계오물",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "황기:6/계지:6/작약:6/생강:12/대추:6"
+  },
+  {
+    "name": "황기작약계지고주탕",
+    "alias": "기작계주",
+    "category": "계지제",
+    "source": "상한금궤",
+    "composition": "황기:10/작약:6/계지:6"
+  },
+  {
+    "name": "황련아교탕",
+    "alias": "황아",
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:8/황금:4/작약:4/아교주:3"
+  },
+  {
+    "name": "황련탕",
+    "alias": null,
+    "category": "금련제",
+    "source": "상한금궤",
+    "composition": "황련:6/건강:6/인삼:4/자감초:6/대추:6/반하:16/계지:6"
+  },
+  {
+    "name": "황련해독탕",
+    "alias": null,
+    "category": null,
+    "source": "후세방",
+    "composition": "황련:6/황금:6/황백:6/치자:6"
+  },
+  {
+    "name": "후박마황탕",
+    "alias": null,
+    "category": "마황제",
+    "source": "상한금궤",
+    "composition": "후박:10/마황:8/석고:20/행인:8/반하:16/건강:4/세신:4/부소맥:28/오미자:6"
+  },
+  {
+    "name": "후박삼물탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "후박:16/대황:8/지실:10"
+  },
+  {
+    "name": "후박칠물탕",
+    "alias": null,
+    "category": "대황제",
+    "source": "상한금궤",
+    "composition": "대황:6/후박:16/지실:10/자감초:6/대추:5/계지:4/생강:10"
+  },
+  {
+    "name": "후생반감인탕",
+    "alias": null,
+    "category": "반하제",
+    "source": "상한금궤",
+    "composition": "후박:16/생강:16/반하:16/자감초:4/인삼:2"
+  }
+]

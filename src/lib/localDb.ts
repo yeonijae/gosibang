@@ -1,6 +1,7 @@
 // @ts-ignore
 import initSqlJs, { Database } from 'sql.js';
 import { PRESCRIPTION_DEFINITIONS } from './prescriptionData';
+import { SURVEY_TEMPLATES } from './surveyData';
 
 let db: Database | null = null;
 const DB_KEY = 'gosibang_db';
@@ -30,6 +31,17 @@ export async function initLocalDb(): Promise<Database> {
 
 // 기존 DB 마이그레이션 (새 테이블 추가)
 function migrateDatabase(database: Database) {
+  // prescription_categories 테이블 생성 (없으면)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS prescription_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT DEFAULT '#3b82f6',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // herbs 테이블 생성 (없으면)
   database.run(`
     CREATE TABLE IF NOT EXISTS herbs (
@@ -189,12 +201,66 @@ function migrateDatabase(database: Database) {
     )
   `);
 
+  // survey_templates 테이블 생성 (설문 프리셋)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS survey_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      questions TEXT NOT NULL,
+      display_mode TEXT DEFAULT 'one_by_one',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // survey_templates에 display_mode 컬럼 추가 (기존 DB 마이그레이션)
+  try {
+    database.run("ALTER TABLE survey_templates ADD COLUMN display_mode TEXT DEFAULT 'one_by_one'");
+  } catch (e) { /* 이미 존재하면 무시 */ }
+
+  // survey_sessions 테이블 생성 (설문 링크/세션)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS survey_sessions (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      completed_at TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // survey_responses 테이블 생성 (설문 응답)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS survey_responses (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES survey_sessions(id) ON DELETE CASCADE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      answers TEXT NOT NULL,
+      submitted_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   saveDb();
 }
 
 // 테이블 생성
 function createTables(database: Database) {
   database.run(`
+    CREATE TABLE IF NOT EXISTS prescription_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT DEFAULT '#3b82f6',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS patients (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -315,6 +381,38 @@ function createTables(database: Database) {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS survey_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      questions TEXT NOT NULL,
+      display_mode TEXT DEFAULT 'one_by_one',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS survey_sessions (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      completed_at TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS survey_responses (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES survey_sessions(id) ON DELETE CASCADE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      answers TEXT NOT NULL,
+      submitted_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // 기본 약재 데이터 삽입
@@ -345,6 +443,12 @@ function insertSampleData(database: Database) {
   // 처방 템플릿 (prescriptionData.ts에서 로드)
   // insertPrescriptionDefinitions 함수 사용
   insertPrescriptionDefinitions(database);
+
+  // 설문지 템플릿 삽입
+  insertSurveyTemplates(database);
+
+  // 처방 카테고리 삽입
+  insertPrescriptionCategories(database);
 }
 
 // 처방 정의 삽입 (별도 함수)
@@ -354,6 +458,54 @@ function insertPrescriptionDefinitions(database: Database) {
       database.run(
         'INSERT OR IGNORE INTO prescription_definitions (name, alias, category, source, composition) VALUES (?, ?, ?, ?, ?)',
         [p.name, p.alias || null, p.category || null, p.source || null, p.composition]
+      );
+    } catch (e) { /* ignore */ }
+  });
+}
+
+// 설문지 템플릿 삽입 (별도 함수)
+function insertSurveyTemplates(database: Database) {
+  const now = new Date().toISOString();
+  SURVEY_TEMPLATES.forEach((template, idx) => {
+    try {
+      const id = `template_${idx + 1}_${Date.now()}`;
+      database.run(
+        'INSERT OR IGNORE INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, template.name, template.description || null, JSON.stringify(template.questions), template.display_mode || 'one_by_one', template.is_active ? 1 : 0, now, now]
+      );
+    } catch (e) { /* ignore */ }
+  });
+}
+
+// 처방 카테고리 삽입 (기본 카테고리)
+function insertPrescriptionCategories(database: Database) {
+  const defaultCategories = [
+    { name: "계지제", color: "#ef4444" },
+    { name: "마황제", color: "#f97316" },
+    { name: "시호제", color: "#eab308" },
+    { name: "금련제", color: "#22c55e" },
+    { name: "대황제", color: "#14b8a6" },
+    { name: "복령제", color: "#3b82f6" },
+    { name: "부자제", color: "#8b5cf6" },
+    { name: "감초제", color: "#ec4899" },
+    { name: "건강제", color: "#f43f5e" },
+    { name: "반하제", color: "#06b6d4" },
+    { name: "석고제", color: "#64748b" },
+    { name: "치자제", color: "#a855f7" },
+    { name: "함흉제", color: "#10b981" },
+    { name: "귤피제", color: "#f59e0b" },
+    { name: "방기제", color: "#6366f1" },
+    { name: "해백제", color: "#84cc16" },
+    { name: "도인제", color: "#d946ef" },
+    { name: "당귀제", color: "#0ea5e9" },
+    { name: "다이어트", color: "#f472b6" },
+  ];
+
+  defaultCategories.forEach((cat, idx) => {
+    try {
+      database.run(
+        'INSERT OR IGNORE INTO prescription_categories (name, color, sort_order) VALUES (?, ?, ?)',
+        [cat.name, cat.color, idx]
       );
     } catch (e) { /* ignore */ }
   });
@@ -415,9 +567,22 @@ export async function resetDb(): Promise<Database> {
 export function ensureSampleData(): void {
   if (!db) return;
 
-  const count = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescription_definitions');
-  if (!count || count.cnt === 0) {
-    insertSampleData(db);
-    saveDb();
+  const prescriptionCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescription_definitions');
+  if (!prescriptionCount || prescriptionCount.cnt === 0) {
+    insertPrescriptionDefinitions(db);
   }
+
+  // 설문지 템플릿도 확인
+  const surveyCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM survey_templates');
+  if (!surveyCount || surveyCount.cnt === 0) {
+    insertSurveyTemplates(db);
+  }
+
+  // 처방 카테고리도 확인
+  const categoryCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescription_categories');
+  if (!categoryCount || categoryCount.cnt === 0) {
+    insertPrescriptionCategories(db);
+  }
+
+  saveDb();
 }

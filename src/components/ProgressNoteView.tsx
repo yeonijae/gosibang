@@ -210,7 +210,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-semibold text-blue-600">S (Subjective) - 주관적 증상</label>
+                  <label className="block mb-1 text-sm font-semibold text-slate-600">S (Subjective) - 주관적 증상</label>
                   <textarea
                     value={formData.subjective || ''}
                     onChange={(e) => setFormData({ ...formData, subjective: e.target.value })}
@@ -220,7 +220,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-semibold text-green-600">O (Objective) - 객관적 소견</label>
+                  <label className="block mb-1 text-sm font-semibold text-slate-600">O (Objective) - 객관적 소견</label>
                   <textarea
                     value={formData.objective || ''}
                     onChange={(e) => setFormData({ ...formData, objective: e.target.value })}
@@ -230,7 +230,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-semibold text-red-600">A (Assessment) - 평가</label>
+                  <label className="block mb-1 text-sm font-semibold text-slate-600">A (Assessment) - 평가</label>
                   <textarea
                     value={formData.assessment || ''}
                     onChange={(e) => setFormData({ ...formData, assessment: e.target.value })}
@@ -240,7 +240,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-semibold text-purple-600">P (Plan) - 계획</label>
+                  <label className="block mb-1 text-sm font-semibold text-slate-600">P (Plan) - 계획</label>
                   <textarea
                     value={formData.plan || ''}
                     onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
@@ -327,7 +327,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleEdit(selectedNote)}
-                        className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 flex items-center gap-1"
+                        className="px-3 py-1 bg-slate-500 text-white text-sm rounded-lg hover:bg-slate-600 flex items-center gap-1"
                       >
                         <Edit className="w-3 h-3" />
                         수정
@@ -355,23 +355,23 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                     <hr />
 
                     <div>
-                      <h4 className="font-semibold text-blue-600 mb-2">S (Subjective) - 주관적 증상</h4>
-                      <p className="whitespace-pre-wrap bg-blue-50 p-3 rounded-lg">{selectedNote.subjective || '-'}</p>
+                      <h4 className="font-semibold text-slate-600 mb-2">S (Subjective) - 주관적 증상</h4>
+                      <p className="whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">{selectedNote.subjective || '-'}</p>
                     </div>
 
                     <div>
-                      <h4 className="font-semibold text-green-600 mb-2">O (Objective) - 객관적 소견</h4>
-                      <p className="whitespace-pre-wrap bg-green-50 p-3 rounded-lg">{selectedNote.objective || '-'}</p>
+                      <h4 className="font-semibold text-slate-600 mb-2">O (Objective) - 객관적 소견</h4>
+                      <p className="whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">{selectedNote.objective || '-'}</p>
                     </div>
 
                     <div>
-                      <h4 className="font-semibold text-red-600 mb-2">A (Assessment) - 평가</h4>
-                      <p className="whitespace-pre-wrap bg-red-50 p-3 rounded-lg">{selectedNote.assessment || '-'}</p>
+                      <h4 className="font-semibold text-slate-600 mb-2">A (Assessment) - 평가</h4>
+                      <p className="whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">{selectedNote.assessment || '-'}</p>
                     </div>
 
                     <div>
-                      <h4 className="font-semibold text-purple-600 mb-2">P (Plan) - 계획</h4>
-                      <p className="whitespace-pre-wrap bg-purple-50 p-3 rounded-lg">{selectedNote.plan || '-'}</p>
+                      <h4 className="font-semibold text-slate-600 mb-2">P (Plan) - 계획</h4>
+                      <p className="whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">{selectedNote.plan || '-'}</p>
                     </div>
 
                     {selectedNote.follow_up_plan && (

@@ -1,28 +1,28 @@
 @import "tailwindcss";
 
-/* 커스텀 색상 테마 */
+/* 커스텀 색상 테마 - 차분한 슬레이트 블루 */
 @theme {
-  --color-primary-50: #f0fdf4;
-  --color-primary-100: #dcfce7;
-  --color-primary-200: #bbf7d0;
-  --color-primary-300: #86efac;
-  --color-primary-400: #4ade80;
-  --color-primary-500: #22c55e;
-  --color-primary-600: #16a34a;
-  --color-primary-700: #15803d;
-  --color-primary-800: #166534;
-  --color-primary-900: #14532d;
+  --color-primary-50: #f8fafc;
+  --color-primary-100: #f1f5f9;
+  --color-primary-200: #e2e8f0;
+  --color-primary-300: #cbd5e1;
+  --color-primary-400: #94a3b8;
+  --color-primary-500: #64748b;
+  --color-primary-600: #475569;
+  --color-primary-700: #334155;
+  --color-primary-800: #1e293b;
+  --color-primary-900: #0f172a;
 
-  --color-herb-50: #fefce8;
-  --color-herb-100: #fef9c3;
-  --color-herb-200: #fef08a;
-  --color-herb-300: #fde047;
-  --color-herb-400: #facc15;
-  --color-herb-500: #eab308;
-  --color-herb-600: #ca8a04;
-  --color-herb-700: #a16207;
-  --color-herb-800: #854d0e;
-  --color-herb-900: #713f12;
+  --color-herb-50: #faf5f0;
+  --color-herb-100: #f5ebe0;
+  --color-herb-200: #e8dcc8;
+  --color-herb-300: #d4c4a8;
+  --color-herb-400: #bfab88;
+  --color-herb-500: #a69270;
+  --color-herb-600: #8c7a5e;
+  --color-herb-700: #73644d;
+  --color-herb-800: #5c503e;
+  --color-herb-900: #4a4133;
 }
 
 :root {

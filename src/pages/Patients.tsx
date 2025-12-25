@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2, MessageSquare, AlertCircle } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import InitialChartView from '../components/InitialChartView';
 import ProgressNoteView from '../components/ProgressNoteView';
+import { SurveySessionModal } from '../components/survey/SurveySessionModal';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { Patient, Prescription, InitialChart, ProgressNote } from '../types';
 
 export function Patients() {
@@ -19,14 +21,19 @@ export function Patients() {
     deletePatient,
   } = usePatientStore();
 
+  const { canAddPatient, refreshUsage, planInfo } = usePlanLimits();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [limitWarning, setLimitWarning] = useState<string | null>(null);
 
   // 처방 관리 모달
   const [prescriptionPatient, setPrescriptionPatient] = useState<Patient | null>(null);
   // 차트 관리 모달
   const [chartPatient, setChartPatient] = useState<Patient | null>(null);
+  // 설문 보내기 모달
+  const [surveyPatient, setSurveyPatient] = useState<Patient | null>(null);
 
   useEffect(() => {
     loadPatients();
@@ -38,6 +45,12 @@ export function Patients() {
   };
 
   const handleCreate = () => {
+    const limitCheck = canAddPatient();
+    if (!limitCheck.allowed) {
+      setLimitWarning(limitCheck.message || '환자 등록 한도에 도달했습니다.');
+      return;
+    }
+    setLimitWarning(null);
     setEditingPatient(null);
     setIsModalOpen(true);
   };
@@ -58,6 +71,7 @@ export function Patients() {
       await updatePatient(patient);
     } else {
       await createPatient(patient);
+      refreshUsage(); // 사용량 갱신
     }
     setIsModalOpen(false);
   };
@@ -73,6 +87,25 @@ export function Patients() {
         </button>
       </div>
 
+      {/* 플랜 제한 경고 */}
+      {limitWarning && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-amber-700">{limitWarning}</p>
+            <p className="text-sm text-amber-600 mt-1">
+              현재 플랜: <strong>{planInfo.name}</strong>
+            </p>
+          </div>
+          <button
+            onClick={() => setLimitWarning(null)}
+            className="text-amber-600 hover:text-amber-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* 검색 */}
       <form onSubmit={handleSearch} className="flex gap-2">
         <div className="relative flex-1">
@@ -82,7 +115,7 @@ export function Patients() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="환자 이름으로 검색..."
-            className="input-field pl-10"
+            className="input-field !pl-11"
           />
         </div>
         <button type="submit" className="btn-secondary">
@@ -149,11 +182,22 @@ export function Patients() {
                             e.stopPropagation();
                             setChartPatient(patient);
                           }}
-                          className="px-2 py-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-1"
+                          className="px-2 py-1 text-xs font-medium text-white bg-slate-600 hover:bg-slate-700 rounded flex items-center gap-1"
                           title="차트 관리"
                         >
                           <ClipboardList className="w-3 h-3" />
                           차트
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSurveyPatient(patient);
+                          }}
+                          className="px-2 py-1 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded flex items-center gap-1"
+                          title="설문 보내기"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          설문
                         </button>
                         <button
                           onClick={(e) => {
@@ -211,6 +255,14 @@ export function Patients() {
         <PatientChartModal
           patient={chartPatient}
           onClose={() => setChartPatient(null)}
+        />
+      )}
+
+      {/* 설문 보내기 모달 */}
+      {surveyPatient && (
+        <SurveySessionModal
+          patient={surveyPatient}
+          onClose={() => setSurveyPatient(null)}
         />
       )}
     </div>
@@ -599,7 +651,7 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handlePrint(rx)}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                            className="p-2 text-gray-400 hover:text-slate-600 hover:bg-slate-50 rounded"
                             title="인쇄"
                           >
                             <Printer className="w-4 h-4" />
@@ -771,7 +823,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-purple-700 text-white">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-slate-600 to-slate-700 text-white">
           <h2 className="text-lg font-semibold">
             {patient.name}님의 차트 관리
           </h2>
@@ -786,7 +838,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
             onClick={() => setActiveTab('initial')}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               activeTab === 'initial'
-                ? 'text-purple-600 border-b-2 border-purple-600'
+                ? 'text-slate-600 border-b-2 border-slate-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -796,7 +848,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
             onClick={() => setActiveTab('progress')}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               activeTab === 'progress'
-                ? 'text-purple-600 border-b-2 border-purple-600'
+                ? 'text-slate-600 border-b-2 border-slate-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -808,7 +860,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+              <Loader2 className="w-8 h-8 animate-spin text-slate-600" />
             </div>
           ) : activeTab === 'initial' ? (
             <div className="space-y-4">
@@ -816,7 +868,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
                 <p className="text-sm text-gray-600">총 {initialCharts.length}건</p>
                 <button
                   onClick={() => setCreatingInitialChart(true)}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
                   초진차트 작성
@@ -866,7 +918,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
                 <p className="text-sm text-gray-600">총 {progressNotes.length}건</p>
                 <button
                   onClick={() => setCreatingProgressNote(true)}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
                   경과기록 작성

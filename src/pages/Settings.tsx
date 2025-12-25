@@ -4,72 +4,38 @@ import { getDb, saveDb, queryToObjects, queryOne } from '../lib/localDb';
 import { PRESCRIPTION_DEFINITIONS } from '../lib/prescriptionData';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../lib/supabase';
 import type { ClinicSettings, Subscription } from '../types';
 
-// 구독 플랜 정의
-const PLANS = [
+// DB에서 불러온 플랜 정책을 UI용으로 변환하는 타입
+interface PlanDisplay {
+  id: string;
+  name: string;
+  price: number;
+  priceLabel: string;
+  period: string;
+  features: {
+    patients: number;
+    prescriptions: number;
+    charts: number;
+  };
+  featureList: { text: string; included: boolean }[];
+  recommended?: boolean;
+}
+
+// 기본 플랜 (DB 로드 실패 시 폴백)
+const DEFAULT_PLANS: PlanDisplay[] = [
   {
     id: 'free',
     name: '무료',
     price: 0,
     priceLabel: '₩0',
     period: '',
-    features: {
-      patients: 50,
-      prescriptions: 100,
-      backup: '수동 백업만',
-      support: '이메일',
-    },
+    features: { patients: 10, prescriptions: 20, charts: 20 },
     featureList: [
-      { text: '환자 50명까지', included: true },
-      { text: '처방전 100개까지', included: true },
+      { text: '환자 10명까지', included: true },
+      { text: '월 처방전 20개까지', included: true },
       { text: 'JSON 내보내기/가져오기', included: true },
-      { text: 'Google Drive 백업', included: false },
-      { text: '자동 백업', included: false },
-      { text: '우선 지원', included: false },
-    ],
-  },
-  {
-    id: 'basic',
-    name: '베이직',
-    price: 29000,
-    priceLabel: '₩29,000',
-    period: '/월',
-    features: {
-      patients: 500,
-      prescriptions: 2000,
-      backup: 'Google Drive',
-      support: '이메일 + 채팅',
-    },
-    featureList: [
-      { text: '환자 500명까지', included: true },
-      { text: '처방전 2,000개까지', included: true },
-      { text: 'JSON 내보내기/가져오기', included: true },
-      { text: 'Google Drive 백업', included: true },
-      { text: '자동 백업 (매일)', included: true },
-      { text: '우선 지원', included: false },
-    ],
-    recommended: true,
-  },
-  {
-    id: 'premium',
-    name: '프리미엄',
-    price: 59000,
-    priceLabel: '₩59,000',
-    period: '/월',
-    features: {
-      patients: -1, // unlimited
-      prescriptions: -1,
-      backup: 'Google Drive + 클라우드',
-      support: '전화 + 우선 지원',
-    },
-    featureList: [
-      { text: '환자 무제한', included: true },
-      { text: '처방전 무제한', included: true },
-      { text: 'JSON 내보내기/가져오기', included: true },
-      { text: 'Google Drive 백업', included: true },
-      { text: '자동 백업 (실시간)', included: true },
-      { text: '우선 지원 + 전화 상담', included: true },
     ],
   },
 ];
@@ -94,6 +60,10 @@ export function Settings() {
   const [activeTab, setActiveTab] = useState<'clinic' | 'subscription' | 'data' | 'backup'>('clinic');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // DB에서 불러온 플랜 정책
+  const [plans, setPlans] = useState<PlanDisplay[]>(DEFAULT_PLANS);
+  const [plansLoading, setPlansLoading] = useState(true);
+
   // 현재 구독 정보 (실제로는 Supabase에서 가져옴)
   const currentSubscription: Subscription = authState?.subscription || {
     user_id: authState?.user_email || '',
@@ -102,12 +72,64 @@ export function Settings() {
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   };
 
-  const currentPlan = PLANS.find(p => p.id === currentSubscription.plan) || PLANS[0];
+  const currentPlan = plans.find(p => p.id === currentSubscription.plan) || plans[0];
 
   useEffect(() => {
     loadSettings();
     loadUsageStats();
+    loadPlanPolicies();
   }, [loadSettings]);
+
+  // Supabase에서 플랜 정책 불러오기
+  const loadPlanPolicies = async () => {
+    setPlansLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('gosibang_plan_policies')
+        .select('*')
+        .eq('is_active', true)
+        .order('price_monthly');
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const transformedPlans: PlanDisplay[] = data.map(policy => {
+          const formatLimit = (value: number, unit: string) => {
+            if (value === -1) return `${unit} 무제한`;
+            return `${unit} ${value}${unit === '환자' ? '명' : '개'}까지`;
+          };
+
+          return {
+            id: policy.plan_type,
+            name: policy.display_name,
+            price: policy.price_monthly,
+            priceLabel: policy.price_monthly === 0 ? '₩0' : `₩${policy.price_monthly.toLocaleString()}`,
+            period: policy.price_monthly === 0 ? '' : '/월',
+            features: {
+              patients: policy.max_patients,
+              prescriptions: policy.max_prescriptions_per_month,
+              charts: policy.max_charts_per_month,
+            },
+            featureList: [
+              { text: formatLimit(policy.max_patients, '환자'), included: true },
+              { text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true },
+              { text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true },
+              { text: 'JSON 내보내기/가져오기', included: true },
+              { text: '설문 기능', included: policy.features?.survey || false },
+              { text: '데이터 백업', included: policy.features?.backup || false },
+            ],
+            recommended: policy.plan_type === 'basic',
+          };
+        });
+
+        setPlans(transformedPlans);
+      }
+    } catch (err) {
+      console.error('Failed to load plan policies:', err);
+      // 에러 시 기본값 유지
+    }
+    setPlansLoading(false);
+  };
 
   useEffect(() => {
     if (settings) {
@@ -287,7 +309,7 @@ export function Settings() {
 
   const handleUpgradePlan = (planId: string) => {
     // TODO: 실제 결제 연동
-    alert(`${PLANS.find(p => p.id === planId)?.name} 플랜 업그레이드 기능은 준비 중입니다.\n\n문의: support@gosibang.com`);
+    alert(`${plans.find(p => p.id === planId)?.name} 플랜 업그레이드 기능은 준비 중입니다.\n\n문의: support@gosibang.com`);
   };
 
   const handleResetPrescriptionDefinitions = async () => {
@@ -578,8 +600,13 @@ export function Settings() {
           {/* 플랜 비교 */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">플랜 비교</h2>
+            {plansLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {PLANS.map((plan) => (
+              {plans.map((plan) => (
                 <div
                   key={plan.id}
                   className={`relative rounded-xl border-2 p-6 transition-all ${
@@ -653,6 +680,7 @@ export function Settings() {
                 </div>
               ))}
             </div>
+            )}
           </div>
 
           {/* 문의 안내 */}

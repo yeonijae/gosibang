@@ -146,8 +146,28 @@ export interface ChartRecord {
   updated_at: string;
 }
 
+// 경과 엔트리 (UI용 - haniwon 스타일)
+export interface ProgressEntry {
+  id: string;
+  entry_date: string;
+  treatment: string;      // 경과/진료 (objective 컬럼)
+  diagnosis: string;      // 진단 (assessment 컬럼)
+  prescription: string;   // 처방 (plan 컬럼)
+  prescription_issued: boolean;
+  prescription_issued_at?: string;
+  created_at: string;
+}
+
 // 설문 질문 유형
-export type QuestionType = 'text' | 'single_choice' | 'multiple_choice' | 'scale' | 'yes_no';
+export type QuestionType = 'text' | 'single_choice' | 'multiple_choice' | 'scale';
+
+// 척도 설정
+export interface ScaleConfig {
+  min: number;
+  max: number;
+  minLabel?: string;
+  maxLabel?: string;
+}
 
 // 설문 질문
 export interface SurveyQuestion {
@@ -155,8 +175,13 @@ export interface SurveyQuestion {
   question_text: string;
   question_type: QuestionType;
   options?: string[];
+  scale_config?: ScaleConfig;
   required: boolean;
+  order: number;
 }
+
+// 설문 표시 모드
+export type SurveyDisplayMode = 'one_by_one' | 'single_page';
 
 // 설문 템플릿
 export interface SurveyTemplate {
@@ -164,17 +189,45 @@ export interface SurveyTemplate {
   name: string;
   description?: string;
   questions: SurveyQuestion[];
+  display_mode: SurveyDisplayMode;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// 설문 세션 (링크용)
+export interface SurveySession {
+  id: string;
+  token: string;
+  patient_id: string;
+  template_id: string;
+  status: 'pending' | 'completed' | 'expired';
+  expires_at: string;
+  completed_at?: string;
+  created_by?: string;
+  created_at: string;
+  // 조인 데이터
+  patient_name?: string;
+  template_name?: string;
+}
+
+// 설문 응답 답변
+export interface SurveyAnswer {
+  question_id: string;
+  answer: string | string[] | number;
 }
 
 // 설문 응답
 export interface SurveyResponse {
   id: string;
+  session_id: string;
   patient_id: string;
   template_id: string;
-  answers: { question_id: string; answer: string }[];
+  answers: SurveyAnswer[];
   submitted_at: string;
+  // 조인 데이터
+  patient_name?: string;
+  template_name?: string;
 }
 
 // 복약 상태

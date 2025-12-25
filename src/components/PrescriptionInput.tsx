@@ -109,29 +109,92 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
         'SELECT * FROM prescription_definitions ORDER BY name'
       );
 
-      const loadedTemplates: PrescriptionTemplate[] = data.map((item) => {
-        const normalizedHerbs: PrescriptionHerb[] = [];
+      // 이름/별칭으로 raw 데이터 맵 생성 (합방 해석용)
+      const rawDataMap = new Map<string, { id: number; name: string; alias: string; composition: string; description: string }>();
+      data.forEach(item => {
+        rawDataMap.set(item.name, item);
+        if (item.alias) {
+          rawDataMap.set(item.alias, item);
+        }
+      });
 
-        if (item.composition) {
-          const herbParts = item.composition.split('/').filter((s: string) => s.trim());
+      // 합방 해석 함수 (재귀, 배수 지원)
+      const resolveComposition = (
+        composition: string,
+        multiplier: number = 1.0,
+        visited: Set<string> = new Set()
+      ): PrescriptionHerb[] => {
+        if (!composition) return [];
+
+        // composition에 +가 있으면 합방 처리
+        if (composition.includes('+')) {
+          const parts = composition.split('+').map(s => s.trim()).filter(s => s);
+          const herbMap = new Map<string, number>();
+
+          parts.forEach(part => {
+            let name = part;
+            let partMultiplier = 1.0;
+
+            // 배수 처리 (예: 소시호*0.5)
+            const multiplierMatch = part.match(/^(.+)\*(\d*\.?\d+)$/);
+            if (multiplierMatch) {
+              name = multiplierMatch[1].trim();
+              partMultiplier = parseFloat(multiplierMatch[2]) || 1.0;
+            }
+
+            // 순환 참조 방지
+            if (visited.has(name)) return;
+            visited.add(name);
+
+            // 해당 처방 찾기 (이름 또는 별칭)
+            const foundItem = rawDataMap.get(name);
+            if (foundItem && foundItem.composition) {
+              const herbs = resolveComposition(
+                foundItem.composition,
+                multiplier * partMultiplier,
+                new Set(visited)
+              );
+              herbs.forEach(herb => {
+                const existing = herbMap.get(herb.herb_name) || 0;
+                // 동일 약재는 높은 용량 사용
+                herbMap.set(herb.herb_name, Math.max(existing, herb.dosage));
+              });
+            }
+          });
+
+          return Array.from(herbMap.entries()).map(([name, dosage], index) => ({
+            herb_id: index + 1,
+            herb_name: name,
+            dosage,
+            unit: 'g'
+          }));
+        } else {
+          // 일반 약재 구성 (약재:용량/약재:용량)
+          const herbs: PrescriptionHerb[] = [];
+          const herbParts = composition.split('/').filter((s: string) => s.trim());
           herbParts.forEach((part: string, index: number) => {
             const [herbName, dosageStr] = part.split(':');
             if (herbName && dosageStr) {
-              normalizedHerbs.push({
+              herbs.push({
                 herb_id: index + 1,
                 herb_name: herbName.trim(),
-                dosage: parseFloat(dosageStr) || 0,
+                dosage: (parseFloat(dosageStr) || 0) * multiplier,
                 unit: 'g'
               });
             }
           });
+          return herbs;
         }
+      };
 
+      // 템플릿 생성 (합방 자동 해석)
+      const loadedTemplates: PrescriptionTemplate[] = data.map((item) => {
+        const herbs = resolveComposition(item.composition || '');
         return {
           id: item.id,
           name: item.name,
           alias: item.alias || '',
-          herbs: normalizedHerbs,
+          herbs,
           description: item.description || ''
         };
       });

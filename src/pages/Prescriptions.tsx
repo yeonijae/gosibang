@@ -1,19 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2 } from 'lucide-react';
+import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X } from 'lucide-react';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { Prescription } from '../types';
 
 type ViewMode = 'list' | 'new' | 'edit';
 type PrintLayoutType = 'landscape' | 'portrait1' | 'portrait2';
 
 export function Prescriptions() {
+  const { canAddPrescription, refreshUsage, planInfo } = usePlanLimits();
+
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPrescription, setEditingPrescription] = useState<Prescription | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [printLayoutModal, setPrintLayoutModal] = useState<Prescription | null>(null);
+  const [limitWarning, setLimitWarning] = useState<string | null>(null);
 
   useEffect(() => {
     loadPrescriptions();
@@ -87,10 +91,21 @@ export function Prescriptions() {
       alert('처방전이 저장되었습니다.');
       setViewMode('list');
       loadPrescriptions();
+      refreshUsage(); // 사용량 갱신
     } catch (error) {
       console.error('처방 저장 실패:', error);
       alert('처방 저장에 실패했습니다.');
     }
+  };
+
+  const handleCreatePrescription = () => {
+    const limitCheck = canAddPrescription();
+    if (!limitCheck.allowed) {
+      setLimitWarning(limitCheck.message || '처방전 한도에 도달했습니다.');
+      return;
+    }
+    setLimitWarning(null);
+    setViewMode('new');
   };
 
   const handleSaveEdit = async (data: PrescriptionData) => {
@@ -375,7 +390,7 @@ export function Prescriptions() {
           <h1 className="text-2xl font-bold text-gray-900">처방전 관리</h1>
           {viewMode === 'list' ? (
             <button
-              onClick={() => setViewMode('new')}
+              onClick={handleCreatePrescription}
               className="btn-primary flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -391,6 +406,25 @@ export function Prescriptions() {
             </button>
           )}
         </div>
+
+        {/* 플랜 제한 경고 */}
+        {limitWarning && (
+          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3 flex-shrink-0">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-amber-700">{limitWarning}</p>
+              <p className="text-sm text-amber-600 mt-1">
+                현재 플랜: <strong>{planInfo.name}</strong>
+              </p>
+            </div>
+            <button
+              onClick={() => setLimitWarning(null)}
+              className="text-amber-600 hover:text-amber-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* 컨텐츠 */}
         <div className="flex-1 overflow-hidden">
@@ -408,7 +442,7 @@ export function Prescriptions() {
                   <div className="text-center">
                     <p className="text-lg mb-4">발급된 처방전이 없습니다</p>
                     <button
-                      onClick={() => setViewMode('new')}
+                      onClick={handleCreatePrescription}
                       className="btn-primary"
                     >
                       첫 처방 작성하기
@@ -456,14 +490,14 @@ export function Prescriptions() {
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => startEdit(prescription)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
                                 title="수정"
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => setPrintLayoutModal(prescription)}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
                                 title="인쇄"
                               >
                                 <Printer className="w-4 h-4" />

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Edit, Loader2 } from 'lucide-react';
+import { X, Save, Edit, Loader2, AlertCircle } from 'lucide-react';
 import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { InitialChart } from '../types';
 
 interface Props {
@@ -22,10 +23,13 @@ interface ChartSection {
 }
 
 export function InitialChartView({ patientId, patientName, onClose, forceNew = false }: Props) {
+  const { canAddChart, refreshUsage, planInfo } = usePlanLimits();
+
   const [chart, setChart] = useState<InitialChart | null>(null);
   const [isEditing, setIsEditing] = useState(forceNew);
   const [loading, setLoading] = useState(!forceNew);
   const [formData, setFormData] = useState<Partial<InitialChart>>({});
+  const [limitWarning, setLimitWarning] = useState<string | null>(null);
 
   const extractDateFromText = (text: string): string | null => {
     if (!text) return null;
@@ -177,6 +181,13 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
       const now = new Date().toISOString();
 
       if (forceNew || !chart) {
+        // 새 차트 생성 시 제한 확인
+        const limitCheck = canAddChart();
+        if (!limitCheck.allowed) {
+          setLimitWarning(limitCheck.message || '차트 한도에 도달했습니다.');
+          return;
+        }
+
         const id = generateUUID();
         db.run(
           `INSERT INTO initial_charts (id, patient_id, chart_date, notes, created_at, updated_at)
@@ -184,6 +195,7 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
           [id, patientId, formData.chart_date, formData.notes.trim(), now, now]
         );
         saveDb();
+        refreshUsage(); // 사용량 갱신
 
         alert('새 진료차트가 생성되었습니다');
         onClose();
@@ -246,6 +258,25 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
         </div>
 
         <div className="p-4">
+          {/* 플랜 제한 경고 */}
+          {limitWarning && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-amber-700">{limitWarning}</p>
+                <p className="text-sm text-amber-600 mt-1">
+                  현재 플랜: <strong>{planInfo.name}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setLimitWarning(null)}
+                className="text-amber-600 hover:text-amber-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {isEditing ? (
             <div className="space-y-4">
               <div>
@@ -260,7 +291,7 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
                     className="input-field w-auto"
                     required
                   />
-                  <span className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded border border-blue-200">
+                  <span className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded border border-slate-200">
                     차트 내용에서 날짜를 자동으로 추출합니다 (예: 25/11/15)
                   </span>
                 </div>
@@ -268,13 +299,13 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
 
               <div>
                 <label className="block font-semibold mb-2 text-lg text-gray-900">초진차트 내용</label>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                  <p className="text-sm text-blue-800 mb-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-slate-800 mb-2">
                     <strong>작성 방법:</strong>
                   </p>
-                  <ul className="text-xs text-blue-700 space-y-1 ml-5 list-disc">
-                    <li>대분류(큰 섹션): <code className="bg-blue-100 px-1 rounded">[제목]</code> 형식</li>
-                    <li>중분류(세부 항목): <code className="bg-blue-100 px-1 rounded">&gt; 제목</code> 형식</li>
+                  <ul className="text-xs text-slate-700 space-y-1 ml-5 list-disc">
+                    <li>대분류(큰 섹션): <code className="bg-slate-100 px-1 rounded">[제목]</code> 형식</li>
+                    <li>중분류(세부 항목): <code className="bg-slate-100 px-1 rounded">&gt; 제목</code> 형식</li>
                     <li>예: [주소증], [문진], [복진], [처방] / &gt; 식사패턴, &gt; 소화, &gt; 커피 등</li>
                   </ul>
                 </div>

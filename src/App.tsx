@@ -11,6 +11,10 @@ import { PrescriptionDefinitions } from './pages/PrescriptionDefinitions';
 import { Charts } from './pages/Charts';
 import { Medications } from './pages/Medications';
 import { Settings } from './pages/Settings';
+import { SurveyTemplates } from './pages/SurveyTemplates';
+import { SurveyResponses } from './pages/SurveyResponses';
+import { PatientSurvey } from './pages/PatientSurvey';
+import { SubscriptionAdmin } from './pages/SubscriptionAdmin';
 
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
@@ -92,6 +96,9 @@ function App() {
           }
         />
 
+        {/* 환자용 설문 페이지 (공개) */}
+        <Route path="/survey/:token" element={<PatientSurvey />} />
+
         {/* 인증된 사용자만 접근 가능한 페이지들 */}
         <Route
           element={
@@ -107,7 +114,10 @@ function App() {
           <Route path="/prescriptions" element={<Prescriptions />} />
           <Route path="/prescription-definitions" element={<PrescriptionDefinitions />} />
           <Route path="/charts" element={<Charts />} />
+          <Route path="/survey-templates" element={<SurveyTemplates />} />
+          <Route path="/survey-responses" element={<SurveyResponses />} />
           <Route path="/medications" element={<Medications />} />
+          <Route path="/admin/subscriptions" element={<SubscriptionAdmin />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
 

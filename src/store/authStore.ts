@@ -9,6 +9,7 @@ interface AuthStore {
 
   // Actions
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearError: () => void;
@@ -34,6 +35,32 @@ export const useAuthStore = create<AuthStore>((set) => ({
         user_email: data.user?.email,
       };
       set({ authState, isLoading: false });
+    } catch (error) {
+      set({ error: String(error), isLoading: false });
+      throw error;
+    }
+  },
+
+  signup: async (email: string, password: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // 회원가입 성공 시 바로 로그인 상태로 설정
+      if (data.user) {
+        const authState: AuthState = {
+          is_authenticated: true,
+          user_email: data.user.email,
+        };
+        set({ authState, isLoading: false });
+      } else {
+        set({ isLoading: false });
+      }
     } catch (error) {
       set({ error: String(error), isLoading: false });
       throw error;
