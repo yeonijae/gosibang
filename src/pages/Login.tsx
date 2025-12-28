@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Clock, CheckCircle } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
 export function Login() {
@@ -10,10 +10,18 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [isSignup, setIsSignup] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  // 회원가입 추가 필드
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [lectureId, setLectureId] = useState('');
+  // 승인 대기 상태 표시
+  const [showPendingMessage, setShowPendingMessage] = useState(false);
+  const [pendingType, setPendingType] = useState<'signup' | 'login'>('signup');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
+    setShowPendingMessage(false);
 
     if (isSignup && password !== confirmPassword) {
       alert('비밀번호가 일치하지 않습니다.');
@@ -22,21 +30,38 @@ export function Login() {
 
     try {
       if (isSignup) {
-        await signup(email, password);
+        await signup(email, password, { name, phone, lectureId });
       } else {
         await login(email, password);
       }
       navigate('/');
-    } catch {
-      // Error is handled by the store
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
+      if (errorMessage === 'SIGNUP_SUCCESS_PENDING_APPROVAL') {
+        // 회원가입 성공, 승인 대기
+        setPendingType('signup');
+        setShowPendingMessage(true);
+        clearError();
+      } else if (errorMessage === 'PENDING_APPROVAL') {
+        // 로그인 시도했으나 승인 대기 상태
+        setPendingType('login');
+        setShowPendingMessage(true);
+        clearError();
+      }
+      // 그 외 에러는 store에서 처리
     }
   };
 
   const toggleMode = () => {
     setIsSignup(!isSignup);
     clearError();
+    setShowPendingMessage(false);
     setPassword('');
     setConfirmPassword('');
+    setName('');
+    setPhone('');
+    setLectureId('');
   };
 
   return (
@@ -52,8 +77,31 @@ export function Login() {
             </p>
           </div>
 
+          {/* 승인 대기 안내 메시지 */}
+          {showPendingMessage && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                {pendingType === 'signup' ? (
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-medium text-gray-900">
+                    {pendingType === 'signup' ? '회원가입이 완료되었습니다!' : '승인 대기 중입니다'}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {pendingType === 'signup'
+                      ? '관리자 승인 후 로그인이 가능합니다. 승인까지 다소 시간이 걸릴 수 있습니다.'
+                      : '아직 관리자 승인이 완료되지 않았습니다. 승인 완료 후 다시 로그인해 주세요.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 에러 메시지 */}
-          {error && (
+          {error && !showPendingMessage && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
             </div>
@@ -76,6 +124,58 @@ export function Login() {
                 disabled={isLoading}
               />
             </div>
+
+            {isSignup && (
+              <>
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                    이름
+                  </label>
+                  <input
+                    id="name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="input-field"
+                    placeholder="홍길동"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                    연락처
+                  </label>
+                  <input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="input-field"
+                    placeholder="010-1234-5678"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="lectureId" className="block text-sm font-medium text-gray-700 mb-1">
+                    강의 아이디
+                  </label>
+                  <input
+                    id="lectureId"
+                    type="text"
+                    value={lectureId}
+                    onChange={(e) => setLectureId(e.target.value)}
+                    className="input-field"
+                    placeholder="수강 중인 강의 아이디 입력"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

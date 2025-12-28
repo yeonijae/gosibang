@@ -4,18 +4,33 @@ import { PRESCRIPTION_DEFINITIONS } from './prescriptionData';
 import { SURVEY_TEMPLATES } from './surveyData';
 
 let db: Database | null = null;
-const DB_KEY = 'gosibang_db';
+let currentDbKey: string = 'gosibang_db'; // 사용자별 키
+
+// DB 키 생성 (사용자별 분리)
+function getDbKey(userId?: string): string {
+  return userId ? `gosibang_db_${userId}` : 'gosibang_db';
+}
 
 // SQL.js 초기화 및 DB 로드
-export async function initLocalDb(): Promise<Database> {
+export async function initLocalDb(userId?: string): Promise<Database> {
+  const newDbKey = getDbKey(userId);
+
+  // 다른 사용자로 전환된 경우 DB 리셋
+  if (db && currentDbKey !== newDbKey) {
+    db.close();
+    db = null;
+  }
+
+  currentDbKey = newDbKey;
+
   if (db) return db;
 
   const SQL = await initSqlJs({
     locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
   });
 
-  // localStorage에서 기존 DB 로드
-  const savedDb = localStorage.getItem(DB_KEY);
+  // localStorage에서 기존 DB 로드 (사용자별)
+  const savedDb = localStorage.getItem(currentDbKey);
   if (savedDb) {
     const data = Uint8Array.from(atob(savedDb), (c) => c.charCodeAt(0));
     db = new SQL.Database(data);
@@ -247,6 +262,30 @@ function migrateDatabase(database: Database) {
     )
   `);
 
+  // medication_management 테이블 생성 (복약관리)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS medication_management (
+      id TEXT PRIMARY KEY,
+      prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      patient_name TEXT,
+      prescription_name TEXT,
+      prescription_date TEXT NOT NULL,
+      days INTEGER NOT NULL DEFAULT 15,
+      delivery_days INTEGER NOT NULL DEFAULT 3,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      happy_call_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      postponed_to TEXT,
+      postpone_count INTEGER DEFAULT 0,
+      notes TEXT,
+      contacted_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   saveDb();
 }
 
@@ -413,6 +452,27 @@ function createTables(database: Database) {
       answers TEXT NOT NULL,
       submitted_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS medication_management (
+      id TEXT PRIMARY KEY,
+      prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      patient_name TEXT,
+      prescription_name TEXT,
+      prescription_date TEXT NOT NULL,
+      days INTEGER NOT NULL DEFAULT 15,
+      delivery_days INTEGER NOT NULL DEFAULT 3,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      happy_call_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      postponed_to TEXT,
+      postpone_count INTEGER DEFAULT 0,
+      notes TEXT,
+      contacted_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // 기본 약재 데이터 삽입
@@ -523,7 +583,7 @@ export function saveDb() {
     binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
   }
   const base64 = btoa(binary);
-  localStorage.setItem(DB_KEY, base64);
+  localStorage.setItem(currentDbKey, base64);
 }
 
 // DB 인스턴스 가져오기
@@ -557,10 +617,10 @@ export function queryOne<T>(db: Database, sql: string, params: unknown[] = []): 
 }
 
 // DB 리셋 (새 스키마와 샘플 데이터로)
-export async function resetDb(): Promise<Database> {
-  localStorage.removeItem(DB_KEY);
+export async function resetDb(userId?: string): Promise<Database> {
+  localStorage.removeItem(currentDbKey);
   db = null;
-  return initLocalDb();
+  return initLocalDb(userId);
 }
 
 // DB에 처방 템플릿이 있는지 확인하고 없으면 추가

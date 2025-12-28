@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock } from 'lucide-react';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
+import { useFeatureStore } from '../store/featureStore';
 
 interface PrescriptionDefinition {
   id: number;
@@ -33,6 +34,10 @@ export function PrescriptionDefinitions() {
   const [editingDef, setEditingDef] = useState<PrescriptionDefinition | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
+  // 처방정의 수정 권한 체크
+  const { hasAccess, planName } = useFeatureStore();
+  const canEdit = hasAccess('prescription_definitions_edit');
 
   useEffect(() => {
     loadDefinitions();
@@ -198,16 +203,23 @@ export function PrescriptionDefinitions() {
           <h1 className="text-2xl font-bold text-gray-900">처방 정의</h1>
           <p className="text-sm text-gray-500 mt-1">등록된 처방 템플릿 {definitions.length}개</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingDef({ id: 0, name: '', composition: '' });
-            setIsModalOpen(true);
-          }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          처방 추가
-        </button>
+        {canEdit ? (
+          <button
+            onClick={() => {
+              setEditingDef({ id: 0, name: '', composition: '' });
+              setIsModalOpen(true);
+            }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            처방 추가
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Lock className="w-4 h-4" />
+            <span>{planName} 플랜은 처방 추가/수정 불가</span>
+          </div>
+        )}
       </div>
 
       {/* 검색 */}
@@ -340,7 +352,7 @@ export function PrescriptionDefinitions() {
         <div className="col-span-6 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-700">처방 상세</h3>
-            {selectedDef && (
+            {selectedDef && canEdit && (
               <div className="flex gap-1">
                 <button
                   onClick={() => {

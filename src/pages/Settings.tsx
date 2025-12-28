@@ -1,11 +1,36 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, Cloud, HardDrive, RefreshCw } from 'lucide-react';
-import { getDb, saveDb, queryToObjects, queryOne } from '../lib/localDb';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, RefreshCw, FolderOpen, RotateCcw, Trash2, Monitor, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { getDb, saveDb, queryOne } from '../lib/localDb';
 import { PRESCRIPTION_DEFINITIONS } from '../lib/prescriptionData';
+import { FEMALE_HEALTH_SURVEY } from '../lib/surveyData';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
-import type { ClinicSettings, Subscription } from '../types';
+import {
+  loadBackupSettings,
+  saveBackupSettings,
+  loadBackupHistory,
+  selectFolderAndBackup,
+  downloadBackup,
+  restoreFromBackup,
+  isFileSystemAccessSupported,
+  formatFileSize,
+  formatRelativeTime,
+  needsBackupCleanup,
+  getCleanupInfo,
+  cleanupBackupFolder,
+  cleanupBackupHistory,
+} from '../lib/backup';
+import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/backup';
+import type { ClinicSettings, Subscription, FeatureKey } from '../types';
+import {
+  loadMenuOrder,
+  saveMenuOrder,
+  resetMenuOrder,
+  MENU_ITEMS,
+  moveMenuUp,
+  moveMenuDown,
+} from '../lib/menuConfig';
 
 // DB에서 불러온 플랜 정책을 UI용으로 변환하는 타입
 interface PlanDisplay {
@@ -35,7 +60,16 @@ const DEFAULT_PLANS: PlanDisplay[] = [
     featureList: [
       { text: '환자 10명까지', included: true },
       { text: '월 처방전 20개까지', included: true },
-      { text: 'JSON 내보내기/가져오기', included: true },
+      { text: '월 차트 20개까지', included: true },
+      { text: '대시보드', included: true },
+      { text: '환자관리', included: true },
+      { text: '처방관리', included: true },
+      { text: '처방정의', included: true },
+      { text: '차팅관리', included: true },
+      { text: '설문관리', included: false },
+      { text: '설문응답', included: false },
+      { text: '복약관리', included: false },
+      { text: '데이터 백업', included: false },
     ],
   },
 ];
@@ -52,13 +86,23 @@ export function Settings() {
   const { authState } = useAuthStore();
   const [formData, setFormData] = useState<Partial<ClinicSettings>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [isResettingPrescriptions, setIsResettingPrescriptions] = useState(false);
+  const [isResettingSurveys, setIsResettingSurveys] = useState(false);
+  const [isResettingUserData, setIsResettingUserData] = useState(false);
+  const [isCleaningBackup, setIsCleaningBackup] = useState(false);
+  const [showCleanupPrompt, setShowCleanupPrompt] = useState(false);
+  const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'clinic' | 'subscription' | 'data' | 'backup'>('clinic');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'clinic' | 'subscription' | 'data' | 'backup' | 'display'>('clinic');
+  const [menuOrder, setMenuOrder] = useState<FeatureKey[]>([]);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 백업 관련 상태
+  const [backupSettings, setBackupSettings] = useState<BackupSettings>(loadBackupSettings);
+  const [backupHistory, setBackupHistory] = useState<BackupHistoryItem[]>(loadBackupHistory);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   // DB에서 불러온 플랜 정책
   const [plans, setPlans] = useState<PlanDisplay[]>(DEFAULT_PLANS);
@@ -78,6 +122,7 @@ export function Settings() {
     loadSettings();
     loadUsageStats();
     loadPlanPolicies();
+    setMenuOrder(loadMenuOrder());
   }, [loadSettings]);
 
   // Supabase에서 플랜 정책 불러오기
@@ -99,6 +144,24 @@ export function Settings() {
             return `${unit} ${value}${unit === '환자' ? '명' : '개'}까지`;
           };
 
+          const features = policy.features || {};
+
+          // 기능 목록 생성 (메뉴 기능 포함)
+          const featureList = [
+            { text: formatLimit(policy.max_patients, '환자'), included: true },
+            { text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true },
+            { text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true },
+            { text: '대시보드', included: features.dashboard !== false },
+            { text: '환자관리', included: features.patients !== false },
+            { text: '처방관리', included: features.prescriptions !== false },
+            { text: '처방정의', included: features.prescription_definitions !== false },
+            { text: '차팅관리', included: features.charts !== false },
+            { text: '설문관리', included: features.survey_templates === true },
+            { text: '설문응답', included: features.survey_responses === true },
+            { text: '복약관리', included: features.medication === true },
+            { text: '데이터 백업', included: features.backup === true },
+          ];
+
           return {
             id: policy.plan_type,
             name: policy.display_name,
@@ -110,14 +173,7 @@ export function Settings() {
               prescriptions: policy.max_prescriptions_per_month,
               charts: policy.max_charts_per_month,
             },
-            featureList: [
-              { text: formatLimit(policy.max_patients, '환자'), included: true },
-              { text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true },
-              { text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true },
-              { text: 'JSON 내보내기/가져오기', included: true },
-              { text: '설문 기능', included: policy.features?.survey || false },
-              { text: '데이터 백업', included: policy.features?.backup || false },
-            ],
+            featureList,
             recommended: policy.plan_type === 'basic',
           };
         });
@@ -136,6 +192,17 @@ export function Settings() {
       setFormData(settings);
     }
   }, [settings]);
+
+  // 백업 탭 열릴 때 정리 필요 여부 체크
+  useEffect(() => {
+    if (activeTab === 'backup') {
+      if (needsBackupCleanup()) {
+        const info = getCleanupInfo();
+        setCleanupInfo(info);
+        setShowCleanupPrompt(true);
+      }
+    }
+  }, [activeTab]);
 
   const loadUsageStats = () => {
     try {
@@ -184,132 +251,30 @@ export function Settings() {
     setIsSaving(false);
   };
 
-  const handleExportAll = async () => {
-    setIsExporting(true);
-    try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      // 로컬 DB에서 데이터 가져오기
-      const patients = queryToObjects(db, 'SELECT * FROM patients');
-      const prescriptions = queryToObjects(db, 'SELECT * FROM prescriptions');
-      const chartRecords = queryToObjects(db, 'SELECT * FROM chart_records');
-      const clinicSettings = queryToObjects(db, 'SELECT * FROM clinic_settings');
-
-      const exportData = {
-        exported_at: new Date().toISOString(),
-        patients,
-        prescriptions,
-        chart_records: chartRecords,
-        clinic_settings: clinicSettings,
-      };
-
-      // 파일 다운로드 (Blob 사용)
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gosibang-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      setMessage({ type: 'success', text: '데이터가 내보내기되었습니다.' });
-    } catch (error) {
-      setMessage({ type: 'error', text: '내보내기에 실패했습니다.' });
-    }
-    setIsExporting(false);
-  };
-
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    try {
-      const text = await file.text();
-      const importData = JSON.parse(text);
-
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      // 환자 데이터 가져오기
-      if (importData.patients && Array.isArray(importData.patients)) {
-        for (const patient of importData.patients) {
-          try {
-            db.run(
-              `INSERT OR REPLACE INTO patients (id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [patient.id, patient.name, patient.chart_number, patient.birth_date, patient.gender,
-               patient.phone, patient.address, patient.notes, patient.created_at, patient.updated_at]
-            );
-          } catch (e) { /* skip duplicates */ }
-        }
-      }
-
-      // 처방 데이터 가져오기
-      if (importData.prescriptions && Array.isArray(importData.prescriptions)) {
-        for (const rx of importData.prescriptions) {
-          try {
-            db.run(
-              `INSERT OR REPLACE INTO prescriptions (id, patient_id, patient_name, chart_number, formula, merged_herbs, final_herbs,
-               total_doses, days, doses_per_day, total_packs, pack_volume, water_amount, total_dosage, final_total_amount,
-               notes, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [rx.id, rx.patient_id, rx.patient_name, rx.chart_number, rx.formula,
-               typeof rx.merged_herbs === 'string' ? rx.merged_herbs : JSON.stringify(rx.merged_herbs || []),
-               typeof rx.final_herbs === 'string' ? rx.final_herbs : JSON.stringify(rx.final_herbs || []),
-               rx.total_doses, rx.days, rx.doses_per_day, rx.total_packs, rx.pack_volume, rx.water_amount,
-               rx.total_dosage, rx.final_total_amount, rx.notes, rx.status, rx.created_at, rx.updated_at]
-            );
-          } catch (e) { /* skip duplicates */ }
-        }
-      }
-
-      // 초진차트 가져오기
-      if (importData.initial_charts && Array.isArray(importData.initial_charts)) {
-        for (const chart of importData.initial_charts) {
-          try {
-            db.run(
-              `INSERT OR REPLACE INTO initial_charts (id, patient_id, doctor_name, chart_date, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [chart.id, chart.patient_id, chart.doctor_name, chart.chart_date, chart.notes, chart.created_at, chart.updated_at]
-            );
-          } catch (e) { /* skip */ }
-        }
-      }
-
-      // 경과기록 가져오기
-      if (importData.progress_notes && Array.isArray(importData.progress_notes)) {
-        for (const note of importData.progress_notes) {
-          try {
-            db.run(
-              `INSERT OR REPLACE INTO progress_notes (id, patient_id, doctor_name, note_date, subjective, objective, assessment, plan, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [note.id, note.patient_id, note.doctor_name, note.note_date, note.subjective, note.objective,
-               note.assessment, note.plan, note.notes, note.created_at, note.updated_at]
-            );
-          } catch (e) { /* skip */ }
-        }
-      }
-
-      saveDb();
-      loadUsageStats();
-      setMessage({ type: 'success', text: '데이터를 성공적으로 가져왔습니다.' });
-    } catch (error) {
-      console.error('Import error:', error);
-      setMessage({ type: 'error', text: '데이터 가져오기에 실패했습니다. 파일 형식을 확인해주세요.' });
-    }
-    setIsImporting(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
   const handleUpgradePlan = (planId: string) => {
     // TODO: 실제 결제 연동
     alert(`${plans.find(p => p.id === planId)?.name} 플랜 업그레이드 기능은 준비 중입니다.\n\n문의: support@gosibang.com`);
+  };
+
+  // 메뉴 순서 변경 핸들러
+  const handleMoveMenuUp = (key: FeatureKey) => {
+    const newOrder = moveMenuUp(menuOrder, key);
+    setMenuOrder(newOrder);
+    saveMenuOrder(newOrder);
+  };
+
+  const handleMoveMenuDown = (key: FeatureKey) => {
+    const newOrder = moveMenuDown(menuOrder, key);
+    setMenuOrder(newOrder);
+    saveMenuOrder(newOrder);
+  };
+
+  const handleResetMenuOrder = () => {
+    if (confirm('메뉴 순서를 기본값으로 초기화하시겠습니까?')) {
+      const defaultOrder = resetMenuOrder();
+      setMenuOrder(defaultOrder);
+      setMessage({ type: 'success', text: '메뉴 순서가 초기화되었습니다.' });
+    }
   };
 
   const handleResetPrescriptionDefinitions = async () => {
@@ -343,6 +308,245 @@ export function Settings() {
       setMessage({ type: 'error', text: '처방 정의 초기화에 실패했습니다.' });
     }
     setIsResettingPrescriptions(false);
+  };
+
+  const handleResetSurveyTemplates = async () => {
+    if (!confirm('기본 설문지 템플릿(여성 종합 건강 설문지)을 복원하시겠습니까?\n\n기존 템플릿은 유지되고, 기본 템플릿이 추가됩니다.')) {
+      return;
+    }
+
+    setIsResettingSurveys(true);
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      // 기존 여성 종합 건강 설문지가 있는지 확인
+      const existing = queryOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM survey_templates WHERE name = ?", [FEMALE_HEALTH_SURVEY.name]);
+
+      if (existing && existing.cnt > 0) {
+        // 기존 템플릿 업데이트
+        db.run(
+          `UPDATE survey_templates SET description = ?, questions = ?, display_mode = ?, is_active = ?, updated_at = datetime('now') WHERE name = ?`,
+          [
+            FEMALE_HEALTH_SURVEY.description || null,
+            JSON.stringify(FEMALE_HEALTH_SURVEY.questions),
+            FEMALE_HEALTH_SURVEY.display_mode || 'one_by_one',
+            FEMALE_HEALTH_SURVEY.is_active ? 1 : 0,
+            FEMALE_HEALTH_SURVEY.name
+          ]
+        );
+        setMessage({ type: 'success', text: '여성 종합 건강 설문지가 업데이트되었습니다.' });
+      } else {
+        // 새 템플릿 삽입
+        const id = `template_female_${Date.now()}`;
+        db.run(
+          `INSERT INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [
+            id,
+            FEMALE_HEALTH_SURVEY.name,
+            FEMALE_HEALTH_SURVEY.description || null,
+            JSON.stringify(FEMALE_HEALTH_SURVEY.questions),
+            FEMALE_HEALTH_SURVEY.display_mode || 'one_by_one',
+            FEMALE_HEALTH_SURVEY.is_active ? 1 : 0
+          ]
+        );
+        setMessage({ type: 'success', text: '여성 종합 건강 설문지가 추가되었습니다.' });
+      }
+
+      saveDb();
+    } catch (error) {
+      console.error('설문지 템플릿 복원 실패:', error);
+      setMessage({ type: 'error', text: '설문지 템플릿 복원에 실패했습니다.' });
+    }
+    setIsResettingSurveys(false);
+  };
+
+  const handleResetUserData = async () => {
+    // 백업 여부 확인
+    if (!backupSettings.lastBackupAt) {
+      const shouldBackup = confirm(
+        '⚠️ 백업 기록이 없습니다!\n\n' +
+        '백업 생성하러 이동하시겠습니까?'
+      );
+      if (shouldBackup) {
+        setActiveTab('backup');
+        return;
+      }
+
+      // 백업 없이 진행할 건지 한번 더 확인
+      const continueWithoutBackup = confirm(
+        '정말 백업 없이 진행하시겠습니까?\n\n' +
+        '삭제된 데이터는 복구할 수 없습니다.'
+      );
+      if (!continueWithoutBackup) return;
+    }
+
+    // 최종 확인
+    const confirmDelete = confirm(
+      '⚠️ 경고: 이 작업은 되돌릴 수 없습니다!\n\n' +
+      '다음 데이터가 모두 삭제됩니다:\n' +
+      `• 환자 ${usageStats.patients}명\n` +
+      `• 처방전 ${usageStats.prescriptions}개\n` +
+      `• 초진차트 ${usageStats.initialCharts}개\n` +
+      `• 경과기록 ${usageStats.progressNotes}개\n\n` +
+      '정말 삭제하시겠습니까?'
+    );
+
+    if (!confirmDelete) return;
+
+    // 2차 확인
+    const finalConfirm = prompt(
+      '최종 확인: 삭제를 진행하려면 "삭제"를 입력하세요.'
+    );
+
+    if (finalConfirm !== '삭제') {
+      setMessage({ type: 'error', text: '초기화가 취소되었습니다.' });
+      return;
+    }
+
+    setIsResettingUserData(true);
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      // 환자, 처방, 차트 데이터 삭제
+      db.run('DELETE FROM progress_notes');
+      db.run('DELETE FROM initial_charts');
+      db.run('DELETE FROM prescriptions');
+      db.run('DELETE FROM chart_records');
+      db.run('DELETE FROM patients');
+
+      saveDb();
+      loadUsageStats();
+      setMessage({ type: 'success', text: '환자/처방/차트 데이터가 모두 삭제되었습니다.' });
+    } catch (error) {
+      console.error('데이터 초기화 실패:', error);
+      setMessage({ type: 'error', text: '데이터 초기화에 실패했습니다.' });
+    }
+    setIsResettingUserData(false);
+  };
+
+  // 백업 파일 정리 (폴더 기반)
+  const handleCleanupBackup = async () => {
+    setIsCleaningBackup(true);
+    try {
+      if (isFileSystemAccessSupported()) {
+        // 폴더 선택 후 실제 파일 삭제
+        const result = await cleanupBackupFolder();
+        if (result.success) {
+          setMessage({
+            type: 'success',
+            text: `백업 정리 완료: ${result.deletedCount}개 삭제, ${result.keptCount}개 유지`,
+          });
+          setBackupHistory(loadBackupHistory());
+        } else if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        }
+      } else {
+        // 히스토리만 정리
+        const result = cleanupBackupHistory();
+        if (result.success) {
+          setMessage({
+            type: 'success',
+            text: `백업 기록 정리 완료: ${result.deletedCount}개 삭제, ${result.keptCount}개 유지\n(다운로드 폴더의 파일은 직접 삭제해주세요)`,
+          });
+          setBackupHistory(loadBackupHistory());
+        }
+      }
+    } catch (e) {
+      console.error('Cleanup error:', e);
+      setMessage({ type: 'error', text: '정리 중 오류가 발생했습니다.' });
+    } finally {
+      setIsCleaningBackup(false);
+      setShowCleanupPrompt(false);
+    }
+  };
+
+  // 자동 정리 팝업에서 승인
+  const handleCleanupConfirm = async () => {
+    await handleCleanupBackup();
+  };
+
+  // 자동 정리 팝업 닫기
+  const handleCleanupDismiss = () => {
+    setShowCleanupPrompt(false);
+  };
+
+  // 백업 설정 업데이트
+  const updateBackupSettings = (updates: Partial<BackupSettings>) => {
+    const newSettings = { ...backupSettings, ...updates };
+    setBackupSettings(newSettings);
+    saveBackupSettings(newSettings);
+  };
+
+  // 폴더 선택 백업 (File System Access API)
+  const handleFolderBackup = async () => {
+    setIsBackingUp(true);
+    setMessage(null);
+
+    const result = await selectFolderAndBackup();
+
+    if (result.success) {
+      setMessage({ type: 'success', text: `백업 완료: ${result.filename}` });
+      setBackupSettings(loadBackupSettings());
+      setBackupHistory(loadBackupHistory());
+    } else {
+      if (result.error !== '폴더 선택이 취소되었습니다.') {
+        setMessage({ type: 'error', text: result.error || '백업 실패' });
+      }
+    }
+
+    setIsBackingUp(false);
+  };
+
+  // 다운로드 백업
+  const handleDownloadBackup = () => {
+    setIsBackingUp(true);
+    setMessage(null);
+
+    const result = downloadBackup();
+
+    if (result.success) {
+      setMessage({ type: 'success', text: `백업 파일 다운로드 완료: ${result.filename}` });
+      setBackupSettings(loadBackupSettings());
+      setBackupHistory(loadBackupHistory());
+    } else {
+      setMessage({ type: 'error', text: result.error || '백업 실패' });
+    }
+
+    setIsBackingUp(false);
+  };
+
+  // 백업에서 복원
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm('현재 데이터를 백업 파일로 복원하시겠습니까?\n\n기존 데이터는 덮어쓰기됩니다.\n복원 후 페이지가 새로고침됩니다.')) {
+      if (backupFileInputRef.current) {
+        backupFileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setIsRestoring(true);
+    setMessage(null);
+
+    const result = await restoreFromBackup(file);
+
+    if (result.success) {
+      setMessage({ type: 'success', text: '복원 완료. 페이지를 새로고침합니다...' });
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } else {
+      setMessage({ type: 'error', text: result.error || '복원 실패' });
+      setIsRestoring(false);
+    }
+
+    if (backupFileInputRef.current) {
+      backupFileInputRef.current.value = '';
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -427,8 +631,19 @@ export function Settings() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Cloud className="w-4 h-4" />
+            <HardDrive className="w-4 h-4" />
             백업
+          </button>
+          <button
+            onClick={() => setActiveTab('display')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+              activeTab === 'display'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Monitor className="w-4 h-4" />
+            화면설정
           </button>
         </nav>
       </div>
@@ -697,76 +912,19 @@ export function Settings() {
         <div className="card max-w-2xl">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">데이터 관리</h2>
           <p className="text-sm text-gray-600 mb-6">
-            모든 환자 데이터와 처방 기록을 JSON 파일로 내보내거나 가져올 수 있습니다.
-            <br />
-            <span className="text-primary-600 font-medium">데이터는 이 브라우저에 로컬로 저장됩니다.</span>
+            기본 데이터를 복원하거나 초기화할 수 있습니다.
           </p>
 
           <div className="space-y-4">
-            {/* 내보내기 */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Download className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">데이터 내보내기</p>
-                  <p className="text-sm text-gray-500">모든 데이터를 JSON 파일로 다운로드</p>
-                </div>
-              </div>
-              <button
-                onClick={handleExportAll}
-                disabled={isExporting}
-                className="btn-secondary flex items-center gap-2"
-              >
-                {isExporting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-                내보내기
-              </button>
-            </div>
-
-            {/* 가져오기 */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Upload className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">데이터 가져오기</p>
-                  <p className="text-sm text-gray-500">JSON 백업 파일에서 데이터 복원</p>
-                </div>
-              </div>
-              <label className="btn-secondary flex items-center gap-2 cursor-pointer">
-                {isImporting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Upload className="w-4 h-4" />
-                )}
-                가져오기
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleImport}
-                  className="hidden"
-                  disabled={isImporting}
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* 처방 정의 초기화 */}
+            {/* 기본 처방 복원 */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
                   <RefreshCw className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">처방 정의 초기화</p>
-                  <p className="text-sm text-gray-500">모든 처방 정의 삭제</p>
+                  <p className="font-medium text-gray-900">기본 처방 복원</p>
+                  <p className="text-sm text-gray-500">기본 처방 정의 데이터로 복원</p>
                 </div>
               </div>
               <button
@@ -779,15 +937,76 @@ export function Settings() {
                 ) : (
                   <RefreshCw className="w-4 h-4" />
                 )}
+                복원
+              </button>
+            </div>
+
+            {/* 설문지 템플릿 복원 */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <ClipboardList className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">설문지 템플릿 복원</p>
+                  <p className="text-sm text-gray-500">여성 종합 건강 설문지 복원</p>
+                </div>
+              </div>
+              <button
+                onClick={handleResetSurveyTemplates}
+                disabled={isResettingSurveys}
+                className="btn-secondary flex items-center gap-2"
+              >
+                {isResettingSurveys ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                복원
+              </button>
+            </div>
+          </div>
+
+          {/* 위험 영역 구분선 */}
+          <div className="mt-8 pt-6 border-t border-red-200">
+            <h3 className="text-sm font-medium text-red-600 mb-4 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" />
+              위험 영역
+            </h3>
+
+            {/* 환자/처방/차트 초기화 */}
+            <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">환자/처방/차트 초기화</p>
+                  <p className="text-sm text-red-600">
+                    환자 {usageStats.patients}명, 처방 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개 삭제
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleResetUserData}
+                disabled={isResettingUserData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {isResettingUserData ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
                 초기화
               </button>
             </div>
+          </div>
 
           {/* 주의사항 */}
           <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-sm text-yellow-800">
               <strong>주의:</strong> 브라우저 데이터 삭제 시 로컬 데이터가 손실될 수 있습니다.
-              정기적으로 데이터를 내보내기하여 백업하세요.
+              정기적으로 백업 탭에서 백업하세요.
             </p>
           </div>
         </div>
@@ -796,74 +1015,325 @@ export function Settings() {
       {/* 백업 탭 */}
       {activeTab === 'backup' && (
         <div className="space-y-6 max-w-2xl">
-          {/* Google Drive 백업 */}
+          {/* 백업 정리 권유 팝업 */}
+          {showCleanupPrompt && cleanupInfo && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Trash2 className="w-4 h-4 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium text-amber-900">
+                    백업 파일이 {cleanupInfo.totalCount}개 있습니다
+                  </h3>
+                  <p className="text-sm text-amber-800 mt-1">
+                    백업 파일을 자동으로 정리할까요?<br />
+                    <span className="text-xs">
+                      (하루 중 가장 늦게 생성된 1개만 남기고, 최근 5일분만 유지)
+                    </span>
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleCleanupConfirm}
+                      disabled={isCleaningBackup}
+                      className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {isCleaningBackup ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Check className="w-3 h-3" />
+                      )}
+                      정리하기
+                    </button>
+                    <button
+                      onClick={handleCleanupDismiss}
+                      className="px-3 py-1.5 bg-white text-amber-700 text-sm rounded-lg border border-amber-300 hover:bg-amber-50"
+                    >
+                      나중에
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 로컬 백업 */}
           <div className="card">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-green-500 rounded-lg flex items-center justify-center">
-                <Cloud className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+                <HardDrive className="w-5 h-5 text-primary-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Google Drive 백업</h2>
-                <p className="text-sm text-gray-500">자동으로 Google Drive에 백업</p>
+                <h2 className="text-lg font-semibold text-gray-900">로컬 백업</h2>
+                <p className="text-sm text-gray-500">데이터베이스를 로컬에 백업</p>
               </div>
             </div>
 
-            {currentSubscription.plan === 'free' ? (
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <p className="text-gray-600 mb-3">Google Drive 백업은 베이직 플랜부터 사용 가능합니다.</p>
-                <button
-                  onClick={() => setActiveTab('subscription')}
-                  className="text-primary-600 font-medium hover:underline"
-                >
-                  플랜 업그레이드 →
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-3">
+              {/* 백업 폴더 설정 (File System Access API 지원 시) */}
+              {isFileSystemAccessSupported() && (
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Google 계정 연결</p>
-                    <p className="text-sm text-gray-500">백업을 저장할 Google 계정을 연결하세요</p>
+                    <p className="font-medium text-gray-900">백업 폴더 설정</p>
+                    <p className="text-sm text-gray-500">
+                      {backupSettings.backupFolderName || '폴더가 설정되지 않음'}
+                    </p>
                   </div>
                   <button
-                    onClick={() => alert('Google Drive 연동 기능은 준비 중입니다.')}
-                    className="btn-primary"
+                    onClick={handleFolderBackup}
+                    disabled={isBackingUp}
+                    className="btn-secondary flex items-center gap-2"
                   >
-                    연결하기
+                    <FolderOpen className="w-4 h-4" />
+                    폴더 선택
                   </button>
                 </div>
+              )}
 
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg opacity-50">
+              {/* 지금 백업 파일 생성 */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">지금 백업 파일 생성</p>
+                  <p className="text-sm text-gray-500">
+                    {backupSettings.lastBackupAt
+                      ? `마지막 백업: ${formatRelativeTime(backupSettings.lastBackupAt)}`
+                      : '백업 기록 없음'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleDownloadBackup}
+                  disabled={isBackingUp}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {isBackingUp ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  백업
+                </button>
+              </div>
+
+              {/* 자동 백업 옵션 */}
+              <div className="p-3 bg-gray-50 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-gray-900">자동 백업</p>
-                    <p className="text-sm text-gray-500">Google 계정 연결 후 사용 가능</p>
+                    <p className="text-sm text-gray-500">앱 시작 시 자동으로 백업</p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-not-allowed">
-                    <input type="checkbox" disabled className="sr-only peer" />
-                    <div className="w-11 h-6 bg-gray-200 rounded-full peer"></div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={backupSettings.autoBackupEnabled}
+                      onChange={(e) => updateBackupSettings({ autoBackupEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                   </label>
                 </div>
+                {backupSettings.autoBackupEnabled && (
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                    <span className="text-sm text-gray-600">백업 주기</span>
+                    <select
+                      value={backupSettings.autoBackupInterval}
+                      onChange={(e) => updateBackupSettings({ autoBackupInterval: e.target.value as 'daily' | 'weekly' | 'manual' })}
+                      className="input-field w-28 text-sm"
+                    >
+                      <option value="daily">매일</option>
+                      <option value="weekly">매주</option>
+                    </select>
+                  </div>
+                )}
               </div>
+            </div>
+          </div>
+
+          {/* 복원 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                <RotateCcw className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">복원</h2>
+                <p className="text-sm text-gray-500">백업 파일에서 데이터 복원</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <p className="font-medium text-gray-900">백업 파일에서 복원</p>
+                <p className="text-sm text-gray-500">.db 파일을 선택하여 복원</p>
+              </div>
+              <label className="btn-secondary flex items-center gap-2 cursor-pointer">
+                {isRestoring ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                파일 선택
+                <input
+                  ref={backupFileInputRef}
+                  type="file"
+                  accept=".db"
+                  onChange={handleRestoreBackup}
+                  className="hidden"
+                  disabled={isRestoring}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* 백업 파일 정리 */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">백업 파일 정리</h2>
+                <p className="text-sm text-gray-500">
+                  하루 중 마지막 백업만 남기고 최근 5일분 유지
+                </p>
+              </div>
+              <button
+                onClick={handleCleanupBackup}
+                disabled={isCleaningBackup || backupHistory.length === 0}
+                className="btn-secondary flex items-center gap-2"
+              >
+                {isCleaningBackup ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                정리하기
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              백업 파일이 10개 이상이면 자동으로 정리 팝업이 나타납니다.
+            </p>
+          </div>
+
+          {/* 백업 기록 */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                백업 기록 {backupHistory.length > 0 && <span className="text-sm text-gray-500 font-normal">({backupHistory.length}개)</span>}
+              </h2>
+            </div>
+            {backupHistory.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {backupHistory.slice(0, 10).map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.filename}</p>
+                        <p className="text-xs text-gray-500">
+                          {formatRelativeTime(item.createdAt)} · {formatFileSize(item.size)}
+                          {item.type === 'auto' && (
+                            <span className="ml-1 px-1 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">자동</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-4">백업 기록이 없습니다</p>
             )}
           </div>
 
-          {/* 로컬 저장소 정보 */}
+          {/* 클라우드 동기화 팁 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-medium text-blue-900 mb-2">클라우드 동기화 팁</h3>
+            <p className="text-sm text-blue-800 mb-2">
+              백업 폴더를 클라우드 동기화 폴더로 설정하면 자동으로 클라우드에 백업됩니다.
+            </p>
+            <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
+              <li>Google Drive: 데스크톱 앱 → 동기화 폴더 선택</li>
+              <li>OneDrive: 문서 폴더 사용</li>
+              <li>Dropbox: Dropbox 폴더 내 백업 폴더 생성</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* 화면설정 탭 */}
+      {activeTab === 'display' && (
+        <div className="space-y-6 max-w-2xl">
+          {/* 메뉴 순서 설정 */}
           <div className="card">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                <HardDrive className="w-5 h-5 text-gray-600" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <GripVertical className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">메뉴 순서</h2>
+                  <p className="text-sm text-gray-500">왼쪽 사이드바 메뉴의 순서를 변경합니다</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">로컬 저장소</h2>
-                <p className="text-sm text-gray-500">브라우저 로컬 스토리지에 저장됨</p>
+              <button
+                onClick={handleResetMenuOrder}
+                className="btn-secondary text-sm flex items-center gap-1"
+              >
+                <RotateCcw className="w-4 h-4" />
+                초기화
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {/* 순서 변경 가능한 메뉴 */}
+              {menuOrder.map((key, index) => {
+                const menuItem = MENU_ITEMS.find(item => item.key === key);
+                if (!menuItem) return null;
+
+                return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <GripVertical className="w-5 h-5 text-gray-400" />
+                      <span className="font-medium text-gray-700">{menuItem.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleMoveMenuUp(key)}
+                        disabled={index === 0}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="위로 이동"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveMenuDown(key)}
+                        disabled={index === menuOrder.length - 1}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="아래로 이동"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* 설정 (고정) */}
+              <div className="flex items-center justify-between p-3 bg-gray-100 rounded-lg opacity-60 mt-4 border-t border-gray-200 pt-4">
+                <div className="flex items-center gap-3">
+                  <GripVertical className="w-5 h-5 text-gray-400" />
+                  <span className="font-medium text-gray-700">설정</span>
+                </div>
+                <span className="text-xs text-gray-500 px-2 py-1 bg-gray-200 rounded">고정</span>
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
-                현재 데이터는 브라우저의 localStorage에 저장됩니다.
-                브라우저 데이터를 삭제하면 데이터가 손실될 수 있으므로,
-                정기적으로 <button onClick={() => setActiveTab('data')} className="font-medium underline">데이터 내보내기</button>를 통해 백업하세요.
+                변경 사항은 자동으로 저장되며, 페이지를 새로고침하면 적용됩니다.
               </p>
             </div>
           </div>

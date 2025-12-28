@@ -18,6 +18,7 @@ import { SubscriptionAdmin } from './pages/SubscriptionAdmin';
 
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
+import { useFeatureStore } from './store/featureStore';
 import { initLocalDb, ensureSampleData } from './lib/localDb';
 
 function App() {
@@ -25,18 +26,24 @@ function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const { authState, checkAuth } = useAuthStore();
   const { loadSettings } = useClinicStore();
+  const { loadFeatures } = useFeatureStore();
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // 로컬 DB 초기화
-        await initLocalDb();
+        // 인증 상태 확인 (Supabase) - 먼저 사용자 확인
+        const authResult = await checkAuth();
+
+        // 로컬 DB 초기화 (사용자별 분리)
+        const userId = authResult?.user?.id;
+        await initLocalDb(userId);
 
         // 기본 처방 템플릿 확인 및 삽입
         ensureSampleData();
 
-        // 인증 상태 확인 (Supabase)
-        await checkAuth();
+        // 기능 권한 로드 (플랜에 따라)
+        const planType = authResult?.subscription?.plan || 'free';
+        await loadFeatures(planType);
 
         // 설정 로드 (로컬 DB)
         await loadSettings();
@@ -49,7 +56,7 @@ function App() {
     };
 
     initializeApp();
-  }, [checkAuth, loadSettings]);
+  }, [checkAuth, loadSettings, loadFeatures]);
 
   // 초기화 중
   if (isInitializing) {
@@ -116,7 +123,7 @@ function App() {
           <Route path="/charts" element={<Charts />} />
           <Route path="/survey-templates" element={<SurveyTemplates />} />
           <Route path="/survey-responses" element={<SurveyResponses />} />
-          <Route path="/medications" element={<Medications />} />
+          <Route path="/medication" element={<Medications />} />
           <Route path="/admin/subscriptions" element={<SubscriptionAdmin />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

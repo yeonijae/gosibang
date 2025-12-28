@@ -614,16 +614,17 @@ export function Charts() {
       // prescriptions 테이블에 저장
       db.run(
         `INSERT INTO prescriptions (
-          id, patient_id, patient_name, chart_number,
+          id, patient_id, patient_name, prescription_name, chart_number,
           source_type, source_id, formula,
           merged_herbs, final_herbs, total_doses, days, doses_per_day,
           total_packs, pack_volume, water_amount, herb_adjustment, total_dosage,
           final_total_amount, notes, status, issued_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           prescriptionId,
           selectedPatient?.id || null,
           selectedPatient?.name || null,
+          data.formula, // prescription_name
           selectedPatient?.chart_number || null,
           prescriptionSourceType,
           prescriptionSourceId,
@@ -636,10 +637,10 @@ export function Charts() {
           data.totalPacks,
           data.packVolume,
           data.waterAmount,
-          data.herbAdjustment,
+          data.herbAdjustment || null,
           data.totalDosage,
           data.finalTotalAmount,
-          data.notes,
+          data.notes || null,
           'issued',
           now,
           now,
@@ -866,31 +867,29 @@ export function Charts() {
   // ===== 렌더링 =====
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">차팅 관리</h1>
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">차팅 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">초진차트 {chartRecords.length}건</p>
+        </div>
         <p className="text-sm text-gray-500">초진차트를 클릭하여 상세보기</p>
       </div>
 
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Calendar className="w-5 h-5" />
-          초진차트 목록
-        </h2>
-
+      <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         {listLoading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
             <span className="ml-3 text-gray-500">로딩 중...</span>
           </div>
         ) : chartRecords.length === 0 ? (
-          <div className="text-center py-12">
-            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <FileText className="w-12 h-12 text-gray-300 mb-4" />
             <p className="text-gray-500">등록된 초진차트가 없습니다</p>
             <p className="text-sm text-gray-400 mt-2">환자 관리에서 환자를 선택 후 차팅을 시작하세요</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="flex-1 overflow-auto p-4 space-y-2">
             {chartRecords.map((record) => (
               <div
                 key={record.id}

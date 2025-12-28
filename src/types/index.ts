@@ -69,6 +69,7 @@ export interface Prescription {
   id: string;
   patient_id?: string;
   patient_name?: string;
+  prescription_name?: string;
   chart_number?: string;
   patient_age?: number;
   patient_gender?: string;
@@ -257,10 +258,109 @@ export interface Subscription {
   expires_at: string;
 }
 
+// 사용자 정보
+export interface UserInfo {
+  id: string;
+  email?: string;
+}
+
 // 인증 상태
 export interface AuthState {
   is_authenticated: boolean;
+  user?: UserInfo;
   user_email?: string;
   subscription?: Subscription;
   last_verified?: string;
+}
+
+// ===== 기능 권한 타입 =====
+
+// 기능 키 (메뉴와 매핑)
+export type FeatureKey =
+  | 'dashboard'
+  | 'patients'
+  | 'prescriptions'
+  | 'prescription_definitions'
+  | 'prescription_definitions_edit'
+  | 'charts'
+  | 'survey_templates'
+  | 'survey_responses'
+  | 'medication';
+
+// 플랜별 기능 권한
+export interface PlanFeatures {
+  dashboard: boolean;
+  patients: boolean;
+  prescriptions: boolean;
+  prescription_definitions: boolean;
+  prescription_definitions_edit: boolean;  // 처방정의 추가/삭제 권한
+  charts: boolean;
+  survey_templates: boolean;
+  survey_responses: boolean;
+  medication: boolean;
+  backup?: boolean;
+  export?: boolean;
+  multiUser?: boolean;
+}
+
+// 메뉴 아이템 메타 정보
+export interface MenuItemMeta {
+  key: FeatureKey;
+  label: string;
+  icon: string;
+  path: string;
+}
+
+// ===== 복약관리 타입 =====
+
+// 복약관리 상태
+export type MedicationManagementStatus = 'pending' | 'contacted' | 'completed' | 'postponed';
+
+// 복약관리
+export interface MedicationManagement {
+  id: string;
+  prescription_id: string;
+  patient_id: string;
+  patient_name: string;
+  prescription_name: string;
+
+  // 처방 정보
+  prescription_date: string;
+  days: number;
+
+  // 복약관리 설정
+  delivery_days: number;
+  start_date: string;
+  end_date: string;
+  happy_call_date: string;
+
+  // 상태
+  status: MedicationManagementStatus;
+  postponed_to?: string;
+  postpone_count: number;
+
+  // 기록
+  notes?: string;
+  contacted_at?: string;
+
+  created_at: string;
+  updated_at: string;
+}
+
+// ===== 공지사항 타입 =====
+
+// 공지사항 타입
+export type AnnouncementType = 'info' | 'warning' | 'update' | 'maintenance';
+
+// 공지사항
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: AnnouncementType;
+  is_pinned: boolean;
+  is_active: boolean;
+  starts_at: string;
+  ends_at?: string;
+  created_at: string;
 }

@@ -30,13 +30,16 @@ export function SurveyResponses() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">설문 응답 관리</h1>
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">설문 응답 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">응답 {filteredResponses.length}건</p>
+        </div>
       </div>
 
       {/* 필터 */}
-      <div className="flex gap-4">
+      <div className="flex gap-4 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -62,31 +65,31 @@ export function SurveyResponses() {
       </div>
 
       {/* 응답 목록 */}
-      <div className="card">
+      <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">로딩 중...</div>
+          <div className="flex-1 flex items-center justify-center text-gray-500">로딩 중...</div>
         ) : filteredResponses.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div className="flex-1 overflow-auto">
             <table className="w-full">
-              <thead>
+              <thead className="bg-gray-50 sticky top-0">
                 <tr className="border-b text-left">
-                  <th className="pb-3 font-medium text-gray-600">환자명</th>
-                  <th className="pb-3 font-medium text-gray-600">설문명</th>
-                  <th className="pb-3 font-medium text-gray-600">제출일시</th>
-                  <th className="pb-3 font-medium text-gray-600">답변 수</th>
-                  <th className="pb-3 font-medium text-gray-600"></th>
+                  <th className="px-4 py-3 font-medium text-gray-600">환자명</th>
+                  <th className="px-4 py-3 font-medium text-gray-600">설문명</th>
+                  <th className="px-4 py-3 font-medium text-gray-600">제출일시</th>
+                  <th className="px-4 py-3 font-medium text-gray-600">답변 수</th>
+                  <th className="px-4 py-3 font-medium text-gray-600"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredResponses.map((response) => (
                   <tr key={response.id} className="hover:bg-gray-50">
-                    <td className="py-3">{response.patient_name || '-'}</td>
-                    <td className="py-3">{response.template_name || '-'}</td>
-                    <td className="py-3">
+                    <td className="px-4 py-3">{response.patient_name || '-'}</td>
+                    <td className="px-4 py-3">{response.template_name || '-'}</td>
+                    <td className="px-4 py-3">
                       {new Date(response.submitted_at).toLocaleString()}
                     </td>
-                    <td className="py-3">{response.answers.length}개</td>
-                    <td className="py-3">
+                    <td className="px-4 py-3">{response.answers.length}개</td>
+                    <td className="px-4 py-3">
                       <button
                         onClick={() => handleViewResponse(response)}
                         className="text-primary-600 hover:text-primary-800 flex items-center gap-1"
@@ -101,7 +104,7 @@ export function SurveyResponses() {
             </table>
           </div>
         ) : (
-          <div className="text-center py-12 text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-gray-500">
             <p>제출된 설문 응답이 없습니다.</p>
           </div>
         )}

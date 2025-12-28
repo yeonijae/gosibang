@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { AuthState } from '../types';
 
+// 회원가입 추가 정보
+interface SignupMetadata {
+  name: string;
+  phone: string;
+  lectureId: string;
+}
+
 interface AuthStore {
   authState: AuthState | null;
   isLoading: boolean;
@@ -9,9 +16,9 @@ interface AuthStore {
 
   // Actions
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, metadata: SignupMetadata) => Promise<void>;
   logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  checkAuth: () => Promise<AuthState | null>;
   clearError: () => void;
 }
 
@@ -30,39 +37,67 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
       if (error) throw error;
 
+      // 승인 상태 확인
+      const { data: profile } = await supabase
+        .from('gosibang_user_profiles')
+        .select('is_approved')
+        .eq('id', data.user?.id)
+        .single();
+
+      if (!profile?.is_approved) {
+        // 승인되지 않은 경우 로그아웃 처리
+        await supabase.auth.signOut();
+        throw new Error('PENDING_APPROVAL');
+      }
+
       const authState: AuthState = {
         is_authenticated: true,
+        user: {
+          id: data.user!.id,
+          email: data.user?.email,
+        },
         user_email: data.user?.email,
       };
       set({ authState, isLoading: false });
+
+      // 로그인 성공 후 페이지 새로고침 (사용자별 DB 로드)
+      window.location.reload();
     } catch (error) {
-      set({ error: String(error), isLoading: false });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      set({ error: errorMessage, isLoading: false });
       throw error;
     }
   },
 
-  signup: async (email: string, password: string) => {
+  signup: async (email: string, password: string, metadata: SignupMetadata) => {
     set({ isLoading: true, error: null });
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            name: metadata.name,
+            phone: metadata.phone,
+            lecture_id: metadata.lectureId,
+          },
+        },
       });
 
       if (error) throw error;
 
-      // 회원가입 성공 시 바로 로그인 상태로 설정
+      // 회원가입 성공 시 바로 로그아웃 (승인 대기 상태)
       if (data.user) {
-        const authState: AuthState = {
-          is_authenticated: true,
-          user_email: data.user.email,
-        };
-        set({ authState, isLoading: false });
+        await supabase.auth.signOut();
+        set({ isLoading: false });
+        // 승인 대기 상태를 알리기 위해 특별한 에러 throw
+        throw new Error('SIGNUP_SUCCESS_PENDING_APPROVAL');
       } else {
         set({ isLoading: false });
       }
     } catch (error) {
-      set({ error: String(error), isLoading: false });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      set({ error: errorMessage, isLoading: false });
       throw error;
     }
   },
@@ -71,6 +106,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       await supabase.auth.signOut();
       set({ authState: null });
+      // 로그아웃 후 페이지 새로고침 (DB 초기화)
+      window.location.reload();
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -82,16 +119,51 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
+        // 구독 정보 조회
+        let subscription = undefined;
+        try {
+          const { data: subData } = await supabase
+            .from('gosibang_subscriptions')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .eq('status', 'active')
+            .single();
+
+          if (subData) {
+            subscription = {
+              user_id: subData.user_id,
+              plan: subData.plan_type || 'free',
+              status: subData.status,
+              expires_at: subData.expires_at,
+            };
+          }
+        } catch {
+          // 구독 정보 없으면 기본값 사용
+        }
+
         const authState: AuthState = {
           is_authenticated: true,
+          user: {
+            id: session.user.id,
+            email: session.user.email,
+          },
           user_email: session.user.email,
+          subscription: subscription || {
+            user_id: session.user.id,
+            plan: 'free',
+            status: 'active',
+            expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          },
         };
         set({ authState, isLoading: false });
+        return authState;
       } else {
         set({ authState: null, isLoading: false });
+        return null;
       }
     } catch (error) {
       set({ authState: null, isLoading: false });
+      return null;
     }
   },
 

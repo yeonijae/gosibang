@@ -77,10 +77,13 @@ export function Patients() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">환자 관리</h1>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">환자 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">등록된 환자 {patients.length}명</p>
+        </div>
         <button onClick={handleCreate} className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           환자 등록
@@ -89,7 +92,7 @@ export function Patients() {
 
       {/* 플랜 제한 경고 */}
       {limitWarning && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-amber-700">{limitWarning}</p>
@@ -107,7 +110,7 @@ export function Patients() {
       )}
 
       {/* 검색 */}
-      <form onSubmit={handleSearch} className="flex gap-2">
+      <form onSubmit={handleSearch} className="flex gap-2 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -124,13 +127,13 @@ export function Patients() {
       </form>
 
       {/* 환자 목록 */}
-      <div className="card">
+      <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">로딩 중...</div>
+          <div className="flex-1 flex items-center justify-center text-gray-500">로딩 중...</div>
         ) : patients.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div className="flex-1 overflow-auto">
             <table className="w-full">
-              <thead>
+              <thead className="bg-gray-50 sticky top-0">
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">이름</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">생년월일</th>
@@ -227,7 +230,7 @@ export function Patients() {
             </table>
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-gray-500">
             등록된 환자가 없습니다.
           </div>
         )}

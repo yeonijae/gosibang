@@ -383,165 +383,166 @@ export function Prescriptions() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="max-w-7xl mx-auto w-full p-6 flex-1 flex flex-col overflow-hidden">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
           <h1 className="text-2xl font-bold text-gray-900">처방전 관리</h1>
-          {viewMode === 'list' ? (
-            <button
-              onClick={handleCreatePrescription}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              새 처방 작성
-            </button>
-          ) : (
-            <button
-              onClick={goToList}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              목록으로
-            </button>
-          )}
+          <p className="text-sm text-gray-500 mt-1">발급된 처방전 {prescriptions.length}개</p>
         </div>
-
-        {/* 플랜 제한 경고 */}
-        {limitWarning && (
-          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3 flex-shrink-0">
-            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-amber-700">{limitWarning}</p>
-              <p className="text-sm text-amber-600 mt-1">
-                현재 플랜: <strong>{planInfo.name}</strong>
-              </p>
-            </div>
-            <button
-              onClick={() => setLimitWarning(null)}
-              className="text-amber-600 hover:text-amber-800"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+        {viewMode === 'list' ? (
+          <button
+            onClick={handleCreatePrescription}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            새 처방 작성
+          </button>
+        ) : (
+          <button
+            onClick={goToList}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            목록으로
+          </button>
         )}
+      </div>
 
-        {/* 컨텐츠 */}
-        <div className="flex-1 overflow-hidden">
-          {viewMode === 'list' ? (
-            <div className="bg-white rounded-lg shadow-sm h-full flex flex-col overflow-hidden">
-              {loading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <Loader2 className="w-12 h-12 animate-spin text-primary-600 mx-auto mb-4" />
-                    <p>처방 목록을 불러오는 중...</p>
-                  </div>
-                </div>
-              ) : prescriptions.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400">
-                  <div className="text-center">
-                    <p className="text-lg mb-4">발급된 처방전이 없습니다</p>
-                    <button
-                      onClick={handleCreatePrescription}
-                      className="btn-primary"
-                    >
-                      첫 처방 작성하기
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="overflow-auto flex-1">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">발급일</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">환자명</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">처방공식</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">첩수</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">복용</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">총량</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">관리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {prescriptions.map((prescription) => (
-                        <tr key={prescription.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {prescription.issued_at ? formatDate(prescription.issued_at) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {prescription.patient_name || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                            {prescription.formula.length > 30
-                              ? prescription.formula.substring(0, 30) + '...'
-                              : prescription.formula}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-center text-gray-500">
-                            {prescription.total_doses}첩
-                          </td>
-                          <td className="px-4 py-3 text-sm text-center text-gray-500">
-                            {prescription.days}일 x {prescription.doses_per_day}팩
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right font-semibold text-primary-600">
-                            {Math.round(prescription.final_total_amount)}g
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => startEdit(prescription)}
-                                className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
-                                title="수정"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setPrintLayoutModal(prescription)}
-                                className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
-                                title="인쇄"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteConfirm(prescription.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                title="삭제"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ) : viewMode === 'new' ? (
-            <PrescriptionInput
-              onSave={handleSaveNew}
-              showPatientInput={true}
-              showNotesInput={true}
-              showSaveButton={true}
-              saveButtonText="처방전 발급"
-            />
-          ) : viewMode === 'edit' && editingPrescription ? (
-            <PrescriptionInput
-              onSave={handleSaveEdit}
-              showPatientInput={true}
-              showNotesInput={true}
-              showSaveButton={true}
-              saveButtonText="처방전 수정"
-              patientName={editingPrescription.patient_name}
-              initialFormula={editingPrescription.formula}
-              initialNotes={editingPrescription.notes || ''}
-              initialTotalDoses={editingPrescription.total_doses}
-              initialDays={editingPrescription.days}
-              initialDosesPerDay={editingPrescription.doses_per_day}
-            />
-          ) : null}
+      {/* 플랜 제한 경고 */}
+      {limitWarning && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-amber-700">{limitWarning}</p>
+            <p className="text-sm text-amber-600 mt-1">
+              현재 플랜: <strong>{planInfo.name}</strong>
+            </p>
+          </div>
+          <button
+            onClick={() => setLimitWarning(null)}
+            className="text-amber-600 hover:text-amber-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
+      )}
+
+      {/* 컨텐츠 */}
+      <div className="flex-1 min-h-0">
+        {viewMode === 'list' ? (
+          <div className="bg-white rounded-lg border border-gray-200 h-full flex flex-col overflow-hidden">
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <Loader2 className="w-12 h-12 animate-spin text-primary-600 mx-auto mb-4" />
+                  <p>처방 목록을 불러오는 중...</p>
+                </div>
+              </div>
+            ) : prescriptions.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <p className="text-lg mb-4">발급된 처방전이 없습니다</p>
+                  <button
+                    onClick={handleCreatePrescription}
+                    className="btn-primary"
+                  >
+                    첫 처방 작성하기
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-auto flex-1">
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">발급일</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">환자명</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">처방공식</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">첩수</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">복용</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">총량</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">관리</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {prescriptions.map((prescription) => (
+                      <tr key={prescription.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {prescription.issued_at ? formatDate(prescription.issued_at) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          {prescription.patient_name || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">
+                          {prescription.formula.length > 30
+                            ? prescription.formula.substring(0, 30) + '...'
+                            : prescription.formula}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-500">
+                          {prescription.total_doses}첩
+                        </td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-500">
+                          {prescription.days}일 x {prescription.doses_per_day}팩
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-semibold text-primary-600">
+                          {Math.round(prescription.final_total_amount)}g
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => startEdit(prescription)}
+                              className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
+                              title="수정"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setPrintLayoutModal(prescription)}
+                              className="p-2 text-slate-600 hover:bg-slate-50 rounded transition-colors"
+                              title="인쇄"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(prescription.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="삭제"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'new' ? (
+          <PrescriptionInput
+            onSave={handleSaveNew}
+            showPatientInput={true}
+            showNotesInput={true}
+            showSaveButton={true}
+            saveButtonText="처방전 발급"
+          />
+        ) : viewMode === 'edit' && editingPrescription ? (
+          <PrescriptionInput
+            onSave={handleSaveEdit}
+            showPatientInput={true}
+            showNotesInput={true}
+            showSaveButton={true}
+            saveButtonText="처방전 수정"
+            patientName={editingPrescription.patient_name}
+            initialFormula={editingPrescription.formula}
+            initialNotes={editingPrescription.notes || ''}
+            initialTotalDoses={editingPrescription.total_doses}
+            initialDays={editingPrescription.days}
+            initialDosesPerDay={editingPrescription.doses_per_day}
+          />
+        ) : null}
       </div>
 
       {/* 삭제 확인 모달 */}

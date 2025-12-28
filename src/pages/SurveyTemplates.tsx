@@ -49,20 +49,23 @@ export function SurveyTemplates() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">설문 템플릿 관리</h1>
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">설문 템플릿 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">템플릿 {templates.length}개</p>
+        </div>
         <button onClick={handleCreate} className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           새 템플릿
         </button>
       </div>
 
-      <div className="card">
+      <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">로딩 중...</div>
+          <div className="flex-1 flex items-center justify-center text-gray-500">로딩 중...</div>
         ) : templates.length > 0 ? (
-          <div className="divide-y divide-gray-200">
+          <div className="flex-1 overflow-auto divide-y divide-gray-200 px-4">
             {templates.map((template) => (
               <div key={template.id} className="py-4 flex items-center justify-between">
                 <div className="flex-1">
@@ -108,7 +111,7 @@ export function SurveyTemplates() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-12 text-gray-500">
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
             <p>등록된 설문 템플릿이 없습니다.</p>
             <button onClick={handleCreate} className="text-primary-600 hover:underline mt-2">
               새 템플릿 만들기
