@@ -286,7 +286,24 @@ function migrateDatabase(database: Database) {
     )
   `);
 
+  // 처방정의 동기화 (265개로 재설정)
+  syncPrescriptionDefinitions(database);
+
   saveDb();
+}
+
+// 처방정의 동기화 (기존 데이터 삭제 후 재삽입)
+function syncPrescriptionDefinitions(database: Database) {
+  // 현재 개수 확인
+  const result = database.exec('SELECT COUNT(*) as cnt FROM prescription_definitions');
+  const currentCount = result.length > 0 ? result[0].values[0][0] as number : 0;
+
+  // 265개가 아니면 재동기화
+  if (currentCount !== PRESCRIPTION_DEFINITIONS.length) {
+    console.log(`처방정의 동기화: ${currentCount}개 → ${PRESCRIPTION_DEFINITIONS.length}개`);
+    database.run('DELETE FROM prescription_definitions');
+    insertPrescriptionDefinitions(database);
+  }
 }
 
 // 테이블 생성
