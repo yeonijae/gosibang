@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -11,12 +11,15 @@ import {
   BookOpen,
   ClipboardCheck,
   MessageSquare,
+  GripVertical,
+  Check,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useClinicStore } from '../store/clinicStore';
 import { useFeatureStore } from '../store/featureStore';
-import { loadMenuOrder, MENU_ITEMS, FIXED_MENU } from '../lib/menuConfig';
+import { loadMenuOrder, saveMenuOrder, MENU_ITEMS, FIXED_MENU } from '../lib/menuConfig';
 import type { FeatureKey, MenuItemMeta } from '../types';
 
 // 아이콘 매핑
@@ -38,11 +41,69 @@ export function Sidebar() {
   const { hasAccess, planName } = useFeatureStore();
 
   const [menuOrder, setMenuOrder] = useState<FeatureKey[]>([]);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [draggedKey, setDraggedKey] = useState<FeatureKey | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<FeatureKey | null>(null);
+  const originalOrderRef = useRef<FeatureKey[]>([]);
 
   // 메뉴 순서 로드
   useEffect(() => {
     setMenuOrder(loadMenuOrder());
   }, []);
+
+  // 편집 모드 시작
+  const startEditMode = () => {
+    originalOrderRef.current = [...menuOrder];
+    setIsEditMode(true);
+  };
+
+  // 편집 완료 (저장)
+  const confirmEdit = () => {
+    saveMenuOrder(menuOrder);
+    setIsEditMode(false);
+  };
+
+  // 편집 취소
+  const cancelEdit = () => {
+    setMenuOrder(originalOrderRef.current);
+    setIsEditMode(false);
+  };
+
+  // 드래그 시작
+  const handleDragStart = (key: FeatureKey) => {
+    setDraggedKey(key);
+  };
+
+  // 드래그 오버
+  const handleDragOver = (e: React.DragEvent, key: FeatureKey) => {
+    e.preventDefault();
+    if (draggedKey === null || draggedKey === key) return;
+    setDragOverKey(key);
+  };
+
+  // 드래그 종료
+  const handleDragEnd = () => {
+    setDraggedKey(null);
+    setDragOverKey(null);
+  };
+
+  // 드롭
+  const handleDrop = (e: React.DragEvent, dropKey: FeatureKey) => {
+    e.preventDefault();
+    if (draggedKey === null || draggedKey === dropKey) return;
+
+    const newOrder = [...menuOrder];
+    const draggedIndex = newOrder.indexOf(draggedKey);
+    const dropIndex = newOrder.indexOf(dropKey);
+
+    if (draggedIndex === -1 || dropIndex === -1) return;
+
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(dropIndex, 0, draggedKey);
+    setMenuOrder(newOrder);
+    setDraggedKey(null);
+    setDragOverKey(null);
+  };
 
   // 메뉴 순서에 따라 정렬된 메뉴 아이템
   const orderedMenuItems = menuOrder
@@ -71,29 +132,86 @@ export function Sidebar() {
 
         {/* 네비게이션 */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {/* 동적 메뉴 (순서 변경 가능, 권한 없는 메뉴는 숨김) */}
-          {orderedMenuItems
-            .filter((item) => hasAccess(item.key))
-            .map((item) => {
-              const Icon = getIcon(item.icon);
-
-              return (
-                <NavLink
-                  key={item.key}
-                  to={item.path}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      isActive
-                        ? 'bg-primary-50 text-primary-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    }`
-                  }
+          {/* 편집 모드 헤더 */}
+          {isEditMode && (
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
+              <span className="text-xs text-gray-500">드래그하여 순서 변경</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={cancelEdit}
+                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                  title="취소"
                 >
-                  <Icon className="w-5 h-5" />
-                  <span className="flex-1">{item.label}</span>
-                </NavLink>
-              );
-            })}
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={confirmEdit}
+                  className="p-1 text-gray-400 hover:text-green-500 transition-colors"
+                  title="저장"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 동적 메뉴 (순서 변경 가능, 권한 없는 메뉴는 숨김) */}
+          {isEditMode ? (
+            // 편집 모드: 드래그앤드롭 가능 (권한 있는 메뉴만)
+            orderedMenuItems
+              .filter((item) => hasAccess(item.key))
+              .map((item) => {
+                const Icon = getIcon(item.icon);
+                const isDragging = draggedKey === item.key;
+                const isDragOver = dragOverKey === item.key;
+
+                return (
+                  <div
+                    key={item.key}
+                    draggable
+                    onDragStart={() => handleDragStart(item.key)}
+                    onDragOver={(e) => handleDragOver(e, item.key)}
+                    onDragEnd={handleDragEnd}
+                    onDrop={(e) => handleDrop(e, item.key)}
+                    className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-move transition-all ${
+                      isDragging
+                        ? 'opacity-50 bg-gray-100'
+                        : isDragOver
+                        ? 'bg-primary-50 border-2 border-dashed border-primary-300'
+                        : 'bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <Icon className="w-5 h-5 text-gray-500" />
+                    <span className="flex-1 text-sm text-gray-700">{item.label}</span>
+                  </div>
+                );
+              })
+          ) : (
+            // 일반 모드: 네비게이션 링크
+            orderedMenuItems
+              .filter((item) => hasAccess(item.key))
+              .map((item) => {
+                const Icon = getIcon(item.icon);
+
+                return (
+                  <NavLink
+                    key={item.key}
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        isActive
+                          ? 'bg-primary-50 text-primary-700 font-medium'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`
+                    }
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="flex-1">{item.label}</span>
+                  </NavLink>
+                );
+              })
+          )}
 
           {/* 설정 (항상 마지막) */}
           <div className="border-t border-gray-200 my-2 pt-2">
@@ -111,6 +229,16 @@ export function Sidebar() {
               <span>{FIXED_MENU.label}</span>
             </NavLink>
           </div>
+
+          {/* 순서변경 버튼 (편집 모드가 아닐 때만 표시) */}
+          {!isEditMode && (
+            <button
+              onClick={startEditMode}
+              className="w-full mt-2 py-1.5 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-colors"
+            >
+              메뉴 순서변경
+            </button>
+          )}
 
         </nav>
 

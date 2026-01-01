@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, RefreshCw, FolderOpen, RotateCcw, Trash2, Monitor, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
-import { getDb, saveDb, queryOne } from '../lib/localDb';
-import { PRESCRIPTION_DEFINITIONS } from '../lib/prescriptionData';
-import { FEMALE_HEALTH_SURVEY } from '../lib/surveyData';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
@@ -22,15 +21,8 @@ import {
   cleanupBackupHistory,
 } from '../lib/backup';
 import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/backup';
-import type { ClinicSettings, Subscription, FeatureKey } from '../types';
-import {
-  loadMenuOrder,
-  saveMenuOrder,
-  resetMenuOrder,
-  MENU_ITEMS,
-  moveMenuUp,
-  moveMenuDown,
-} from '../lib/menuConfig';
+import type { ClinicSettings, Subscription } from '../types';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 
 // DB에서 불러온 플랜 정책을 UI용으로 변환하는 타입
 interface PlanDisplay {
@@ -66,8 +58,8 @@ const DEFAULT_PLANS: PlanDisplay[] = [
       { text: '처방관리', included: true },
       { text: '처방정의', included: true },
       { text: '차팅관리', included: true },
+      { text: '설문템플릿', included: false },
       { text: '설문관리', included: false },
-      { text: '설문응답', included: false },
       { text: '복약관리', included: false },
       { text: '데이터 백업', included: false },
     ],
@@ -84,18 +76,32 @@ interface UsageStats {
 export function Settings() {
   const { settings, isLoading, loadSettings, saveSettings } = useClinicStore();
   const { authState } = useAuthStore();
+  const { canUseFeature, planInfo } = usePlanLimits();
   const [formData, setFormData] = useState<Partial<ClinicSettings>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [isResettingPrescriptions, setIsResettingPrescriptions] = useState(false);
-  const [isResettingSurveys, setIsResettingSurveys] = useState(false);
   const [isResettingUserData, setIsResettingUserData] = useState(false);
   const [isCleaningBackup, setIsCleaningBackup] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [showCleanupPrompt, setShowCleanupPrompt] = useState(false);
   const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'clinic' | 'subscription' | 'data' | 'backup' | 'display'>('clinic');
-  const [menuOrder, setMenuOrder] = useState<FeatureKey[]>([]);
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'survey' | 'data' | 'backup'>('profile');
+  const [serverAutostart, setServerAutostart] = useState(false);
+  const [isRestoringTemplates, setIsRestoringTemplates] = useState(false);
+
+  // 내 정보 관련 상태
+  interface UserProfile {
+    name: string;
+    phone: string;
+    lecture_id: string;
+    is_approved: boolean;
+    approved_at?: string;
+    created_at?: string;
+  }
+  const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', lecture_id: '', is_approved: false });
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   // 백업 관련 상태
@@ -103,6 +109,18 @@ export function Settings() {
   const [backupHistory, setBackupHistory] = useState<BackupHistoryItem[]>(loadBackupHistory);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // HTTP 서버 관련 상태
+  interface ServerStatus {
+    running: boolean;
+    port: number | null;
+    local_ip: string | null;
+    url: string | null;
+  }
+  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false, port: null, local_ip: null, url: null });
+  const [isStartingServer, setIsStartingServer] = useState(false);
+  const [staffPassword, setStaffPassword] = useState('');
+  const [hasStaffPw, setHasStaffPw] = useState(false);
 
   // DB에서 불러온 플랜 정책
   const [plans, setPlans] = useState<PlanDisplay[]>(DEFAULT_PLANS);
@@ -122,8 +140,170 @@ export function Settings() {
     loadSettings();
     loadUsageStats();
     loadPlanPolicies();
-    setMenuOrder(loadMenuOrder());
+    loadUserProfile();
+    loadServerStatus();
+    checkStaffPassword();
+    loadServerAutostart();
   }, [loadSettings]);
+
+  // 서버 자동 시작 설정 로드
+  const loadServerAutostart = async () => {
+    try {
+      const enabled = await invoke<boolean>('get_server_autostart');
+      setServerAutostart(enabled);
+    } catch (e) {
+      console.error('서버 자동 시작 설정 로드 실패:', e);
+    }
+  };
+
+  // 서버 자동 시작 설정 저장
+  const handleServerAutostartChange = async (enabled: boolean) => {
+    try {
+      await invoke('set_server_autostart', { enabled });
+      setServerAutostart(enabled);
+      setMessage({ type: 'success', text: enabled ? '앱 시작 시 서버가 자동으로 시작됩니다.' : '서버 자동 시작이 해제되었습니다.' });
+    } catch (e) {
+      setMessage({ type: 'error', text: `설정 저장 실패: ${e}` });
+    }
+  };
+
+  // 기본 설문 템플릿 복원
+  const handleRestoreTemplates = async () => {
+    if (!confirm('기본 설문지를 복원하시겠습니까?\n\n삭제된 기본 설문지(여성, 소아)가 다시 생성됩니다.')) {
+      return;
+    }
+    setIsRestoringTemplates(true);
+    try {
+      await invoke('restore_default_survey_templates');
+      setMessage({ type: 'success', text: '기본 설문지가 복원되었습니다.' });
+    } catch (e) {
+      setMessage({ type: 'error', text: `복원 실패: ${e}` });
+    } finally {
+      setIsRestoringTemplates(false);
+    }
+  };
+
+  // HTTP 서버 상태 확인
+  const loadServerStatus = async () => {
+    try {
+      const status = await invoke<ServerStatus>('get_server_status');
+      setServerStatus(status);
+    } catch (e) {
+      console.error('서버 상태 확인 실패:', e);
+    }
+  };
+
+  // 직원 비밀번호 설정 여부 확인
+  const checkStaffPassword = async () => {
+    try {
+      const hasPw = await invoke<boolean>('has_staff_password');
+      setHasStaffPw(hasPw);
+    } catch (e) {
+      console.error('직원 비밀번호 확인 실패:', e);
+    }
+  };
+
+  // HTTP 서버 시작
+  const handleStartServer = async () => {
+    setIsStartingServer(true);
+    try {
+      const url = await invoke<string>('start_http_server', {
+        port: 3030,
+        planType: planInfo.type,
+        surveyExternal: canUseFeature('survey_external'),
+      });
+      setMessage({ type: 'success', text: `HTTP 서버가 시작되었습니다: ${url}` });
+      await loadServerStatus();
+    } catch (e) {
+      setMessage({ type: 'error', text: `서버 시작 실패: ${e}` });
+    } finally {
+      setIsStartingServer(false);
+    }
+  };
+
+  // 직원 비밀번호 설정
+  const handleSetStaffPassword = async () => {
+    if (!staffPassword || staffPassword.length < 4) {
+      setMessage({ type: 'error', text: '비밀번호는 4자 이상이어야 합니다.' });
+      return;
+    }
+    try {
+      await invoke('set_staff_password', { password: staffPassword });
+      setMessage({ type: 'success', text: '직원 비밀번호가 설정되었습니다.' });
+      setStaffPassword('');
+      setHasStaffPw(true);
+    } catch (e) {
+      setMessage({ type: 'error', text: `비밀번호 설정 실패: ${e}` });
+    }
+  };
+
+  // URL 복사
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setMessage({ type: 'success', text: 'URL이 클립보드에 복사되었습니다.' });
+  };
+
+  // 사용자 프로필 불러오기
+  const loadUserProfile = async () => {
+    if (!authState?.user?.id) return;
+
+    setIsLoadingProfile(true);
+    try {
+      const { data, error } = await supabase
+        .from('gosibang_user_profiles')
+        .select('name, phone, lecture_id, is_approved, approved_at, created_at')
+        .eq('id', authState.user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setUserProfile({
+          name: data.name || '',
+          phone: data.phone || '',
+          lecture_id: data.lecture_id || '',
+          is_approved: data.is_approved || false,
+          approved_at: data.approved_at,
+          created_at: data.created_at,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+  // 사용자 프로필 저장
+  const handleSaveProfile = async () => {
+    if (!authState?.user?.id) {
+      setMessage({ type: 'error', text: '로그인 상태를 확인해주세요.' });
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('gosibang_user_profiles')
+        .update({
+          name: userProfile.name || null,
+          phone: userProfile.phone || null,
+          lecture_id: userProfile.lecture_id || null,
+        })
+        .eq('id', authState.user.id);
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: '내 정보가 저장되었습니다.' });
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+      setMessage({ type: 'error', text: '저장에 실패했습니다.' });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   // Supabase에서 플랜 정책 불러오기
   const loadPlanPolicies = async () => {
@@ -156,8 +336,8 @@ export function Settings() {
             { text: '처방관리', included: features.prescriptions !== false },
             { text: '처방정의', included: features.prescription_definitions !== false },
             { text: '차팅관리', included: features.charts !== false },
-            { text: '설문관리', included: features.survey_templates === true },
-            { text: '설문응답', included: features.survey_responses === true },
+            { text: '설문템플릿', included: features.survey_templates === true },
+            { text: '설문관리', included: features.survey_responses === true },
             { text: '복약관리', included: features.medication === true },
             { text: '데이터 백업', included: features.backup === true },
           ];
@@ -238,7 +418,6 @@ export function Settings() {
         clinic_address: formData.clinic_address || undefined,
         clinic_phone: formData.clinic_phone || undefined,
         doctor_name: formData.doctor_name || undefined,
-        license_number: formData.license_number || undefined,
         created_at: settings?.created_at || now,
         updated_at: now,
       };
@@ -256,114 +435,9 @@ export function Settings() {
     alert(`${plans.find(p => p.id === planId)?.name} 플랜 업그레이드 기능은 준비 중입니다.\n\n문의: support@gosibang.com`);
   };
 
-  // 메뉴 순서 변경 핸들러
-  const handleMoveMenuUp = (key: FeatureKey) => {
-    const newOrder = moveMenuUp(menuOrder, key);
-    setMenuOrder(newOrder);
-    saveMenuOrder(newOrder);
-  };
-
-  const handleMoveMenuDown = (key: FeatureKey) => {
-    const newOrder = moveMenuDown(menuOrder, key);
-    setMenuOrder(newOrder);
-    saveMenuOrder(newOrder);
-  };
-
-  const handleResetMenuOrder = () => {
-    if (confirm('메뉴 순서를 기본값으로 초기화하시겠습니까?')) {
-      const defaultOrder = resetMenuOrder();
-      setMenuOrder(defaultOrder);
-      setMessage({ type: 'success', text: '메뉴 순서가 초기화되었습니다.' });
-    }
-  };
-
-  const handleResetPrescriptionDefinitions = async () => {
-    if (!confirm('기존 처방 정의를 모두 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) {
-      return;
-    }
-
-    setIsResettingPrescriptions(true);
-    try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      // 기존 처방 정의 삭제
-      db.run('DELETE FROM prescription_definitions');
-
-      // 새 처방 정의 삽입
-      PRESCRIPTION_DEFINITIONS.forEach(p => {
-        try {
-          db.run(
-            'INSERT INTO prescription_definitions (name, alias, category, source, composition) VALUES (?, ?, ?, ?, ?)',
-            [p.name, p.alias || null, p.category || null, p.source || null, p.composition]
-          );
-        } catch (e) { /* ignore */ }
-      });
-
-      saveDb();
-      const count = PRESCRIPTION_DEFINITIONS.length;
-      setMessage({ type: 'success', text: count > 0 ? `처방 정의가 ${count}개로 초기화되었습니다.` : '처방 정의가 모두 삭제되었습니다.' });
-    } catch (error) {
-      console.error('처방 정의 초기화 실패:', error);
-      setMessage({ type: 'error', text: '처방 정의 초기화에 실패했습니다.' });
-    }
-    setIsResettingPrescriptions(false);
-  };
-
-  const handleResetSurveyTemplates = async () => {
-    if (!confirm('기본 설문지 템플릿(여성 종합 건강 설문지)을 복원하시겠습니까?\n\n기존 템플릿은 유지되고, 기본 템플릿이 추가됩니다.')) {
-      return;
-    }
-
-    setIsResettingSurveys(true);
-    try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      // 기존 여성 종합 건강 설문지가 있는지 확인
-      const existing = queryOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM survey_templates WHERE name = ?", [FEMALE_HEALTH_SURVEY.name]);
-
-      if (existing && existing.cnt > 0) {
-        // 기존 템플릿 업데이트
-        db.run(
-          `UPDATE survey_templates SET description = ?, questions = ?, display_mode = ?, is_active = ?, updated_at = datetime('now') WHERE name = ?`,
-          [
-            FEMALE_HEALTH_SURVEY.description || null,
-            JSON.stringify(FEMALE_HEALTH_SURVEY.questions),
-            FEMALE_HEALTH_SURVEY.display_mode || 'one_by_one',
-            FEMALE_HEALTH_SURVEY.is_active ? 1 : 0,
-            FEMALE_HEALTH_SURVEY.name
-          ]
-        );
-        setMessage({ type: 'success', text: '여성 종합 건강 설문지가 업데이트되었습니다.' });
-      } else {
-        // 새 템플릿 삽입
-        const id = `template_female_${Date.now()}`;
-        db.run(
-          `INSERT INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-          [
-            id,
-            FEMALE_HEALTH_SURVEY.name,
-            FEMALE_HEALTH_SURVEY.description || null,
-            JSON.stringify(FEMALE_HEALTH_SURVEY.questions),
-            FEMALE_HEALTH_SURVEY.display_mode || 'one_by_one',
-            FEMALE_HEALTH_SURVEY.is_active ? 1 : 0
-          ]
-        );
-        setMessage({ type: 'success', text: '여성 종합 건강 설문지가 추가되었습니다.' });
-      }
-
-      saveDb();
-    } catch (error) {
-      console.error('설문지 템플릿 복원 실패:', error);
-      setMessage({ type: 'error', text: '설문지 템플릿 복원에 실패했습니다.' });
-    }
-    setIsResettingSurveys(false);
-  };
-
   const handleResetUserData = async () => {
-    // 백업 여부 확인
-    if (!backupSettings.lastBackupAt) {
+    // 백업 기능이 있는 사용자만 백업 여부 확인
+    if (canUseFeature('backup') && !backupSettings.lastBackupAt) {
       const shouldBackup = confirm(
         '⚠️ 백업 기록이 없습니다!\n\n' +
         '백업 생성하러 이동하시겠습니까?'
@@ -416,14 +490,158 @@ export function Settings() {
       db.run('DELETE FROM chart_records');
       db.run('DELETE FROM patients');
 
+      // 처방정의 초기화 (265개로 복원)
+      const prescriptionCount = resetPrescriptionDefinitions();
+
       saveDb();
       loadUsageStats();
-      setMessage({ type: 'success', text: '환자/처방/차트 데이터가 모두 삭제되었습니다.' });
+      setMessage({ type: 'success', text: `초기화 완료: 모든 데이터 삭제, 처방정의 ${prescriptionCount}개로 복원` });
     } catch (error) {
       console.error('데이터 초기화 실패:', error);
       setMessage({ type: 'error', text: '데이터 초기화에 실패했습니다.' });
     }
     setIsResettingUserData(false);
+  };
+
+  // JSON 다운로드 헬퍼
+  const downloadJSON = (data: unknown, filename: string) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // 전체 데이터 내보내기 (JSON)
+  const handleExportAll = () => {
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      const patients = queryToObjects(db, 'SELECT * FROM patients');
+      const prescriptions = queryToObjects(db, 'SELECT * FROM prescriptions');
+      const initialCharts = queryToObjects(db, 'SELECT * FROM initial_charts');
+      const progressNotes = queryToObjects(db, 'SELECT * FROM progress_notes');
+      const prescriptionDefinitions = queryToObjects(db, 'SELECT * FROM prescription_definitions');
+      const surveyTemplates = queryToObjects(db, 'SELECT * FROM survey_templates');
+      const surveyResponses = queryToObjects(db, 'SELECT * FROM survey_responses');
+      const clinicSettings = queryToObjects(db, 'SELECT * FROM clinic_settings');
+
+      const exportData = {
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        data: {
+          patients,
+          prescriptions,
+          initial_charts: initialCharts,
+          progress_notes: progressNotes,
+          prescription_definitions: prescriptionDefinitions,
+          survey_templates: surveyTemplates,
+          survey_responses: surveyResponses,
+          clinic_settings: clinicSettings,
+        },
+        counts: {
+          patients: patients.length,
+          prescriptions: prescriptions.length,
+          initial_charts: initialCharts.length,
+          progress_notes: progressNotes.length,
+          prescription_definitions: prescriptionDefinitions.length,
+        }
+      };
+
+      downloadJSON(exportData, 'gosibang_full_export');
+      setMessage({ type: 'success', text: '전체 데이터를 내보냈습니다.' });
+    } catch (error) {
+      console.error('Export all error:', error);
+      setMessage({ type: 'error', text: '전체 데이터 내보내기에 실패했습니다.' });
+    }
+  };
+
+  // 회원탈퇴 처리
+  const handleWithdraw = async () => {
+    if (!authState?.user?.id) {
+      setMessage({ type: 'error', text: '로그인 상태를 확인해주세요.' });
+      return;
+    }
+
+    // 1차 경고
+    const firstConfirm = confirm(
+      '⚠️ 회원 탈퇴 경고\n\n' +
+      '탈퇴 시 다음 데이터가 모두 삭제됩니다:\n\n' +
+      '• 로컬 데이터 (환자, 처방, 차트 등)\n' +
+      '• 서버 계정 정보\n' +
+      '• 구독 정보\n\n' +
+      '이 작업은 되돌릴 수 없습니다.\n' +
+      '정말 탈퇴하시겠습니까?'
+    );
+
+    if (!firstConfirm) return;
+
+    // 2차 확인
+    const finalConfirm = prompt(
+      '최종 확인: 탈퇴를 진행하려면 "탈퇴"를 입력하세요.'
+    );
+
+    if (finalConfirm !== '탈퇴') {
+      setMessage({ type: 'error', text: '탈퇴가 취소되었습니다.' });
+      return;
+    }
+
+    setIsWithdrawing(true);
+    try {
+      const userId = authState.user.id;
+
+      // 1. Supabase에서 사용자 데이터 삭제 (프로필, 구독)
+      const { error: profileError } = await supabase
+        .from('gosibang_user_profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (profileError) {
+        console.error('Profile delete error:', profileError);
+      }
+
+      const { error: subscriptionError } = await supabase
+        .from('gosibang_subscriptions')
+        .delete()
+        .eq('user_id', userId);
+
+      if (subscriptionError) {
+        console.error('Subscription delete error:', subscriptionError);
+      }
+
+      // 2. Edge Function으로 auth.users 삭제 요청
+      const { error: withdrawError } = await supabase.functions.invoke('delete-user', {
+        body: { user_id: userId }
+      });
+
+      if (withdrawError) {
+        console.error('Auth delete error:', withdrawError);
+        // Edge Function 실패해도 계속 진행 (로컬 데이터라도 삭제)
+      }
+
+      // 3. 로컬 데이터 삭제 (localStorage)
+      const currentDbKey = `gosibang_db_${userId}`;
+      localStorage.removeItem(currentDbKey);
+      localStorage.removeItem('gosibang_db'); // 기본 키도 삭제
+      localStorage.removeItem('gosibang_backup_settings');
+      localStorage.removeItem('gosibang_backup_history');
+      localStorage.removeItem('gosibang_menu_order');
+
+      // 4. 로그아웃
+      await supabase.auth.signOut();
+
+      alert('회원 탈퇴가 완료되었습니다.\n이용해주셔서 감사합니다.');
+      window.location.reload();
+
+    } catch (error) {
+      console.error('Withdraw error:', error);
+      setMessage({ type: 'error', text: '탈퇴 처리 중 오류가 발생했습니다.' });
+    } finally {
+      setIsWithdrawing(false);
+    }
   };
 
   // 백업 파일 정리 (폴더 기반)
@@ -593,6 +811,17 @@ export function Settings() {
       <div className="border-b border-gray-200">
         <nav className="flex gap-4">
           <button
+            onClick={() => setActiveTab('profile')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+              activeTab === 'profile'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            내 정보
+          </button>
+          <button
             onClick={() => setActiveTab('clinic')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'clinic'
@@ -613,6 +842,19 @@ export function Settings() {
             <Crown className="w-4 h-4" />
             구독 관리
           </button>
+          {canUseFeature('survey_internal') && (
+            <button
+              onClick={() => setActiveTab('survey')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+                activeTab === 'survey'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <ClipboardList className="w-4 h-4" />
+              설문지
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('data')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -623,30 +865,197 @@ export function Settings() {
           >
             데이터 관리
           </button>
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
-              activeTab === 'backup'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <HardDrive className="w-4 h-4" />
-            백업
-          </button>
-          <button
-            onClick={() => setActiveTab('display')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
-              activeTab === 'display'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Monitor className="w-4 h-4" />
-            화면설정
-          </button>
+          {canUseFeature('backup') && (
+            <button
+              onClick={() => setActiveTab('backup')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+                activeTab === 'backup'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <HardDrive className="w-4 h-4" />
+              백업
+            </button>
+          )}
         </nav>
       </div>
+
+      {/* 내 정보 탭 */}
+      {activeTab === 'profile' && (
+        <div className="space-y-6 max-w-2xl">
+          {/* 계정 정보 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center">
+                <User className="w-6 h-6 text-primary-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">내 정보</h2>
+                <p className="text-sm text-gray-500">{authState?.user_email || '이메일 없음'}</p>
+              </div>
+              {userProfile.is_approved ? (
+                <span className="ml-auto px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                  <Check className="w-3 h-3" />
+                  승인됨
+                </span>
+              ) : (
+                <span className="ml-auto px-3 py-1 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                  승인 대기
+                </span>
+              )}
+            </div>
+
+            {isLoadingProfile ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* 이메일 (읽기전용) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="flex items-center gap-1">
+                      <Mail className="w-4 h-4" />
+                      이메일
+                    </span>
+                  </label>
+                  <input
+                    type="email"
+                    value={authState?.user_email || ''}
+                    disabled
+                    className="input-field bg-gray-50 text-gray-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">이메일은 변경할 수 없습니다</p>
+                </div>
+
+                {/* 이름 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="flex items-center gap-1">
+                      <User className="w-4 h-4" />
+                      이름
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={userProfile.name}
+                    onChange={(e) => setUserProfile({ ...userProfile, name: e.target.value })}
+                    className="input-field"
+                    placeholder="이름을 입력하세요"
+                  />
+                </div>
+
+                {/* 연락처 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-4 h-4" />
+                      연락처
+                    </span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={userProfile.phone}
+                    onChange={(e) => setUserProfile({ ...userProfile, phone: e.target.value })}
+                    className="input-field"
+                    placeholder="010-0000-0000"
+                  />
+                </div>
+
+                {/* 강의 아이디 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="flex items-center gap-1">
+                      <GraduationCap className="w-4 h-4" />
+                      강의 아이디
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={userProfile.lecture_id}
+                    onChange={(e) => setUserProfile({ ...userProfile, lecture_id: e.target.value })}
+                    className="input-field"
+                    placeholder="수강 중인 강의 아이디"
+                  />
+                </div>
+
+                {/* 가입일/승인일 정보 */}
+                <div className="pt-4 border-t border-gray-200 text-sm text-gray-500 space-y-1">
+                  {userProfile.created_at && (
+                    <p>가입일: {new Date(userProfile.created_at).toLocaleDateString('ko-KR')}</p>
+                  )}
+                  {userProfile.approved_at && (
+                    <p>승인일: {new Date(userProfile.approved_at).toLocaleDateString('ko-KR')}</p>
+                  )}
+                </div>
+
+                {/* 저장 버튼 */}
+                <div className="pt-4">
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={isSavingProfile}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    {isSavingProfile ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    저장
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 회원탈퇴 */}
+          <div className="card border-red-200 bg-red-50/30">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <UserX className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">회원 탈퇴</h2>
+                <p className="text-sm text-red-600">계정과 모든 데이터가 영구 삭제됩니다</p>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-red-800">
+                  <p className="font-medium mb-2">탈퇴 시 삭제되는 정보:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>로컬 데이터 (환자 {usageStats.patients}명, 처방전 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개)</li>
+                    <li>계정 정보 및 로그인 정보</li>
+                    <li>구독 정보</li>
+                  </ul>
+                  <p className="mt-2 font-medium">이 작업은 되돌릴 수 없습니다.</p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleWithdraw}
+              disabled={isWithdrawing}
+              className="w-full py-3 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isWithdrawing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  탈퇴 처리 중...
+                </>
+              ) : (
+                <>
+                  <UserX className="w-4 h-4" />
+                  회원 탈퇴
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 한의원 정보 탭 */}
       {activeTab === 'clinic' && (
@@ -677,19 +1086,6 @@ export function Settings() {
                 onChange={(e) => setFormData({ ...formData, doctor_name: e.target.value })}
                 className="input-field"
                 placeholder="예: 홍길동"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                면허번호
-              </label>
-              <input
-                type="text"
-                value={formData.license_number || ''}
-                onChange={(e) => setFormData({ ...formData, license_number: e.target.value })}
-                className="input-field"
-                placeholder="한의사 면허번호"
               />
             </div>
 
@@ -907,103 +1303,363 @@ export function Settings() {
         </div>
       )}
 
-      {/* 데이터 관리 탭 */}
-      {activeTab === 'data' && (
-        <div className="card max-w-2xl">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">데이터 관리</h2>
-          <p className="text-sm text-gray-600 mb-6">
-            기본 데이터를 복원하거나 초기화할 수 있습니다.
-          </p>
-
-          <div className="space-y-4">
-            {/* 기본 처방 복원 */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <RefreshCw className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">기본 처방 복원</p>
-                  <p className="text-sm text-gray-500">기본 처방 정의 데이터로 복원</p>
-                </div>
+      {/* 설문지 탭 */}
+      {activeTab === 'survey' && canUseFeature('survey_internal') && (
+        <div className="space-y-6 max-w-2xl">
+          {/* 설문지 복원 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                <RotateCcw className="w-5 h-5 text-orange-600" />
               </div>
-              <button
-                onClick={handleResetPrescriptionDefinitions}
-                disabled={isResettingPrescriptions}
-                className="btn-secondary flex items-center gap-2"
-              >
-                {isResettingPrescriptions ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
-                복원
-              </button>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">설문지 복원</h2>
+                <p className="text-sm text-gray-500">삭제된 기본 설문지를 복원합니다</p>
+              </div>
             </div>
 
-            {/* 설문지 템플릿 복원 */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <ClipboardList className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">설문지 템플릿 복원</p>
-                  <p className="text-sm text-gray-500">여성 종합 건강 설문지 복원</p>
-                </div>
+              <div>
+                <p className="font-medium text-gray-900">기본 설문지 복원</p>
+                <p className="text-sm text-gray-500">기본설문지-여성, 기본설문지-소아</p>
               </div>
               <button
-                onClick={handleResetSurveyTemplates}
-                disabled={isResettingSurveys}
+                onClick={handleRestoreTemplates}
+                disabled={isRestoringTemplates}
                 className="btn-secondary flex items-center gap-2"
               >
-                {isResettingSurveys ? (
+                {isRestoringTemplates ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="w-4 h-4" />
+                  <RotateCcw className="w-4 h-4" />
                 )}
                 복원
               </button>
             </div>
           </div>
 
-          {/* 위험 영역 구분선 */}
-          <div className="mt-8 pt-6 border-t border-red-200">
-            <h3 className="text-sm font-medium text-red-600 mb-4 flex items-center gap-2">
-              <Trash2 className="w-4 h-4" />
-              위험 영역
-            </h3>
+          {/* 원내 서버 */}
+          <div className="card border-2 border-blue-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <Server className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">원내 서버</h2>
+                <p className="text-sm text-gray-500">같은 네트워크의 다른 기기에서 설문/대시보드 접속</p>
+              </div>
+            </div>
 
-            {/* 환자/처방/차트 초기화 */}
-            <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <Trash2 className="w-5 h-5 text-red-600" />
-                </div>
+            {/* 자동 시작 설정 */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-900">환자/처방/차트 초기화</p>
-                  <p className="text-sm text-red-600">
-                    환자 {usageStats.patients}명, 처방 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개 삭제
+                  <p className="font-medium text-gray-900">앱 시작 시 자동으로 서버 시작</p>
+                  <p className="text-sm text-gray-500">앱을 열면 서버가 자동으로 시작됩니다</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={serverAutostart}
+                    onChange={(e) => handleServerAutostartChange(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* 서버 상태 및 시작/중지 */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-medium text-gray-900">서버 상태</p>
+                  <p className="text-sm text-gray-500">
+                    {serverStatus.running
+                      ? `실행 중: ${serverStatus.url}`
+                      : '서버가 중지되어 있습니다'}
                   </p>
                 </div>
+                <div className="flex items-center gap-2">
+                  {serverStatus.running ? (
+                    <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                      실행 중
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                      중지됨
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {!serverStatus.running ? (
+                <button
+                  onClick={handleStartServer}
+                  disabled={isStartingServer || !hasStaffPw}
+                  className="btn-primary w-full flex items-center justify-center gap-2"
+                >
+                  {isStartingServer ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      시작 중...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      서버 시작
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    서버를 중지하려면 앱을 재시작해주세요.
+                  </p>
+                </div>
+              )}
+
+              {!hasStaffPw && !serverStatus.running && (
+                <p className="text-xs text-amber-600 mt-2">
+                  서버를 시작하려면 먼저 직원 비밀번호를 설정해주세요.
+                </p>
+              )}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              <p>• 같은 Wi-Fi/네트워크에 연결된 기기에서만 접속 가능합니다</p>
+              <p>• 앱을 종료하면 서버도 함께 종료됩니다</p>
+            </div>
+          </div>
+
+          {/* 설문지 관리 - 직원 비밀번호 설정 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Users className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">설문지 관리</h2>
+                <p className="text-sm text-gray-500">직원 대시보드 접근 설정</p>
+              </div>
+            </div>
+
+            {/* 직원 비밀번호 설정 */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-medium text-gray-900">직원 비밀번호</p>
+                  <p className="text-sm text-gray-500">
+                    {hasStaffPw ? '비밀번호가 설정되어 있습니다' : '비밀번호를 먼저 설정해주세요'}
+                  </p>
+                </div>
+                {hasStaffPw && (
+                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    설정됨
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={staffPassword}
+                  onChange={(e) => setStaffPassword(e.target.value)}
+                  placeholder={hasStaffPw ? '새 비밀번호 입력' : '비밀번호 입력 (4자 이상)'}
+                  className="input-field flex-1"
+                />
+                <button
+                  onClick={handleSetStaffPassword}
+                  className="btn-secondary"
+                >
+                  {hasStaffPw ? '변경' : '설정'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 원내 설문지 - 접속 주소 */}
+          {serverStatus.running && (
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <Server className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">원내 설문지</h2>
+                <p className="text-sm text-gray-500">같은 네트워크에서 접속할 수 있는 주소</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* 직원 대시보드 링크 */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 flex-shrink-0 w-16">직원용:</span>
+                <input
+                  type="text"
+                  value={`${serverStatus.url}/staff`}
+                  readOnly
+                  className="input-field flex-1 bg-white text-sm"
+                />
+                <button
+                  onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/staff`)}
+                  className="btn-secondary flex items-center gap-1"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+                <a
+                  href={`${serverStatus.url}/staff`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary flex items-center gap-1"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+
+              {/* 설문 페이지 링크 */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 flex-shrink-0 w-16">설문:</span>
+                <input
+                  type="text"
+                  value={`${serverStatus.url}/patient`}
+                  readOnly
+                  className="input-field flex-1 bg-white text-sm"
+                />
+                <button
+                  onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/patient`)}
+                  className="btn-secondary flex items-center gap-1"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+
+            </div>
+          </div>
+          )}
+
+          {/* 온라인 설문지 */}
+          {canUseFeature('survey_external') ? (
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Globe className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">온라인 설문지</h2>
+                <p className="text-sm text-gray-500">환자에게 온라인으로 설문 링크를 전달</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span className="text-sm font-medium text-gray-900">서비스 활성화됨</span>
+              </div>
+              <p className="text-sm text-gray-600 mb-3">
+                설문 관리 페이지에서 "온라인 링크 생성" 버튼을 클릭하면<br />
+                환자에게 전달할 수 있는 설문 링크가 생성됩니다.
+              </p>
+              <div className="text-xs text-gray-500">
+                • 링크는 24시간 동안 유효합니다<br />
+                • 환자가 응답을 제출하면 자동으로 동기화됩니다
+              </div>
+            </div>
+          </div>
+          ) : (
+          <div className="card border-2 border-gray-200 bg-gray-50">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                <Globe className="w-5 h-5 text-gray-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-500">온라인 설문지</h2>
+                <p className="text-sm text-gray-400">프리미엄 플랜에서 사용 가능</p>
+              </div>
+              <span className="ml-auto px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">
+                <Crown className="w-3 h-3" />
+                프리미엄
+              </span>
+            </div>
+            <p className="text-sm text-gray-500">
+              환자에게 온라인 설문 링크를 전달하고, 응답을 자동으로 수집할 수 있습니다.
+            </p>
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* 데이터 관리 탭 */}
+      {activeTab === 'data' && (
+        <div className="space-y-6 max-w-2xl">
+          {/* 데이터 내보내기 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <FileDown className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">내보내기</h2>
+                <p className="text-sm text-gray-500">전체 데이터를 JSON 파일로 내보냅니다</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="font-medium text-gray-900">전체 데이터</p>
+                <p className="text-sm text-gray-500">
+                  환자 {usageStats.patients}명 · 처방 {usageStats.prescriptions}개 · 차트 {usageStats.initialCharts + usageStats.progressNotes}개
+                </p>
               </div>
               <button
-                onClick={handleResetUserData}
-                disabled={isResettingUserData}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+                onClick={handleExportAll}
+                className="btn-primary flex items-center gap-2"
               >
-                {isResettingUserData ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                초기화
+                <Download className="w-4 h-4" />
+                내보내기
               </button>
             </div>
+          </div>
+
+          {/* 초기화 */}
+          <div className="card border-red-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">초기화</h2>
+                <p className="text-sm text-red-600">모든 기록을 삭제하고 초기 상태로 되돌립니다</p>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-red-800">
+                <strong>삭제되는 데이터:</strong> 환자 {usageStats.patients}명, 처방 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개, 처방정의, 설문지 등 모든 데이터
+              </p>
+            </div>
+
+            <button
+              onClick={handleResetUserData}
+              disabled={isResettingUserData}
+              className="w-full py-3 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isResettingUserData ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  초기화 중...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  초기화
+                </>
+              )}
+            </button>
           </div>
 
           {/* 주의사항 */}
-          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-sm text-yellow-800">
               <strong>주의:</strong> 브라우저 데이터 삭제 시 로컬 데이터가 손실될 수 있습니다.
               정기적으로 백업 탭에서 백업하세요.
@@ -1013,7 +1669,7 @@ export function Settings() {
       )}
 
       {/* 백업 탭 */}
-      {activeTab === 'backup' && (
+      {activeTab === 'backup' && canUseFeature('backup') && (
         <div className="space-y-6 max-w-2xl">
           {/* 백업 정리 권유 팝업 */}
           {showCleanupPrompt && cleanupInfo && (
@@ -1256,86 +1912,6 @@ export function Settings() {
               <li>OneDrive: 문서 폴더 사용</li>
               <li>Dropbox: Dropbox 폴더 내 백업 폴더 생성</li>
             </ul>
-          </div>
-        </div>
-      )}
-
-      {/* 화면설정 탭 */}
-      {activeTab === 'display' && (
-        <div className="space-y-6 max-w-2xl">
-          {/* 메뉴 순서 설정 */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <GripVertical className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">메뉴 순서</h2>
-                  <p className="text-sm text-gray-500">왼쪽 사이드바 메뉴의 순서를 변경합니다</p>
-                </div>
-              </div>
-              <button
-                onClick={handleResetMenuOrder}
-                className="btn-secondary text-sm flex items-center gap-1"
-              >
-                <RotateCcw className="w-4 h-4" />
-                초기화
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {/* 순서 변경 가능한 메뉴 */}
-              {menuOrder.map((key, index) => {
-                const menuItem = MENU_ITEMS.find(item => item.key === key);
-                if (!menuItem) return null;
-
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <GripVertical className="w-5 h-5 text-gray-400" />
-                      <span className="font-medium text-gray-700">{menuItem.label}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleMoveMenuUp(key)}
-                        disabled={index === 0}
-                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="위로 이동"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleMoveMenuDown(key)}
-                        disabled={index === menuOrder.length - 1}
-                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="아래로 이동"
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* 설정 (고정) */}
-              <div className="flex items-center justify-between p-3 bg-gray-100 rounded-lg opacity-60 mt-4 border-t border-gray-200 pt-4">
-                <div className="flex items-center gap-3">
-                  <GripVertical className="w-5 h-5 text-gray-400" />
-                  <span className="font-medium text-gray-700">설정</span>
-                </div>
-                <span className="text-xs text-gray-500 px-2 py-1 bg-gray-200 rounded">고정</span>
-              </div>
-            </div>
-
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                변경 사항은 자동으로 저장되며, 페이지를 새로고침하면 적용됩니다.
-              </p>
-            </div>
           </div>
         </div>
       )}

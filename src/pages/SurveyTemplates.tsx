@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X, GripVertical, Copy } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, GripVertical, Copy, Eye, EyeOff } from 'lucide-react';
 import { useSurveyStore } from '../store/surveyStore';
 import { generateQuestionId } from '../lib/surveyUtils';
-import type { SurveyTemplate, SurveyQuestion, QuestionType, ScaleConfig, SurveyDisplayMode } from '../types';
+import { QuestionRenderer } from '../components/survey/QuestionRenderer';
+import type { SurveyTemplate, SurveyQuestion, QuestionType, ScaleConfig, SurveyDisplayMode, SurveyAnswer } from '../types';
 
 export function SurveyTemplates() {
   const { templates, isLoading, loadTemplates, createTemplate, updateTemplate, deleteTemplate } = useSurveyStore();
@@ -148,6 +149,11 @@ function TemplateEditorModal({ template, onSave, onClose }: TemplateEditorModalP
   );
   const [saving, setSaving] = useState(false);
 
+  // 미리보기 관련 상태
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewAnswers, setPreviewAnswers] = useState<SurveyAnswer[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
   const handleAddQuestion = () => {
     const newQuestion: SurveyQuestion = {
       id: generateQuestionId(),
@@ -207,6 +213,29 @@ function TemplateEditorModal({ template, onSave, onClose }: TemplateEditorModalP
     }
   };
 
+  // 미리보기 토글
+  const togglePreview = () => {
+    if (!showPreview) {
+      // 미리보기 시작 시 답변 초기화
+      setPreviewAnswers([]);
+      setPreviewIndex(0);
+    }
+    setShowPreview(!showPreview);
+  };
+
+  // 미리보기 답변 핸들러
+  const handlePreviewAnswer = (answer: SurveyAnswer) => {
+    setPreviewAnswers(prev => {
+      const existing = prev.findIndex(a => a.question_id === answer.question_id);
+      if (existing >= 0) {
+        const newAnswers = [...prev];
+        newAnswers[existing] = answer;
+        return newAnswers;
+      }
+      return [...prev, answer];
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -214,122 +243,217 @@ function TemplateEditorModal({ template, onSave, onClose }: TemplateEditorModalP
           <h2 className="text-lg font-semibold">
             {template ? '템플릿 수정' : '새 템플릿 만들기'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              템플릿 이름 <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="input-field"
-              placeholder="예: 초진 설문지"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="input-field"
-              rows={2}
-              placeholder="설문지에 대한 간단한 설명"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">표시 방식</label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="one_by_one"
-                  checked={displayMode === 'one_by_one'}
-                  onChange={() => setDisplayMode('one_by_one')}
-                  className="text-primary-600"
-                />
-                <span className="text-sm">한 문항씩 보기</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="single_page"
-                  checked={displayMode === 'single_page'}
-                  onChange={() => setDisplayMode('single_page')}
-                  className="text-primary-600"
-                />
-                <span className="text-sm">원페이지 스크롤</span>
-              </label>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {displayMode === 'one_by_one'
-                ? '질문을 하나씩 순서대로 표시합니다.'
-                : '모든 질문을 한 페이지에 표시하여 스크롤로 작성합니다.'}
-            </p>
-          </div>
-
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-gray-900">질문 목록</h3>
+          <div className="flex items-center gap-2">
+            {questions.length > 0 && (
               <button
                 type="button"
-                onClick={handleAddQuestion}
-                className="text-sm text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                onClick={togglePreview}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm transition-colors ${
+                  showPreview
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
               >
-                <Plus className="w-4 h-4" />
-                질문 추가
+                {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPreview ? '편집' : '미리보기'}
               </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {showPreview ? (
+          // 미리보기 모드
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="max-w-2xl mx-auto">
+              {/* 미리보기 헤더 */}
+              <div className="mb-6 text-center">
+                <h3 className="text-xl font-bold text-gray-900">{name || '(제목 없음)'}</h3>
+                {description && <p className="text-gray-600 mt-1">{description}</p>}
+                <div className="mt-2 text-sm text-gray-500">
+                  표시방식: {displayMode === 'one_by_one' ? '한 문항씩 보기' : '원페이지 스크롤'}
+                </div>
+              </div>
+
+              {displayMode === 'one_by_one' ? (
+                // 한 문항씩 보기
+                <div className="space-y-6">
+                  {questions[previewIndex] && (
+                    <>
+                      <div className="text-sm text-gray-500 text-center">
+                        {previewIndex + 1} / {questions.length}
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-6">
+                        <QuestionRenderer
+                          question={questions[previewIndex]}
+                          answer={previewAnswers.find(a => a.question_id === questions[previewIndex].id)}
+                          onChange={handlePreviewAnswer}
+                        />
+                      </div>
+                      <div className="flex justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewIndex(i => Math.max(0, i - 1))}
+                          disabled={previewIndex === 0}
+                          className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                        >
+                          이전
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewIndex(i => Math.min(questions.length - 1, i + 1))}
+                          disabled={previewIndex === questions.length - 1}
+                          className="px-4 py-2 text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                        >
+                          {previewIndex === questions.length - 1 ? '완료' : '다음'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                // 원페이지 스크롤
+                <div className="space-y-6">
+                  {questions.map((question, idx) => (
+                    <div key={question.id} className="bg-gray-50 rounded-lg p-6">
+                      <div className="text-sm text-gray-500 mb-2">Q{idx + 1}.</div>
+                      <QuestionRenderer
+                        question={question}
+                        answer={previewAnswers.find(a => a.question_id === question.id)}
+                        onChange={handlePreviewAnswer}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          // 편집 모드
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                템플릿 이름 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="input-field"
+                placeholder="예: 초진 설문지"
+              />
             </div>
 
-            {questions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded-lg">
-                <p>아직 질문이 없습니다.</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="input-field"
+                rows={2}
+                placeholder="설문지에 대한 간단한 설명"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">표시 방식</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    value="one_by_one"
+                    checked={displayMode === 'one_by_one'}
+                    onChange={() => setDisplayMode('one_by_one')}
+                    className="text-primary-600"
+                  />
+                  <span className="text-sm">한 문항씩 보기</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    value="single_page"
+                    checked={displayMode === 'single_page'}
+                    onChange={() => setDisplayMode('single_page')}
+                    className="text-primary-600"
+                  />
+                  <span className="text-sm">원페이지 스크롤</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {displayMode === 'one_by_one'
+                  ? '질문을 하나씩 순서대로 표시합니다.'
+                  : '모든 질문을 한 페이지에 표시하여 스크롤로 작성합니다.'}
+              </p>
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-900">질문 목록</h3>
                 <button
                   type="button"
                   onClick={handleAddQuestion}
-                  className="text-primary-600 hover:underline mt-1"
+                  className="text-sm text-primary-600 hover:text-primary-800 flex items-center gap-1"
                 >
-                  첫 번째 질문 추가하기
+                  <Plus className="w-4 h-4" />
+                  질문 추가
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {questions.map((question, index) => (
-                  <QuestionEditor
-                    key={question.id}
-                    question={question}
-                    index={index}
-                    totalCount={questions.length}
-                    onUpdate={(updated) => handleUpdateQuestion(index, updated)}
-                    onDelete={() => handleDeleteQuestion(index)}
-                    onMove={(direction) => handleMoveQuestion(index, direction)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </form>
+
+              {questions.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded-lg">
+                  <p>아직 질문이 없습니다.</p>
+                  <button
+                    type="button"
+                    onClick={handleAddQuestion}
+                    className="text-primary-600 hover:underline mt-1"
+                  >
+                    첫 번째 질문 추가하기
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {questions.map((question, index) => (
+                    <QuestionEditor
+                      key={question.id}
+                      question={question}
+                      index={index}
+                      totalCount={questions.length}
+                      onUpdate={(updated) => handleUpdateQuestion(index, updated)}
+                      onDelete={() => handleDeleteQuestion(index)}
+                      onMove={(direction) => handleMoveQuestion(index, direction)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </form>
+        )}
 
         <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
           <button type="button" onClick={onClose} className="btn-secondary">
             취소
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="btn-primary"
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
+          {showPreview ? (
+            <button
+              type="button"
+              onClick={() => setShowPreview(false)}
+              className="btn-primary"
+            >
+              편집으로 돌아가기
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="btn-primary"
+            >
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -11,6 +11,8 @@ interface PlanPolicy {
   max_charts_per_month: number;
   features: {
     survey: boolean;
+    survey_internal: boolean;  // 내부 설문 (태블릿/인트라넷)
+    survey_external: boolean;  // 외부 설문 (온라인 링크)
     export: boolean;
     backup: boolean;
     multiUser: boolean;
@@ -56,12 +58,16 @@ export function usePlanLimits() {
   const loadSubscriptionAndPolicy = async () => {
     setIsLoading(true);
     try {
+      console.log('[usePlanLimits] Loading subscription for email:', authState?.user_email);
+
       // 구독 정보 가져오기
-      const { data: subData } = await supabase
+      const { data: subData, error: subError } = await supabase
         .from('gosibang_subscriptions')
         .select('plan_type, status, expires_at')
         .eq('user_email', authState?.user_email)
         .single();
+
+      console.log('[usePlanLimits] Subscription data:', subData, 'error:', subError);
 
       // 구독이 없으면 무료 플랜 기본값
       const currentSubscription: Subscription = subData || {
@@ -70,19 +76,24 @@ export function usePlanLimits() {
         expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       };
 
-      // 만료된 구독은 무료 플랜으로 처리
-      if (currentSubscription.status === 'expired' || new Date(currentSubscription.expires_at) < new Date()) {
+      // 만료된 구독은 무료 플랜으로 처리 (expires_at이 null이면 만료 없음)
+      const isExpired = currentSubscription.status === 'expired' ||
+        (currentSubscription.expires_at && new Date(currentSubscription.expires_at) < new Date());
+      if (isExpired) {
         currentSubscription.plan_type = 'free';
       }
 
       setSubscription(currentSubscription);
+      console.log('[usePlanLimits] Using subscription plan_type:', currentSubscription.plan_type);
 
       // 플랜 정책 가져오기
-      const { data: policyData } = await supabase
+      const { data: policyData, error: policyError } = await supabase
         .from('gosibang_plan_policies')
         .select('plan_type, display_name, max_patients, max_prescriptions_per_month, max_charts_per_month, features')
         .eq('plan_type', currentSubscription.plan_type)
         .single();
+
+      console.log('[usePlanLimits] Policy data:', policyData, 'error:', policyError);
 
       // 정책이 없으면 기본값
       const defaultPolicy: PlanPolicy = {
@@ -91,7 +102,7 @@ export function usePlanLimits() {
         max_patients: 10,
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
-        features: { survey: false, export: false, backup: false, multiUser: false },
+        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
       };
 
       setPolicy(policyData || defaultPolicy);
@@ -105,7 +116,7 @@ export function usePlanLimits() {
         max_patients: 10,
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
-        features: { survey: false, export: false, backup: false, multiUser: false },
+        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
       });
     }
     setIsLoading(false);
@@ -202,8 +213,13 @@ export function usePlanLimits() {
 
   // 기능 사용 가능 여부
   const canUseFeature = useCallback((feature: keyof PlanPolicy['features']): boolean => {
-    if (!policy) return false;
-    return policy.features[feature] ?? false;
+    if (!policy) {
+      console.log('[canUseFeature] policy is null, returning false for:', feature);
+      return false;
+    }
+    const result = policy.features[feature] ?? false;
+    console.log('[canUseFeature]', feature, '=', result, 'from policy:', policy.plan_type, 'features:', policy.features);
+    return result;
   }, [policy]);
 
   // 플랜 정보

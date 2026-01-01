@@ -135,12 +135,27 @@ export function PrescriptionDefinitions() {
 
       // 검색어 필터
       if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        return (
-          def.name.toLowerCase().includes(search) ||
-          (def.alias?.toLowerCase().includes(search)) ||
-          def.composition.toLowerCase().includes(search)
-        );
+        // 공백 또는 쉼표로 분리하여 여러 약재 검색
+        const searchTerms = searchTerm
+          .split(/[\s,]+/)
+          .map(term => term.trim().toLowerCase())
+          .filter(term => term.length > 0);
+
+        if (searchTerms.length === 0) return true;
+
+        // 단일 키워드: 처방명, 별명, 구성 모두 검색
+        if (searchTerms.length === 1) {
+          const search = searchTerms[0];
+          return (
+            def.name.toLowerCase().includes(search) ||
+            (def.alias?.toLowerCase().includes(search)) ||
+            def.composition.toLowerCase().includes(search)
+          );
+        }
+
+        // 여러 키워드: 모든 약재가 구성(composition)에 포함되어야 함
+        const compositionLower = def.composition.toLowerCase();
+        return searchTerms.every(term => compositionLower.includes(term));
       }
       return true;
     });

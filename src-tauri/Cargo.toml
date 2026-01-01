@@ -44,3 +44,18 @@ dirs = "5.0"
 # Security
 argon2 = "0.5"
 rand = "0.8"
+bcrypt = "0.15"
+
+# HTTP Server (axum)
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+
+# QR Code
+qrcode = "0.14"
+image = "0.25"
+base64 = "0.22"
+
+# Embed static files
+rust-embed = "8.5"
+mime_guess = "2.0"

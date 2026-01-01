@@ -30,11 +30,11 @@ export function QuestionRenderer({ question, answer, onChange }: QuestionRendere
       )}
 
       {question.question_type === 'single_choice' && (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
           {question.options?.map((option, index) => (
             <label
               key={index}
-              className={`flex items-center gap-4 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+              className={`flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer transition-colors ${
                 answer?.answer === option
                   ? 'border-primary-500 bg-primary-50'
                   : 'border-gray-200 hover:border-gray-300'
@@ -46,16 +46,16 @@ export function QuestionRenderer({ question, answer, onChange }: QuestionRendere
                 value={option}
                 checked={answer?.answer === option}
                 onChange={() => handleChange(option)}
-                className="w-5 h-5 text-primary-600"
+                className="w-4 h-4 text-primary-600 flex-shrink-0"
               />
-              <span className="text-lg">{option}</span>
+              <span className="text-sm leading-tight">{option}</span>
             </label>
           ))}
         </div>
       )}
 
       {question.question_type === 'multiple_choice' && (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
           {question.options?.map((option, index) => {
             const selectedOptions = (answer?.answer as string[]) || [];
             const isChecked = selectedOptions.includes(option);
@@ -63,7 +63,7 @@ export function QuestionRenderer({ question, answer, onChange }: QuestionRendere
             return (
               <label
                 key={index}
-                className={`flex items-center gap-4 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                className={`flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer transition-colors ${
                   isChecked
                     ? 'border-primary-500 bg-primary-50'
                     : 'border-gray-200 hover:border-gray-300'
@@ -79,9 +79,9 @@ export function QuestionRenderer({ question, answer, onChange }: QuestionRendere
                       : [...selectedOptions, option];
                     handleChange(newSelection);
                   }}
-                  className="w-5 h-5 text-primary-600 rounded"
+                  className="w-4 h-4 text-primary-600 rounded flex-shrink-0"
                 />
-                <span className="text-lg">{option}</span>
+                <span className="text-sm leading-tight">{option}</span>
               </label>
             );
           })}

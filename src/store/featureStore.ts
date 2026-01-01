@@ -13,6 +13,8 @@ const DEFAULT_FEATURES: PlanFeatures = {
   survey_templates: false,
   survey_responses: false,
   medication: false,
+  survey_internal: false,   // 무료: 내부 설문 불가
+  survey_external: false,   // 무료: 외부 설문 불가
   backup: false,
   export: false,
   multiUser: false,

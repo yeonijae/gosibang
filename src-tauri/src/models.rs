@@ -118,7 +118,19 @@ pub struct SurveyQuestion {
     pub question_text: String,
     pub question_type: QuestionType,
     pub options: Option<Vec<String>>,  // 선택형 질문의 옵션들
+    pub scale_config: Option<ScaleConfig>,  // 척도형 질문 설정
     pub required: bool,
+}
+
+/// 척도형 질문 설정
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScaleConfig {
+    pub min: i32,
+    pub max: i32,
+    #[serde(rename = "minLabel")]
+    pub min_label: Option<String>,
+    #[serde(rename = "maxLabel")]
+    pub max_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,12 +143,66 @@ pub enum QuestionType {
     YesNo,          // 예/아니오
 }
 
+/// 설문 세션 (온라인 설문용)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SurveySession {
+    pub id: String,
+    pub token: String,              // 접속용 토큰
+    pub template_id: String,
+    pub patient_id: Option<String>, // 환자 연결 (선택)
+    pub respondent_name: Option<String>, // 응답자 이름 (환자 미등록시)
+    pub status: SessionStatus,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Pending,    // 대기 중
+    Completed,  // 완료
+    Expired,    // 만료
+}
+
+impl SurveySession {
+    pub fn new(template_id: String, patient_id: Option<String>, respondent_name: Option<String>) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            token: generate_token(),
+            template_id,
+            patient_id,
+            respondent_name,
+            status: SessionStatus::Pending,
+            expires_at: now + chrono::Duration::hours(24),
+            created_at: now,
+        }
+    }
+}
+
+fn generate_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..8)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 10 {
+                (b'0' + idx) as char
+            } else {
+                (b'a' + idx - 10) as char
+            }
+        })
+        .collect()
+}
+
 /// 환자 설문 응답
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurveyResponse {
     pub id: String,
-    pub patient_id: String,
+    pub session_id: Option<String>,
+    pub patient_id: Option<String>,
     pub template_id: String,
+    pub respondent_name: Option<String>,
     pub answers: Vec<SurveyAnswer>,
     pub submitted_at: DateTime<Utc>,
 }
@@ -144,7 +210,7 @@ pub struct SurveyResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurveyAnswer {
     pub question_id: String,
-    pub answer: String,
+    pub answer: serde_json::Value, // 다양한 타입 지원
 }
 
 /// 복약 관리

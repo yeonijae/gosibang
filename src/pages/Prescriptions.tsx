@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X, Search } from 'lucide-react';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import { usePlanLimits } from '../hooks/usePlanLimits';
@@ -7,6 +7,11 @@ import type { Prescription } from '../types';
 
 type ViewMode = 'list' | 'new' | 'edit';
 type PrintLayoutType = 'landscape' | 'portrait1' | 'portrait2';
+
+interface PrescriptionDefForSearch {
+  name: string;
+  alias: string | null;
+}
 
 export function Prescriptions() {
   const { canAddPrescription, refreshUsage, planInfo } = usePlanLimits();
@@ -18,10 +23,29 @@ export function Prescriptions() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [printLayoutModal, setPrintLayoutModal] = useState<Prescription | null>(null);
   const [limitWarning, setLimitWarning] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [prescriptionDefs, setPrescriptionDefs] = useState<PrescriptionDefForSearch[]>([]);
 
   useEffect(() => {
     loadPrescriptions();
+    loadPrescriptionDefs();
   }, []);
+
+  // 처방 정의 로드 (alias 검색용)
+  const loadPrescriptionDefs = () => {
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const defs = queryToObjects<PrescriptionDefForSearch>(
+        db,
+        'SELECT name, alias FROM prescription_definitions'
+      );
+      setPrescriptionDefs(defs);
+    } catch (error) {
+      console.error('처방 정의 로드 실패:', error);
+    }
+  };
 
   const loadPrescriptions = async () => {
     try {
@@ -372,6 +396,73 @@ export function Prescriptions() {
     setEditingPrescription(null);
   };
 
+  // 검색 필터링
+  const filteredPrescriptions = useMemo(() => {
+    if (!searchTerm.trim()) return prescriptions;
+
+    const searchTerms = searchTerm
+      .split(/[\s,]+/)
+      .map(term => term.trim().toLowerCase())
+      .filter(term => term.length > 0);
+
+    if (searchTerms.length === 0) return prescriptions;
+
+    return prescriptions.filter(p => {
+      // 단일 키워드: 환자이름도 검색
+      if (searchTerms.length === 1) {
+        const term = searchTerms[0];
+        // 환자이름 매칭
+        if (p.patient_name?.toLowerCase().includes(term)) return true;
+      }
+
+      // 처방 검색: 모든 키워드가 formula에 포함되어야 함 (AND)
+      const formulaLower = p.formula.toLowerCase();
+
+      // formula를 부분으로 분리 (공백, +, / 등으로)
+      const formulaParts = formulaLower.split(/[\s+\/]+/).filter(p => p.length > 0);
+
+      return searchTerms.every(term => {
+        // 1. formula에 직접 포함
+        if (formulaLower.includes(term)) return true;
+
+        // 2. formula의 각 부분이 검색어에 포함되는지 확인 (역방향)
+        // 예: formula="소시호", 검색어="소시호탕" → "소시호탕".includes("소시호") → true
+        for (const part of formulaParts) {
+          if (term.includes(part) && part.length >= 2) {
+            return true;
+          }
+        }
+
+        // 3. alias가 term을 포함하는 처방의 실제 이름이 formula에 포함
+        const matchingByAlias = prescriptionDefs.find(d =>
+          d.alias?.toLowerCase().includes(term)
+        );
+        if (matchingByAlias && formulaLower.includes(matchingByAlias.name.toLowerCase())) {
+          return true;
+        }
+
+        // 4. name이 term을 포함하는 처방 찾기
+        const matchingByName = prescriptionDefs.find(d =>
+          d.name.toLowerCase().includes(term)
+        );
+        if (matchingByName) {
+          // alias가 있으면 alias로 검색
+          if (matchingByName.alias && formulaLower.includes(matchingByName.alias.toLowerCase())) {
+            return true;
+          }
+          // formula의 부분이 처방명에 포함되는지 확인
+          for (const part of formulaParts) {
+            if (matchingByName.name.toLowerCase().includes(part) && part.length >= 2) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      });
+    });
+  }, [prescriptions, searchTerm, prescriptionDefs]);
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ko-KR', {
       year: 'numeric',
@@ -428,6 +519,20 @@ export function Prescriptions() {
         </div>
       )}
 
+      {/* 검색창 */}
+      {viewMode === 'list' && (
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="환자명 또는 처방으로 검색... (여러 처방: 백인 소시호 육미)"
+            className="input-field !pl-11"
+          />
+        </div>
+      )}
+
       {/* 컨텐츠 */}
       <div className="flex-1 min-h-0">
         {viewMode === 'list' ? (
@@ -451,6 +556,13 @@ export function Prescriptions() {
                   </button>
                 </div>
               </div>
+            ) : filteredPrescriptions.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <p className="text-lg">검색 결과가 없습니다</p>
+                  <p className="text-sm mt-2">다른 검색어로 시도해보세요</p>
+                </div>
+              </div>
             ) : (
               <div className="overflow-auto flex-1">
                 <table className="w-full">
@@ -466,7 +578,7 @@ export function Prescriptions() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {prescriptions.map((prescription) => (
+                    {filteredPrescriptions.map((prescription) => (
                       <tr key={prescription.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-500">
                           {prescription.issued_at ? formatDate(prescription.issued_at) : '-'}

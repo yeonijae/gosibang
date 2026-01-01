@@ -298,6 +298,8 @@ export interface PlanFeatures {
   survey_templates: boolean;
   survey_responses: boolean;
   medication: boolean;
+  survey_internal: boolean;   // 내부 설문 (태블릿/인트라넷)
+  survey_external: boolean;   // 외부 설문 (온라인 링크)
   backup?: boolean;
   export?: boolean;
   multiUser?: boolean;

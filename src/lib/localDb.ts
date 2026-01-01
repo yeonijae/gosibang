@@ -254,13 +254,21 @@ function migrateDatabase(database: Database) {
   database.run(`
     CREATE TABLE IF NOT EXISTS survey_responses (
       id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL REFERENCES survey_sessions(id) ON DELETE CASCADE,
-      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES survey_sessions(id) ON DELETE CASCADE,
+      patient_id TEXT REFERENCES patients(id) ON DELETE CASCADE,
       template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
       answers TEXT NOT NULL,
+      respondent_name TEXT,
       submitted_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // 기존 테이블에 respondent_name 컬럼 추가 (마이그레이션)
+  try {
+    database.run(`ALTER TABLE survey_responses ADD COLUMN respondent_name TEXT`);
+  } catch {
+    // 이미 컬럼이 존재하면 무시
+  }
 
   // medication_management 테이블 생성 (복약관리)
   database.run(`
@@ -286,24 +294,7 @@ function migrateDatabase(database: Database) {
     )
   `);
 
-  // 처방정의 동기화 (265개로 재설정)
-  syncPrescriptionDefinitions(database);
-
   saveDb();
-}
-
-// 처방정의 동기화 (기존 데이터 삭제 후 재삽입)
-function syncPrescriptionDefinitions(database: Database) {
-  // 현재 개수 확인
-  const result = database.exec('SELECT COUNT(*) as cnt FROM prescription_definitions');
-  const currentCount = result.length > 0 ? result[0].values[0][0] as number : 0;
-
-  // 265개가 아니면 재동기화
-  if (currentCount !== PRESCRIPTION_DEFINITIONS.length) {
-    console.log(`처방정의 동기화: ${currentCount}개 → ${PRESCRIPTION_DEFINITIONS.length}개`);
-    database.run('DELETE FROM prescription_definitions');
-    insertPrescriptionDefinitions(database);
-  }
 }
 
 // 테이블 생성
@@ -463,10 +454,11 @@ function createTables(database: Database) {
 
     CREATE TABLE IF NOT EXISTS survey_responses (
       id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL REFERENCES survey_sessions(id) ON DELETE CASCADE,
-      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES survey_sessions(id) ON DELETE CASCADE,
+      patient_id TEXT REFERENCES patients(id) ON DELETE CASCADE,
       template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
       answers TEXT NOT NULL,
+      respondent_name TEXT,
       submitted_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -540,12 +532,27 @@ function insertPrescriptionDefinitions(database: Database) {
   });
 }
 
-// 설문지 템플릿 삽입 (별도 함수)
+// 처방 정의 초기화 (삭제 후 기본 265개 재삽입)
+export function resetPrescriptionDefinitions(): number {
+  if (!db) return 0;
+
+  // 기존 처방 정의 모두 삭제
+  db.run('DELETE FROM prescription_definitions');
+
+  // 기본 처방 정의 삽입
+  insertPrescriptionDefinitions(db);
+
+  saveDb();
+  return PRESCRIPTION_DEFINITIONS.length;
+}
+
+// 설문지 템플릿 삽입 (별도 함수) - 기본 템플릿은 고정 ID 사용
 function insertSurveyTemplates(database: Database) {
   const now = new Date().toISOString();
   SURVEY_TEMPLATES.forEach((template, idx) => {
     try {
-      const id = `template_${idx + 1}_${Date.now()}`;
+      // 기본 템플릿은 고정 ID 사용 (백엔드와 동기화)
+      const id = idx === 0 ? 'default_female_health' : `template_${idx + 1}_${Date.now()}`;
       database.run(
         'INSERT OR IGNORE INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [id, template.name, template.description || null, JSON.stringify(template.questions), template.display_mode || 'one_by_one', template.is_active ? 1 : 0, now, now]
@@ -649,10 +656,41 @@ export function ensureSampleData(): void {
     insertPrescriptionDefinitions(db);
   }
 
-  // 설문지 템플릿도 확인
+  // 설문지 템플릿도 확인 (기본 템플릿이 없으면 추가, 있으면 업데이트)
   const surveyCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM survey_templates');
   if (!surveyCount || surveyCount.cnt === 0) {
     insertSurveyTemplates(db);
+  } else {
+    // 기본 템플릿(default_female_health)은 항상 최신 내용으로 유지
+    const defaultTemplate = SURVEY_TEMPLATES[0];
+    if (defaultTemplate) {
+      const now = new Date().toISOString();
+      const exists = queryOne<{ cnt: number }>(db!, `SELECT COUNT(*) as cnt FROM survey_templates WHERE id = ?`, ['default_female_health']);
+
+      if (exists && exists.cnt > 0) {
+        // 기존 템플릿 업데이트 (내용 고정)
+        try {
+          db!.run(
+            'UPDATE survey_templates SET name = ?, description = ?, questions = ?, display_mode = ?, is_active = ?, updated_at = ? WHERE id = ?',
+            [defaultTemplate.name, defaultTemplate.description || null, JSON.stringify(defaultTemplate.questions), defaultTemplate.display_mode || 'single_page', defaultTemplate.is_active ? 1 : 0, now, 'default_female_health']
+          );
+          console.log('[ensureSampleData] 기본 설문 템플릿 업데이트됨:', defaultTemplate.name);
+        } catch (e) {
+          console.error('[ensureSampleData] 설문 템플릿 업데이트 실패:', e);
+        }
+      } else {
+        // 새로 삽입
+        try {
+          db!.run(
+            'INSERT INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            ['default_female_health', defaultTemplate.name, defaultTemplate.description || null, JSON.stringify(defaultTemplate.questions), defaultTemplate.display_mode || 'single_page', defaultTemplate.is_active ? 1 : 0, now, now]
+          );
+          console.log('[ensureSampleData] 기본 설문 템플릿 추가됨:', defaultTemplate.name);
+        } catch (e) {
+          console.error('[ensureSampleData] 설문 템플릿 추가 실패:', defaultTemplate.name, e);
+        }
+      }
+    }
   }
 
   // 처방 카테고리도 확인

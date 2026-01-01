@@ -3,7 +3,7 @@ use crate::models::{AuthState, Subscription, SubscriptionStatus};
 use chrono::{DateTime, Utc};
 use once_cell::sync::OnceCell;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Mutex;
 
 static AUTH_STATE: OnceCell<Mutex<AuthState>> = OnceCell::new();
@@ -35,16 +35,36 @@ pub fn init_supabase(url: &str, anon_key: &str) {
     let _ = AUTH_STATE.set(Mutex::new(AuthState::default()));
 }
 
-fn get_config() -> AppResult<&'static SupabaseConfig> {
+/// Supabase가 초기화되지 않았으면 기본값으로 초기화
+pub fn ensure_supabase_initialized() {
+    if SUPABASE_CONFIG.get().is_none() {
+        // 하드코딩된 기본값 (환경 변수에서 빌드 시 주입하는 것이 더 좋음)
+        const DEFAULT_URL: &str = "https://vipyakvxzfccytwjaqet.supabase.co";
+        const DEFAULT_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpcHlha3Z4emZjY3l0d2phcWV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5NTc2MjUsImV4cCI6MjA3ODUzMzYyNX0.xuR3LxaR69t1RGB74G3FtlBIoxelfAH6fdZrnZSjHfQ";
+
+        init_supabase(DEFAULT_URL, DEFAULT_KEY);
+        log::info!("Supabase initialized with default config for sync");
+    }
+}
+
+pub fn get_supabase_config() -> AppResult<&'static SupabaseConfig> {
     SUPABASE_CONFIG
         .get()
         .ok_or_else(|| AppError::Custom("Supabase not initialized".to_string()))
 }
 
-fn get_client() -> AppResult<&'static Client> {
+pub fn get_http_client() -> AppResult<&'static Client> {
     HTTP_CLIENT
         .get()
         .ok_or_else(|| AppError::Custom("HTTP client not initialized".to_string()))
+}
+
+fn get_config() -> AppResult<&'static SupabaseConfig> {
+    get_supabase_config()
+}
+
+fn get_client() -> AppResult<&'static Client> {
+    get_http_client()
 }
 
 fn get_auth_state() -> AppResult<std::sync::MutexGuard<'static, AuthState>> {

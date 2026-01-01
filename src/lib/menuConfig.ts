@@ -7,8 +7,8 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'prescriptions', label: '처방관리', icon: 'FileText', path: '/prescriptions' },
   { key: 'prescription_definitions', label: '처방정의', icon: 'Book', path: '/prescription-definitions' },
   { key: 'charts', label: '차팅관리', icon: 'ClipboardList', path: '/charts' },
-  { key: 'survey_templates', label: '설문관리', icon: 'FileQuestion', path: '/survey-templates' },
-  { key: 'survey_responses', label: '설문응답', icon: 'MessageSquare', path: '/survey-responses' },
+  { key: 'survey_templates', label: '설문템플릿', icon: 'FileQuestion', path: '/survey-templates' },
+  { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
   { key: 'medication', label: '복약관리', icon: 'Pill', path: '/medication' },
 ];
 

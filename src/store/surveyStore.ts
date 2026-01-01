@@ -1,7 +1,20 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { getDb, saveDb, generateUUID, queryToObjects, queryOne } from '../lib/localDb';
 import { generateSurveyToken, generateExpiresAt, isSessionExpired } from '../lib/surveyUtils';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './authStore';
 import type { SurveyTemplate, SurveySession, SurveyResponse, SurveyAnswer, SurveyQuestion, SurveyDisplayMode } from '../types';
+
+// Tauri에서 반환하는 템플릿 구조
+interface TauriSurveyTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  questions: SurveyQuestion[];
+  display_mode: string | null;
+  is_active: boolean;
+}
 
 interface SurveyStore {
   // 상태
@@ -27,6 +40,7 @@ interface SurveyStore {
   // 응답 관련
   loadResponses: (filters?: { patient_id?: string; template_id?: string }) => Promise<void>;
   submitResponse: (sessionId: string, answers: SurveyAnswer[]) => Promise<void>;
+  createDirectResponse: (templateId: string, answers: SurveyAnswer[], respondentName?: string) => Promise<void>;
   getResponsesByPatient: (patientId: string) => Promise<SurveyResponse[]>;
 }
 
@@ -37,104 +51,89 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   isLoading: false,
   error: null,
 
-  // ===== 템플릿 관련 =====
+  // ===== 템플릿 관련 (Tauri 명령어 사용) =====
 
   loadTemplates: async () => {
     try {
       set({ isLoading: true, error: null });
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      const templates = queryToObjects<SurveyTemplate & { questions: string }>(
-        db,
-        'SELECT * FROM survey_templates ORDER BY created_at DESC'
-      ).map(t => ({
-        ...t,
-        questions: typeof t.questions === 'string' ? JSON.parse(t.questions) : t.questions,
-        display_mode: t.display_mode || 'one_by_one',
-        is_active: Boolean(t.is_active),
+      // Tauri 명령어로 Rust DB에서 템플릿 조회
+      const tauriTemplates = await invoke<TauriSurveyTemplate[]>('list_survey_templates');
+
+      const templates: SurveyTemplate[] = tauriTemplates.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description || undefined,
+        questions: t.questions,
+        display_mode: (t.display_mode || 'one_by_one') as SurveyDisplayMode,
+        is_active: t.is_active,
+        created_at: new Date().toISOString(), // Rust DB에 없으면 현재 시간
+        updated_at: new Date().toISOString(),
       }));
 
       set({ templates, isLoading: false });
     } catch (error) {
+      console.error('[Survey] 템플릿 로드 실패:', error);
       set({ error: String(error), isLoading: false });
     }
   },
 
   getTemplate: (id: string) => {
-    const db = getDb();
-    if (!db) return null;
-
-    const template = queryOne<SurveyTemplate & { questions: string }>(
-      db,
-      'SELECT * FROM survey_templates WHERE id = ?',
-      [id]
-    );
-
-    if (!template) return null;
-
-    return {
-      ...template,
-      questions: typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions,
-      display_mode: template.display_mode || 'one_by_one',
-      is_active: Boolean(template.is_active),
-    };
+    // 이미 로드된 템플릿에서 찾기 (동기식)
+    const templates = get().templates;
+    return templates.find(t => t.id === id) || null;
   },
 
   createTemplate: async (data) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+    // Tauri 명령어로 Rust DB에 저장
+    const templateInput = {
+      id: null, // 새로 생성 시 null
+      name: data.name,
+      description: data.description || null,
+      questions: data.questions,
+      display_mode: data.display_mode || 'one_by_one',
+      is_active: true,
+    };
 
-    const id = generateUUID();
-    const now = new Date().toISOString();
-    const displayMode = data.display_mode || 'one_by_one';
-
-    db.run(
-      `INSERT INTO survey_templates (id, name, description, questions, display_mode, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-      [id, data.name, data.description || null, JSON.stringify(data.questions), displayMode, now, now]
-    );
-    saveDb();
+    const newId = await invoke<string>('save_survey_template', { template: templateInput });
 
     const template: SurveyTemplate = {
-      id,
+      id: newId,
       name: data.name,
       description: data.description,
       questions: data.questions,
-      display_mode: displayMode,
+      display_mode: data.display_mode || 'one_by_one',
       is_active: true,
-      created_at: now,
-      updated_at: now,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    set({ templates: [template, ...get().templates] });
+    // 템플릿 목록 다시 로드
+    await get().loadTemplates();
     return template;
   },
 
   updateTemplate: async (id, data) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+    const templateInput = {
+      id,
+      name: data.name,
+      description: data.description || null,
+      questions: data.questions,
+      display_mode: data.display_mode || 'one_by_one',
+      is_active: data.is_active ?? true,
+    };
 
-    const now = new Date().toISOString();
-    const displayMode = data.display_mode || 'one_by_one';
+    await invoke<string>('save_survey_template', { template: templateInput });
 
-    db.run(
-      `UPDATE survey_templates SET name = ?, description = ?, questions = ?, display_mode = ?, is_active = ?, updated_at = ? WHERE id = ?`,
-      [data.name, data.description || null, JSON.stringify(data.questions), displayMode, data.is_active ? 1 : 0, now, id]
-    );
-    saveDb();
-
+    // 템플릿 목록 다시 로드
     await get().loadTemplates();
   },
 
   deleteTemplate: async (id) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+    await invoke('delete_survey_template', { id });
 
-    db.run('DELETE FROM survey_templates WHERE id = ?', [id]);
-    saveDb();
-
-    set({ templates: get().templates.filter(t => t.id !== id) });
+    // 템플릿 목록 다시 로드
+    await get().loadTemplates();
   },
 
   // ===== 세션 관련 =====
@@ -145,11 +144,14 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
+      // 템플릿 목록을 먼저 로드 (Rust DB에서)
+      const templates = get().templates;
+      const templateMap = new Map(templates.map(t => [t.id, t.name]));
+
       let sql = `
-        SELECT s.*, p.name as patient_name, t.name as template_name
+        SELECT s.*, p.name as patient_name
         FROM survey_sessions s
         LEFT JOIN patients p ON s.patient_id = p.id
-        LEFT JOIN survey_templates t ON s.template_id = t.id
         WHERE 1=1
       `;
       const params: unknown[] = [];
@@ -165,14 +167,18 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
       sql += ' ORDER BY s.created_at DESC';
 
-      const sessions = queryToObjects<SurveySession>(db, sql, params);
+      const rawSessions = queryToObjects<SurveySession>(db, sql, params);
 
-      // 만료된 세션 상태 업데이트
-      sessions.forEach(session => {
+      // 만료된 세션 상태 업데이트 및 템플릿 이름 추가
+      const sessions = rawSessions.map(session => {
         if (session.status === 'pending' && isSessionExpired(session.expires_at)) {
           session.status = 'expired';
           db.run('UPDATE survey_sessions SET status = ? WHERE id = ?', ['expired', session.id]);
         }
+        return {
+          ...session,
+          template_name: templateMap.get(session.template_id) || '알 수 없는 템플릿',
+        };
       });
       saveDb();
 
@@ -191,6 +197,15 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     const expiresAt = generateExpiresAt(24);
     const now = new Date().toISOString();
 
+    // 환자 이름 가져오기 (sql.js에서)
+    const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [patientId]);
+
+    // 템플릿 정보 가져오기 (Tauri 명령어로 Rust DB에서)
+    const localTemplate = await invoke<TauriSurveyTemplate | null>('get_survey_template', { id: templateId });
+
+    if (!localTemplate) throw new Error('템플릿을 찾을 수 없습니다.');
+
+    // 로컬 DB에 세션 저장
     db.run(
       `INSERT INTO survey_sessions (id, token, patient_id, template_id, status, expires_at, created_by, created_at)
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
@@ -198,9 +213,50 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     );
     saveDb();
 
-    // 환자 이름, 템플릿 이름 가져오기
-    const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [patientId]);
-    const template = queryOne<{ name: string }>(db, 'SELECT name FROM survey_templates WHERE id = ?', [templateId]);
+    // Supabase 동기화
+    const authState = useAuthStore.getState().authState;
+    const userId = authState?.user?.id;
+
+    if (userId) {
+      try {
+        // 1. 템플릿이 Supabase에 있는지 확인하고, 없으면 생성
+        const { data: existingTemplate } = await supabase
+          .from('survey_templates')
+          .select('id')
+          .eq('id', templateId)
+          .single();
+
+        if (!existingTemplate) {
+          // 템플릿 업로드 (Tauri에서 가져온 템플릿은 이미 파싱됨)
+          await supabase.from('survey_templates').insert({
+            id: templateId,
+            user_id: userId,
+            name: localTemplate.name,
+            description: localTemplate.description || null,
+            questions: localTemplate.questions,
+            display_mode: localTemplate.display_mode || 'one_by_one',
+            is_active: localTemplate.is_active,
+          });
+        }
+
+        // 2. 세션 업로드
+        await supabase.from('survey_sessions').insert({
+          id,
+          user_id: userId,
+          template_id: templateId,
+          token,
+          patient_id: patientId,
+          respondent_name: patient?.name || null,
+          status: 'pending',
+          expires_at: expiresAt,
+        });
+
+        console.log('[Survey] Supabase 동기화 완료:', { sessionId: id, token });
+      } catch (error) {
+        console.error('[Survey] Supabase 동기화 실패:', error);
+        // 로컬에는 저장되었으므로 에러를 throw하지 않음
+      }
+    }
 
     const session: SurveySession = {
       id,
@@ -212,7 +268,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       created_by: createdBy,
       created_at: now,
       patient_name: patient?.name,
-      template_name: template?.name,
+      template_name: localTemplate.name,
     };
 
     set({ sessions: [session, ...get().sessions] });
@@ -225,10 +281,9 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
     const session = queryOne<SurveySession>(
       db,
-      `SELECT s.*, p.name as patient_name, t.name as template_name
+      `SELECT s.*, p.name as patient_name
        FROM survey_sessions s
        LEFT JOIN patients p ON s.patient_id = p.id
-       LEFT JOIN survey_templates t ON s.template_id = t.id
        WHERE s.token = ?`,
       [token]
     );
@@ -246,8 +301,12 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       return null;
     }
 
+    // 템플릿은 상태에서 가져오기 (Rust DB에서 로드됨)
     const template = get().getTemplate(session.template_id);
     if (!template) return null;
+
+    // 세션에 템플릿 이름 추가
+    session.template_name = template.name;
 
     return { session, template };
   },
@@ -274,11 +333,15 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
+      // 템플릿 목록을 먼저 로드 (Rust DB에서)
+      const templates = get().templates;
+      const templateMap = new Map(templates.map(t => [t.id, t.name]));
+
       let sql = `
-        SELECT r.*, p.name as patient_name, t.name as template_name
+        SELECT r.*,
+          COALESCE(p.name, r.respondent_name) as patient_name
         FROM survey_responses r
         LEFT JOIN patients p ON r.patient_id = p.id
-        LEFT JOIN survey_templates t ON r.template_id = t.id
         WHERE 1=1
       `;
       const params: unknown[] = [];
@@ -297,6 +360,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       const responses = queryToObjects<SurveyResponse & { answers: string }>(db, sql, params).map(r => ({
         ...r,
         answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : r.answers,
+        template_name: templateMap.get(r.template_id) || '알 수 없는 템플릿',
       }));
 
       set({ responses, isLoading: false });
@@ -342,19 +406,43 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     const db = getDb();
     if (!db) return [];
 
+    // 템플릿 목록을 먼저 로드 (Rust DB에서)
+    const templates = get().templates;
+    const templateMap = new Map(templates.map(t => [t.id, t.name]));
+
     const responses = queryToObjects<SurveyResponse & { answers: string }>(
       db,
-      `SELECT r.*, t.name as template_name
+      `SELECT r.*
        FROM survey_responses r
-       LEFT JOIN survey_templates t ON r.template_id = t.id
        WHERE r.patient_id = ?
        ORDER BY r.submitted_at DESC`,
       [patientId]
     ).map(r => ({
       ...r,
       answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : r.answers,
+      template_name: templateMap.get(r.template_id) || '알 수 없는 템플릿',
     }));
 
     return responses;
+  },
+
+  // 환자 등록 없이 직접 응답 생성
+  createDirectResponse: async (templateId, answers, respondentName) => {
+    const db = getDb();
+    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+    const id = generateUUID();
+    const now = new Date().toISOString();
+
+    // 응답 저장 (patient_id는 null, respondent_name 컬럼 활용)
+    db.run(
+      `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, respondent_name, submitted_at)
+       VALUES (?, NULL, NULL, ?, ?, ?, ?)`,
+      [id, templateId, JSON.stringify(answers), respondentName || null, now]
+    );
+    saveDb();
+
+    // 응답 목록 새로고침
+    await get().loadResponses();
   },
 }));

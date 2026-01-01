@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
 import type { ClinicSettings } from '../types';
 
@@ -64,6 +65,13 @@ export const useClinicStore = create<ClinicStore>((set) => ({
         );
       }
       saveDb();
+
+      // 백엔드 rusqlite에도 저장 (HTTP 서버용)
+      try {
+        await invoke('save_clinic_settings', { settings });
+      } catch (e) {
+        console.warn('백엔드 설정 저장 실패:', e);
+      }
 
       set({ settings: { ...settings, updated_at: now }, isLoading: false });
     } catch (error) {
