@@ -24,6 +24,39 @@ import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/back
 import type { ClinicSettings, Subscription } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 
+// 기능 레이블 매핑 (gosibang-admin과 동기화)
+const FEATURE_LABELS: Record<string, string> = {
+  dashboard: '대시보드',
+  patients: '환자관리',
+  prescriptions: '처방관리',
+  prescription_definitions: '처방정의',
+  prescription_definitions_edit: '처방정의변경',
+  charts: '차트관리',
+  survey_templates: '설문템플릿',
+  survey_responses: '설문관리',
+  survey_internal: '원내설문지',
+  survey_external: '온라인설문지',
+  medication: '복약관리',
+  backup: '백업',
+  export: '내보내기',
+  multiUser: '다중사용자',
+};
+
+// 기능 표시 순서 (플랜 비교에서 표시할 기능)
+const DISPLAY_FEATURES: string[] = [
+  'dashboard',
+  'patients',
+  'prescriptions',
+  'prescription_definitions',
+  'charts',
+  'survey_templates',
+  'survey_responses',
+  'survey_internal',
+  'survey_external',
+  'medication',
+  'backup',
+];
+
 // DB에서 불러온 플랜 정책을 UI용으로 변환하는 타입
 interface PlanDisplay {
   id: string;
@@ -326,21 +359,27 @@ export function Settings() {
 
           const features = policy.features || {};
 
-          // 기능 목록 생성 (메뉴 기능 포함)
-          const featureList = [
+          // 기능 목록 동적 생성 (Supabase에서 받아온 features 기반)
+          const featureList: { text: string; included: boolean }[] = [
             { text: formatLimit(policy.max_patients, '환자'), included: true },
             { text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true },
             { text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true },
-            { text: '대시보드', included: features.dashboard !== false },
-            { text: '환자관리', included: features.patients !== false },
-            { text: '처방관리', included: features.prescriptions !== false },
-            { text: '처방정의', included: features.prescription_definitions !== false },
-            { text: '차팅관리', included: features.charts !== false },
-            { text: '설문템플릿', included: features.survey_templates === true },
-            { text: '설문관리', included: features.survey_responses === true },
-            { text: '복약관리', included: features.medication === true },
-            { text: '데이터 백업', included: features.backup === true },
           ];
+
+          // DISPLAY_FEATURES 순서대로 동적으로 추가
+          for (const featureKey of DISPLAY_FEATURES) {
+            const label = FEATURE_LABELS[featureKey];
+            if (!label) continue;
+
+            // 기본 기능 (dashboard, patients, prescriptions, prescription_definitions, charts)은
+            // false가 아니면 포함, 나머지는 true일 때만 포함
+            const isBasicFeature = ['dashboard', 'patients', 'prescriptions', 'prescription_definitions', 'charts'].includes(featureKey);
+            const included = isBasicFeature
+              ? features[featureKey] !== false
+              : features[featureKey] === true;
+
+            featureList.push({ text: label, included });
+          }
 
           return {
             id: policy.plan_type,
