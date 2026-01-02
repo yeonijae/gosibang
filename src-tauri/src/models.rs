@@ -36,6 +36,7 @@ impl Default for ClinicSettings {
 pub struct Patient {
     pub id: String,
     pub name: String,
+    pub chart_number: Option<String>,    // 차트번호
     pub birth_date: Option<String>,      // YYYY-MM-DD
     pub gender: Option<String>,          // M/F
     pub phone: Option<String>,
@@ -51,6 +52,7 @@ impl Patient {
         Self {
             id: Uuid::new_v4().to_string(),
             name,
+            chart_number: None,
             birth_date: None,
             gender: None,
             phone: None,

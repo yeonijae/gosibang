@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
-import { X, Save, Edit, Loader2, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Save, Edit, Loader2, AlertCircle, Check, Cloud } from 'lucide-react';
 import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { InitialChart } from '../types';
+
+type SaveStatus = 'idle' | 'changed' | 'saving' | 'saved' | 'error';
 
 interface Props {
   patientId: string;
@@ -30,6 +32,13 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
   const [loading, setLoading] = useState(!forceNew);
   const [formData, setFormData] = useState<Partial<InitialChart>>({});
   const [limitWarning, setLimitWarning] = useState<string | null>(null);
+
+  // 자동 저장 관련
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [chartId, setChartId] = useState<string | null>(null); // 새로 생성된 차트 ID
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstRenderRef = useRef(true);
+  const AUTO_SAVE_DELAY = 3000; // 3초
 
   const extractDateFromText = (text: string): string | null => {
     if (!text) return null;
@@ -163,6 +172,107 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
     }
   };
 
+  // 자동 저장 함수
+  const performAutoSave = useCallback(async () => {
+    // 내용이 없으면 저장하지 않음
+    if (!formData.notes || formData.notes.trim() === '') {
+      return;
+    }
+
+    // 진료일자가 없으면 오늘 날짜 사용
+    const chartDate = formData.chart_date || new Date().toISOString().split('T')[0];
+
+    try {
+      setSaveStatus('saving');
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      const now = new Date().toISOString();
+      const existingChartId = chart?.id || chartId;
+
+      if (existingChartId) {
+        // 기존 차트 업데이트
+        db.run(
+          `UPDATE initial_charts SET chart_date = ?, notes = ?, updated_at = ?
+           WHERE id = ?`,
+          [chartDate, formData.notes.trim(), now, existingChartId]
+        );
+      } else {
+        // 새 차트 생성 시 제한 확인
+        const limitCheck = canAddChart();
+        if (!limitCheck.allowed) {
+          setLimitWarning(limitCheck.message || '차트 한도에 도달했습니다.');
+          setSaveStatus('error');
+          return;
+        }
+
+        const newId = generateUUID();
+        db.run(
+          `INSERT INTO initial_charts (id, patient_id, chart_date, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [newId, patientId, chartDate, formData.notes.trim(), now, now]
+        );
+        setChartId(newId);
+        refreshUsage();
+      }
+
+      saveDb();
+      setSaveStatus('saved');
+
+      // 3초 후 상태를 idle로 변경
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
+    } catch (error: any) {
+      console.error('자동 저장 실패:', error);
+      setSaveStatus('error');
+    }
+  }, [formData, chart, chartId, patientId, canAddChart, refreshUsage]);
+
+  // formData 변경 시 자동 저장 타이머 설정
+  useEffect(() => {
+    // 첫 렌더링 시에는 무시
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    // 편집 모드가 아니면 무시
+    if (!isEditing) return;
+
+    // 내용이 없으면 무시
+    if (!formData.notes || formData.notes.trim() === '') return;
+
+    // 상태를 "변경됨"으로 설정
+    setSaveStatus('changed');
+
+    // 기존 타이머 취소
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    // 새 타이머 설정
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, AUTO_SAVE_DELAY);
+
+    // 클린업
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [formData.notes, formData.chart_date, isEditing, performAutoSave]);
+
+  // 컴포넌트 언마운트 시 저장
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleSave = async () => {
     try {
       if (!formData.notes || formData.notes.trim() === '') {
@@ -179,8 +289,21 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
       const now = new Date().toISOString();
+      const existingChartId = chart?.id || chartId;
 
-      if (forceNew || !chart) {
+      if (existingChartId) {
+        // 기존 차트 업데이트
+        db.run(
+          `UPDATE initial_charts SET chart_date = ?, notes = ?, updated_at = ?
+           WHERE id = ?`,
+          [formData.chart_date, formData.notes.trim(), now, existingChartId]
+        );
+        saveDb();
+
+        alert('초진차트가 저장되었습니다');
+        setIsEditing(false);
+        await loadChart();
+      } else {
         // 새 차트 생성 시 제한 확인
         const limitCheck = canAddChart();
         if (!limitCheck.allowed) {
@@ -195,25 +318,50 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
           [id, patientId, formData.chart_date, formData.notes.trim(), now, now]
         );
         saveDb();
-        refreshUsage(); // 사용량 갱신
+        refreshUsage();
 
         alert('새 진료차트가 생성되었습니다');
         onClose();
-      } else {
-        db.run(
-          `UPDATE initial_charts SET chart_date = ?, notes = ?, updated_at = ?
-           WHERE id = ?`,
-          [formData.chart_date, formData.notes.trim(), now, chart.id]
-        );
-        saveDb();
-
-        alert('초진차트가 수정되었습니다');
-        setIsEditing(false);
-        await loadChart();
       }
     } catch (error: any) {
       console.error('저장 실패:', error);
       alert('저장에 실패했습니다: ' + error.message);
+    }
+  };
+
+  // 저장 상태 표시 컴포넌트
+  const SaveStatusIndicator = () => {
+    switch (saveStatus) {
+      case 'changed':
+        return (
+          <span className="flex items-center gap-1 text-amber-600 text-sm">
+            <Cloud className="w-4 h-4" />
+            변경됨
+          </span>
+        );
+      case 'saving':
+        return (
+          <span className="flex items-center gap-1 text-blue-600 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            저장 중...
+          </span>
+        );
+      case 'saved':
+        return (
+          <span className="flex items-center gap-1 text-green-600 text-sm">
+            <Check className="w-4 h-4" />
+            자동 저장됨
+          </span>
+        );
+      case 'error':
+        return (
+          <span className="flex items-center gap-1 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4" />
+            저장 실패
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
@@ -233,15 +381,20 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-gradient-to-r from-primary-600 to-purple-700 border-b p-3 flex justify-between items-center text-white shadow-md">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold">초진차트 - {patientName}</h2>
+        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-gray-900">초진차트 - {patientName}</h2>
+            {isEditing && (
+              <div className="bg-gray-100 px-2 py-1 rounded">
+                <SaveStatusIndicator />
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             {!isEditing && chart && (
               <button
                 onClick={() => setIsEditing(true)}
-                className="px-3 py-1.5 bg-white text-primary-600 rounded-lg hover:bg-gray-100 transition-colors font-medium text-sm flex items-center gap-1"
+                className="btn-secondary flex items-center gap-1"
               >
                 <Edit className="w-4 h-4" />
                 수정
@@ -249,7 +402,7 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
             )}
             <button
               onClick={onClose}
-              className="px-3 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-1"
+              className="btn-secondary flex items-center gap-1"
             >
               <X className="w-4 h-4" />
               닫기
@@ -397,8 +550,8 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
                   return (
                     <div className="space-y-4">
                       {sections.map((section, sectionIndex) => (
-                        <div key={sectionIndex} className="bg-white border-2 border-primary-600 rounded-lg overflow-hidden shadow-md">
-                          <div className="bg-gradient-to-r from-primary-600 to-purple-700 px-4 py-3">
+                        <div key={sectionIndex} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                          <div className="bg-primary-600 px-4 py-3">
                             <h4 className="font-bold text-white text-lg flex items-center">
                               {section.title}
                             </h4>
@@ -415,7 +568,7 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
                           {section.subsections.length > 0 && (
                             <div className="p-4 space-y-3">
                               {section.subsections.map((subsection, subIndex) => (
-                                <div key={subIndex} className="border-l-4 border-purple-500 pl-4 py-2 bg-gray-50 rounded-r">
+                                <div key={subIndex} className="border-l-4 border-primary-500 pl-4 py-2 bg-gray-50 rounded-r">
                                   <h5 className="font-semibold text-primary-600 mb-2 flex items-center text-base">
                                     {subsection.title}
                                   </h5>

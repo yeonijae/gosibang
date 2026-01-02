@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { getDb, saveDb, generateUUID, queryToObjects, queryOne } from '../lib/localDb';
@@ -21,7 +21,12 @@ interface ChartSection {
 
 export function Charts() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { selectedPatient, selectPatient } = usePatientStore();
+
+  // 환자관리에서 전달받은 차트 ID
+  const selectedChartId = (location.state as { selectedChartId?: string })?.selectedChartId;
+  const hasOpenedSelectedChart = useRef(false);
 
   // 목록 상태
   const [chartRecords, setChartRecords] = useState<(InitialChart & { patient_name: string })[]>([]);
@@ -60,6 +65,17 @@ export function Charts() {
   useEffect(() => {
     loadChartRecords();
   }, []);
+
+  // 환자관리에서 선택된 차트 자동 열기 (한 번만 실행)
+  useEffect(() => {
+    if (selectedChartId && chartRecords.length > 0 && !listLoading && !hasOpenedSelectedChart.current) {
+      const selectedChart = chartRecords.find(c => c.id === selectedChartId);
+      if (selectedChart) {
+        hasOpenedSelectedChart.current = true;
+        handleRecordClick(selectedChart);
+      }
+    }
+  }, [selectedChartId, chartRecords, listLoading]);
 
   // 자동 저장 (5초 디바운스)
   useEffect(() => {

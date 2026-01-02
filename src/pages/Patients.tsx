@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2, MessageSquare, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2, MessageSquare, AlertCircle, ExternalLink } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import InitialChartView from '../components/InitialChartView';
-import ProgressNoteView from '../components/ProgressNoteView';
 import { SurveySessionModal } from '../components/survey/SurveySessionModal';
 import { usePlanLimits } from '../hooks/usePlanLimits';
-import type { Patient, Prescription, InitialChart, ProgressNote } from '../types';
+import type { Patient, Prescription, InitialChart } from '../types';
 
 export function Patients() {
   const {
@@ -135,6 +135,7 @@ export function Patients() {
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">차트번호</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">이름</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">생년월일</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">성별</th>
@@ -152,6 +153,9 @@ export function Patients() {
                     }`}
                     onClick={() => selectPatient(patient)}
                   >
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {patient.chart_number || '-'}
+                    </td>
                     <td className="py-3 px-4 text-sm font-medium text-gray-900">
                       {patient.name}
                     </td>
@@ -281,6 +285,7 @@ interface PatientModalProps {
 function PatientModal({ patient, onSave, onClose }: PatientModalProps) {
   const [formData, setFormData] = useState<Partial<Patient>>({
     name: patient?.name || '',
+    chart_number: patient?.chart_number || '',
     birth_date: patient?.birth_date || '',
     gender: patient?.gender || undefined,
     phone: patient?.phone || '',
@@ -297,6 +302,7 @@ function PatientModal({ patient, onSave, onClose }: PatientModalProps) {
     const patientData: Patient = {
       id: patient?.id || crypto.randomUUID(),
       name: formData.name || '',
+      chart_number: formData.chart_number || undefined,
       birth_date: formData.birth_date || undefined,
       gender: formData.gender || undefined,
       phone: formData.phone || undefined,
@@ -323,17 +329,31 @@ function PatientModal({ patient, onSave, onClose }: PatientModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              이름 <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="input-field"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                이름 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="input-field"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                차트번호
+              </label>
+              <input
+                type="text"
+                value={formData.chart_number}
+                onChange={(e) => setFormData({ ...formData, chart_number: e.target.value })}
+                className="input-field"
+                placeholder="예: 00001"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -749,18 +769,12 @@ interface PatientChartModalProps {
 }
 
 function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
-  const [activeTab, setActiveTab] = useState<'initial' | 'progress'>('initial');
+  const navigate = useNavigate();
   const [initialCharts, setInitialCharts] = useState<InitialChart[]>([]);
-  const [progressNotes, setProgressNotes] = useState<ProgressNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 초진차트 뷰어
-  const [viewingInitialChart, setViewingInitialChart] = useState<InitialChart | null>(null);
+  // 초진차트 작성 모달
   const [creatingInitialChart, setCreatingInitialChart] = useState(false);
-
-  // 경과기록 뷰어
-  const [viewingProgressNote, setViewingProgressNote] = useState<ProgressNote | null>(null);
-  const [creatingProgressNote, setCreatingProgressNote] = useState(false);
 
   useEffect(() => {
     loadCharts();
@@ -778,13 +792,6 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
         [patient.id]
       );
       setInitialCharts(initialData);
-
-      const progressData = queryToObjects<ProgressNote>(
-        db,
-        'SELECT * FROM progress_notes WHERE patient_id = ? ORDER BY note_date DESC',
-        [patient.id]
-      );
-      setProgressNotes(progressData);
     } catch (error) {
       console.error('차트 로드 실패:', error);
     } finally {
@@ -807,55 +814,23 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
     }
   };
 
-  const handleDeleteProgressNote = async (note: ProgressNote) => {
-    if (!confirm('이 경과기록을 삭제하시겠습니까?')) return;
-
-    try {
-      const db = getDb();
-      if (!db) return;
-
-      db.run('DELETE FROM progress_notes WHERE id = ?', [note.id]);
-      saveDb();
-      loadCharts();
-    } catch (error) {
-      console.error('경과기록 삭제 실패:', error);
-    }
+  const handleChartClick = (chart: InitialChart) => {
+    // 모달 닫고 차팅관리 페이지로 이동
+    onClose();
+    navigate('/charts', { state: { selectedChartId: chart.id } });
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-slate-600 to-slate-700 text-white">
-          <h2 className="text-lg font-semibold">
-            {patient.name}님의 차트 관리
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {patient.name}님의 초진차트
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* 탭 */}
-        <div className="flex border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('initial')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'initial'
-                ? 'text-slate-600 border-b-2 border-slate-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            초진차트 ({initialCharts.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('progress')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'progress'
-                ? 'text-slate-600 border-b-2 border-slate-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            경과기록 ({progressNotes.length})
+          <button onClick={onClose} className="btn-secondary flex items-center gap-1">
+            <X className="w-4 h-4" />
+            닫기
           </button>
         </div>
 
@@ -863,15 +838,15 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-slate-600" />
+              <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
             </div>
-          ) : activeTab === 'initial' ? (
+          ) : (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <p className="text-sm text-gray-600">총 {initialCharts.length}건</p>
                 <button
                   onClick={() => setCreatingInitialChart(true)}
-                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-2"
+                  className="btn-primary flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
                   초진차트 작성
@@ -887,14 +862,17 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
                   {initialCharts.map((chart) => (
                     <div
                       key={chart.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:border-purple-300 transition-colors cursor-pointer"
-                      onClick={() => setViewingInitialChart(chart)}
+                      className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 transition-colors cursor-pointer"
+                      onClick={() => handleChartClick(chart)}
                     >
                       <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {new Date(chart.chart_date).toLocaleDateString('ko-KR')} 초진
-                          </p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-900">
+                              {new Date(chart.chart_date).toLocaleDateString('ko-KR')} 초진
+                            </p>
+                            <ExternalLink className="w-4 h-4 text-gray-400" />
+                          </div>
                           <p className="text-sm text-gray-500 mt-1 line-clamp-2">
                             {chart.notes?.substring(0, 100) || '내용 없음'}
                             {(chart.notes?.length || 0) > 100 && '...'}
@@ -915,85 +893,20 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
                 </div>
               )}
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-sm text-gray-600">총 {progressNotes.length}건</p>
-                <button
-                  onClick={() => setCreatingProgressNote(true)}
-                  className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  경과기록 작성
-                </button>
-              </div>
-
-              {progressNotes.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  등록된 경과기록이 없습니다.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {progressNotes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:border-purple-300 transition-colors cursor-pointer"
-                      onClick={() => setViewingProgressNote(note)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {new Date(note.note_date).toLocaleDateString('ko-KR')} 경과기록
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-                            {note.subjective?.substring(0, 100) || note.notes?.substring(0, 100) || '내용 없음'}
-                            {((note.subjective?.length || 0) > 100 || (note.notes?.length || 0) > 100) && '...'}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteProgressNote(note);
-                          }}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           )}
         </div>
       </div>
 
-      {/* 초진차트 뷰어/작성 */}
-      {(viewingInitialChart || creatingInitialChart) && (
+      {/* 초진차트 작성 */}
+      {creatingInitialChart && (
         <InitialChartView
           patientId={patient.id}
           patientName={patient.name}
           onClose={() => {
-            setViewingInitialChart(null);
             setCreatingInitialChart(false);
             loadCharts();
           }}
-          forceNew={creatingInitialChart}
-        />
-      )}
-
-      {/* 경과기록 뷰어/작성 */}
-      {(viewingProgressNote || creatingProgressNote) && (
-        <ProgressNoteView
-          patientId={patient.id}
-          patientName={patient.name}
-          onClose={() => {
-            setViewingProgressNote(null);
-            setCreatingProgressNote(false);
-            loadCharts();
-          }}
-          forceNew={creatingProgressNote}
+          forceNew={true}
         />
       )}
     </div>

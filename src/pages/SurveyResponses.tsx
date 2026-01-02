@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Search, Eye, X, ChevronDown, ChevronUp, Plus, Link2, Copy, Check, Loader2 } from 'lucide-react';
+import { Search, Eye, X, ChevronDown, ChevronUp, Plus, Link2, Copy, Check, Loader2, UserPlus, User, AlertCircle } from 'lucide-react';
 import { useSurveyStore } from '../store/surveyStore';
 import { QuestionRenderer } from '../components/survey/QuestionRenderer';
 import { useAuthStore } from '../store/authStore';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { supabase } from '../lib/supabase';
-import { getDb, saveDb, generateUUID } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import { generateExpiresAt } from '../lib/surveyUtils';
-import type { SurveyResponse, SurveyTemplate, SurveyAnswer } from '../types';
+import type { SurveyResponse, SurveyTemplate, SurveyAnswer, Patient } from '../types';
 
 // Vercel 설문 앱 URL
 const SURVEY_APP_URL = 'https://gosibang-survey.vercel.app';
 
 export function SurveyResponses() {
-  const { responses, templates, isLoading, loadResponses, loadTemplates, getTemplate, createDirectResponse } = useSurveyStore();
+  const { responses, templates, isLoading, loadResponses, loadTemplates, getTemplate, createDirectResponse, linkResponseToPatient } = useSurveyStore();
   const { authState } = useAuthStore();
   const { canUseFeature } = usePlanLimits();
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,17 +27,27 @@ export function SurveyResponses() {
   // 온라인 링크 생성 모달 상태
   const [showLinkModal, setShowLinkModal] = useState(false);
 
+  // 미연결 응답만 보기 필터
+  const [showUnlinkedOnly, setShowUnlinkedOnly] = useState(false);
+
+  // 환자 연결 모달 상태
+  const [linkingResponse, setLinkingResponse] = useState<SurveyResponse | null>(null);
+
   useEffect(() => {
     loadResponses();
     loadTemplates();
   }, [loadResponses, loadTemplates]);
+
+  // 미연결 응답 수
+  const unlinkedCount = responses.filter(r => !r.patient_id).length;
 
   const filteredResponses = responses.filter((response) => {
     const matchesSearch = !searchTerm ||
       response.patient_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       response.template_name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTemplate = !selectedTemplateId || response.template_id === selectedTemplateId;
-    return matchesSearch && matchesTemplate;
+    const matchesUnlinked = !showUnlinkedOnly || !response.patient_id;
+    return matchesSearch && matchesTemplate && matchesUnlinked;
   });
 
   const handleViewResponse = (response: SurveyResponse) => {
@@ -100,6 +110,18 @@ export function SurveyResponses() {
             </option>
           ))}
         </select>
+        {/* 미연결 응답 필터 */}
+        <button
+          onClick={() => setShowUnlinkedOnly(!showUnlinkedOnly)}
+          className={`px-4 py-2 rounded-lg border flex items-center gap-2 transition-colors ${
+            showUnlinkedOnly
+              ? 'bg-orange-100 border-orange-300 text-orange-700'
+              : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <AlertCircle className="w-4 h-4" />
+          미연결 {unlinkedCount > 0 && `(${unlinkedCount})`}
+        </button>
       </div>
 
       {/* 응답 목록 */}
@@ -121,20 +143,40 @@ export function SurveyResponses() {
               <tbody className="divide-y">
                 {filteredResponses.map((response) => (
                   <tr key={response.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">{response.patient_name || '-'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {response.patient_name || response.respondent_name || '-'}
+                        {!response.patient_id && (
+                          <span className="px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">
+                            미연결
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">{response.template_name || '-'}</td>
                     <td className="px-4 py-3">
                       {new Date(response.submitted_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">{response.answers.length}개</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleViewResponse(response)}
-                        className="text-primary-600 hover:text-primary-800 flex items-center gap-1"
-                      >
-                        <Eye className="w-4 h-4" />
-                        보기
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewResponse(response)}
+                          className="text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                        >
+                          <Eye className="w-4 h-4" />
+                          보기
+                        </button>
+                        {!response.patient_id && (
+                          <button
+                            onClick={() => setLinkingResponse(response)}
+                            className="text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            연결
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -177,6 +219,18 @@ export function SurveyResponses() {
           onClose={() => setShowLinkModal(false)}
         />
       )}
+
+      {/* 환자 연결 모달 */}
+      {linkingResponse && (
+        <PatientLinkModal
+          response={linkingResponse}
+          onLink={async (patientId) => {
+            await linkResponseToPatient(linkingResponse.id, patientId);
+            setLinkingResponse(null);
+          }}
+          onClose={() => setLinkingResponse(null)}
+        />
+      )}
     </div>
   );
 }
@@ -194,6 +248,7 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
     new Set(template.questions.map((q) => q.id))
   );
   const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<'full' | 'preview'>('full');
 
   const toggleQuestion = (questionId: string) => {
     const newExpanded = new Set(expandedQuestions);
@@ -220,7 +275,7 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
     return answer.answer || '(답변 없음)';
   };
 
-  // 설문 결과를 컴팩트 텍스트로 변환
+  // 설문 결과를 컴팩트 텍스트로 변환 (모든 템플릿에서 동작)
   const formatSurveyAsText = (): string => {
     const getAnswer = (qId: string): string => {
       const answer = response.answers.find(a => a.question_id === qId);
@@ -238,158 +293,80 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
 
     const lines: string[] = [];
 
-    // 기본정보
-    const basicInfo = [getAnswer('basic_gender_age'), getAnswer('basic_height_weight')].filter(Boolean).join('/');
-    if (basicInfo) lines.push(basicInfo);
+    // 템플릿의 질문 순서대로 출력
+    let currentSection = '';
 
-    lines.push('[문진]');
+    for (const question of template.questions) {
+      const qId = question.id;
+      const qText = question.question_text;
 
-    // 식사패턴
-    if (hasAnswer('meal_pattern')) {
-      lines.push(`> 식사패턴 : ${getAnswer('meal_pattern')}`);
-      if (hasAnswer('meal_breakfast')) lines.push(`- 아침식사 : ${getAnswer('meal_breakfast')}`);
-      if (hasAnswer('meal_lunch')) lines.push(`- 점심식사 : ${getAnswer('meal_lunch')}`);
-      if (hasAnswer('meal_dinner')) lines.push(`- 저녁식사 : ${getAnswer('meal_dinner')}`);
-      if (hasAnswer('meal_late_night')) lines.push(`- 야식 : ${getAnswer('meal_late_night')}`);
-      if (hasAnswer('eating_habit')) lines.push(`- 식습관 : ${getAnswer('eating_habit')}`);
+      // 답변이 없으면 건너뛰기
+      if (!hasAnswer(qId)) continue;
+
+      const answerText = getAnswer(qId);
+
+      // 섹션 헤더 (>로 시작하는 질문)
+      if (qText.startsWith('>')) {
+        // 이전 섹션과 구분하기 위해 빈 줄 추가
+        if (lines.length > 0 && currentSection !== '') {
+          lines.push('');
+        }
+        currentSection = qText;
+        lines.push(`${qText} ${answerText}`);
+      }
+      // 하위 항목 (-로 시작하는 질문)
+      else if (qText.startsWith('-')) {
+        lines.push(`${qText} ${answerText}`);
+      }
+      // 일반 질문 (이름, 차트번호, 성별/나이, 키/몸무게 등)
+      else {
+        // 기본정보 (이름, 차트번호는 제외하고 성별/나이, 키/몸무게만)
+        if (qId === 'name' || qId === 'chart_number' || qId === 'doctor') {
+          // 기본정보는 첫 줄에 표시
+          continue;
+        }
+        // 성별/나이, 키/몸무게는 첫 줄에 표시
+        if (qId === 'gender_age' || qId === 'height_weight') {
+          // 이미 처리됨
+          continue;
+        }
+        // 그 외 일반 질문
+        lines.push(`${qText}: ${answerText}`);
+      }
     }
 
-    // 식욕/소화
-    if (hasAnswer('hunger') || hasAnswer('appetite') || hasAnswer('digestion_state')) {
-      lines.push('');
-      lines.push('> 식욕/소화 :');
-      if (hasAnswer('hunger')) lines.push(`- 배고픔 : ${getAnswer('hunger')}`);
-      if (hasAnswer('appetite')) lines.push(`- 입맛 : ${getAnswer('appetite')}`);
-      if (hasAnswer('digestion_state')) lines.push(`- 소화상태 : ${getAnswer('digestion_state')}`);
+    // 기본정보 먼저 추가 (성별/나이, 키/몸무게)
+    const basicInfo = [getAnswer('gender_age'), getAnswer('height_weight')].filter(Boolean).join(' / ');
+
+    // 최종 결과 조합
+    const result: string[] = [];
+    if (basicInfo) {
+      result.push(basicInfo);
     }
 
-    // 음식/기호
-    if (hasAnswer('food_meat') || hasAnswer('food_seafood') || hasAnswer('food_vegetable')) {
-      lines.push('');
-      lines.push('> 음식/기호 :');
-      if (hasAnswer('food_meat')) lines.push(`- 고기 : ${getAnswer('food_meat')}`);
-      if (hasAnswer('food_seafood')) lines.push(`- 해산물 : ${getAnswer('food_seafood')}`);
-      if (hasAnswer('food_vegetable')) lines.push(`- 녹황채소 : ${getAnswer('food_vegetable')}`);
-      if (hasAnswer('food_flour')) lines.push(`- 밀가루류 : ${getAnswer('food_flour')}`);
-      if (hasAnswer('food_spicy')) lines.push(`- 매운것 : ${getAnswer('food_spicy')}`);
-      if (hasAnswer('food_dairy')) lines.push(`- 유제품 : ${getAnswer('food_dairy')}`);
-      if (hasAnswer('food_beverage')) lines.push(`- 음료수 : ${getAnswer('food_beverage')}`);
-      if (hasAnswer('food_beverage_type')) lines.push(`- 음료수종류 : ${getAnswer('food_beverage_type')}`);
-      if (hasAnswer('food_fruit')) lines.push(`- 과일 : ${getAnswer('food_fruit')}`);
-      if (hasAnswer('food_fruit_prefer')) lines.push(`- 좋아하는과일 : ${getAnswer('food_fruit_prefer')}`);
+    // [문진] 헤더와 내용
+    if (lines.length > 0) {
+      result.push('[문진]');
+      result.push(...lines);
+    } else if (response.answers.length > 0) {
+      // 구조화된 출력이 없지만 답변이 있는 경우 (구 템플릿 등)
+      result.push('[문진]');
+      for (const answer of response.answers) {
+        const question = template.questions.find(q => q.id === answer.question_id);
+        const qText = question?.question_text || answer.question_id;
+        let ansText = '';
+        if (Array.isArray(answer.answer)) {
+          ansText = answer.answer.join(' / ');
+        } else {
+          ansText = String(answer.answer || '');
+        }
+        if (ansText) {
+          result.push(`${qText}: ${ansText}`);
+        }
+      }
     }
 
-    // 물
-    if (hasAnswer('water_habit')) {
-      lines.push('');
-      lines.push(`> 물 : ${getAnswer('water_habit')}`);
-      if (hasAnswer('water_amount')) lines.push(`- 물의 양 : ${getAnswer('water_amount')}`);
-      if (hasAnswer('water_temp')) lines.push(`- 물 종류 : ${getAnswer('water_temp')}`);
-    }
-
-    // 커피
-    if (hasAnswer('coffee')) {
-      lines.push('');
-      lines.push(`> 커피 : ${getAnswer('coffee')}`);
-      if (hasAnswer('coffee_type')) lines.push(`- 커피 종류 : ${getAnswer('coffee_type')}`);
-      if (hasAnswer('coffee_effect')) lines.push(`- 커피 반응 : ${getAnswer('coffee_effect')}`);
-    }
-
-    // 술
-    if (hasAnswer('alcohol')) {
-      lines.push('');
-      lines.push(`> 술 : ${getAnswer('alcohol')}`);
-      if (hasAnswer('alcohol_occasion')) lines.push(`- 술 자리 : ${getAnswer('alcohol_occasion')}`);
-      if (hasAnswer('alcohol_type')) lines.push(`- 술 종류 및 양 : ${getAnswer('alcohol_type')}`);
-    }
-
-    // 대변
-    if (hasAnswer('stool_frequency')) {
-      lines.push('');
-      lines.push(`> 대변 : ${getAnswer('stool_frequency')}`);
-      if (hasAnswer('stool_form')) lines.push(`- 대변 형태 : ${getAnswer('stool_form')}`);
-      if (hasAnswer('stool_state')) lines.push(`- 대변 느낌 : ${getAnswer('stool_state')}`);
-      if (hasAnswer('stool_bowel')) lines.push(`- 장상태 : ${getAnswer('stool_bowel')}`);
-    }
-
-    // 소변
-    if (hasAnswer('urine_frequency')) {
-      lines.push('');
-      lines.push(`> 소변 : ${getAnswer('urine_frequency')}`);
-      if (hasAnswer('urine_night')) lines.push(`- 야간뇨 : ${getAnswer('urine_night')}`);
-      if (hasAnswer('urine_color')) lines.push(`- 소변 형태 : ${getAnswer('urine_color')}`);
-      if (hasAnswer('urine_state')) lines.push(`- 소변 느낌 : ${getAnswer('urine_state')}`);
-    }
-
-    // 수면
-    if (hasAnswer('sleep_pattern')) {
-      lines.push('');
-      lines.push(`> 수면 : ${getAnswer('sleep_pattern')}`);
-      if (hasAnswer('sleep_bedtime')) lines.push(`- 눕는시간 : ${getAnswer('sleep_bedtime')}`);
-      if (hasAnswer('sleep_waketime')) lines.push(`- 일어나는 시간 : ${getAnswer('sleep_waketime')}`);
-      if (hasAnswer('sleep_onset')) lines.push(`- 잠드는데 걸리는 시간 : ${getAnswer('sleep_onset')}`);
-      if (hasAnswer('sleep_disorder')) lines.push(`- 수면유지 : ${getAnswer('sleep_disorder')}`);
-      if (hasAnswer('sleep_dream')) lines.push(`- 꿈 : ${getAnswer('sleep_dream')}`);
-    }
-
-    // 피로감
-    if (hasAnswer('fatigue')) {
-      lines.push('');
-      lines.push(`> 피로감 : ${getAnswer('fatigue')}`);
-    }
-
-    // 한열
-    if (hasAnswer('cold_heat')) {
-      lines.push('');
-      lines.push(`> 한열 : ${getAnswer('cold_heat')}`);
-      if (hasAnswer('cold_area')) lines.push(`- 국소적 : ${getAnswer('cold_area')}`);
-    }
-
-    // 땀
-    if (hasAnswer('sweat')) {
-      lines.push('');
-      lines.push(`> 땀 : ${getAnswer('sweat')}`);
-      if (hasAnswer('sweat_area')) lines.push(`- 땀 많이 나는 부위 : ${getAnswer('sweat_area')}`);
-    }
-
-    // 월경
-    if (hasAnswer('menstrual_cycle')) {
-      lines.push('');
-      lines.push(`> 월경 - 주기 : ${getAnswer('menstrual_cycle')}`);
-      if (hasAnswer('menstrual_regular')) lines.push(`- 주기변화 : ${getAnswer('menstrual_regular')}`);
-      if (hasAnswer('menstrual_duration')) lines.push(`- 기간 : ${getAnswer('menstrual_duration')}`);
-      if (hasAnswer('menstrual_pain')) lines.push(`- 생리통 : ${getAnswer('menstrual_pain')}`);
-      if (hasAnswer('menstrual_pain_area')) lines.push(`- 통증부위 : ${getAnswer('menstrual_pain_area')}`);
-      if (hasAnswer('menstrual_amount')) lines.push(`- 생리량 : ${getAnswer('menstrual_amount')}`);
-      if (hasAnswer('menstrual_color')) lines.push(`- 생리색 : ${getAnswer('menstrual_color')}`);
-      if (hasAnswer('menstrual_pms')) lines.push(`- 생리전후증상 : ${getAnswer('menstrual_pms')}`);
-    }
-
-    // 건강기능식품
-    if (hasAnswer('supplement')) {
-      lines.push('');
-      lines.push(`> 건강기능식품 : ${getAnswer('supplement')}`);
-    }
-
-    // 양약
-    if (hasAnswer('medication')) {
-      lines.push('');
-      lines.push(`> 양약 : ${getAnswer('medication')}`);
-    }
-
-    // 평소 질환
-    if (hasAnswer('disease')) {
-      lines.push('');
-      lines.push(`> 평소 질환 : ${getAnswer('disease')}`);
-    }
-
-    // 추가사항
-    if (hasAnswer('additional_notes')) {
-      lines.push('');
-      lines.push(`> 추가사항 : ${getAnswer('additional_notes')}`);
-    }
-
-    return lines.join('\n');
+    return result.join('\n');
   };
 
   // 클립보드에 복사
@@ -414,13 +391,45 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
               {response.patient_name} · {new Date(response.submitted_at).toLocaleString()}
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* 보기 모드 토글 */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('full')}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  viewMode === 'full'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                전체 보기
+              </button>
+              <button
+                onClick={() => setViewMode('preview')}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  viewMode === 'preview'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                답변만 보기
+              </button>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {template.questions.map((question, index) => {
+          {/* 답변만 보기 모드 */}
+          {viewMode === 'preview' ? (
+            <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap leading-relaxed">
+              {formatSurveyAsText()}
+            </div>
+          ) : (
+            /* 전체 보기 모드 */
+            template.questions.map((question, index) => {
             const answer = getAnswerForQuestion(question.id);
             const isExpanded = expandedQuestions.has(question.id);
 
@@ -469,7 +478,8 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
                 )}
               </div>
             );
-          })}
+          })
+          )}
         </div>
 
         <div className="flex justify-between p-4 border-t bg-gray-50">
@@ -977,6 +987,190 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== 환자 연결 모달 =====
+
+interface PatientLinkModalProps {
+  response: SurveyResponse;
+  onLink: (patientId: string) => Promise<void>;
+  onClose: () => void;
+}
+
+function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) {
+  const [searchName, setSearchName] = useState(response.respondent_name || '');
+  const [searchResults, setSearchResults] = useState<Patient[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [linking, setLinking] = useState(false);
+
+  // 검색
+  const handleSearch = async () => {
+    if (!searchName.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const results = queryToObjects<Patient>(
+        db,
+        `SELECT * FROM patients
+         WHERE name LIKE ?
+         ORDER BY name
+         LIMIT 10`,
+        [`%${searchName.trim()}%`]
+      );
+      setSearchResults(results);
+    } catch (err) {
+      console.error('검색 실패:', err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // 검색어 변경 시 자동 검색
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchName.trim().length >= 1) {
+        handleSearch();
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchName]);
+
+  // 연결 처리
+  const handleLink = async () => {
+    if (!selectedPatient) return;
+
+    setLinking(true);
+    try {
+      await onLink(selectedPatient.id);
+    } catch (err) {
+      console.error('연결 실패:', err);
+      alert('환자 연결에 실패했습니다.');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold">환자 연결</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* 응답 정보 */}
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-sm text-gray-500">설문 응답</p>
+            <p className="font-medium">{response.respondent_name || '이름 없음'}</p>
+            <p className="text-sm text-gray-500">
+              {response.template_name} · {new Date(response.submitted_at).toLocaleDateString()}
+            </p>
+          </div>
+
+          {/* 환자 검색 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              환자 검색
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                placeholder="환자 이름 입력"
+                className="input-field pr-10"
+                autoFocus
+              />
+              {searching && (
+                <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              )}
+            </div>
+          </div>
+
+          {/* 검색 결과 */}
+          {searchResults.length > 0 && (
+            <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+              {searchResults.map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => setSelectedPatient(patient)}
+                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 transition-colors ${
+                    selectedPatient?.id === patient.id ? 'bg-primary-50' : ''
+                  }`}
+                >
+                  <User className="w-5 h-5 text-gray-400" />
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">{patient.name}</p>
+                    <p className="text-sm text-gray-500">
+                      {patient.birth_date && `${patient.birth_date} `}
+                      {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : ''}
+                      {patient.chart_number && ` (${patient.chart_number})`}
+                    </p>
+                  </div>
+                  {selectedPatient?.id === patient.id && (
+                    <Check className="w-5 h-5 text-primary-600" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 검색 결과 없음 */}
+          {searchName.trim() && !searching && searchResults.length === 0 && (
+            <p className="text-center text-gray-500 py-4">
+              검색 결과가 없습니다
+            </p>
+          )}
+
+          {/* 선택된 환자 */}
+          {selectedPatient && (
+            <div className="bg-primary-50 border border-primary-200 rounded-lg p-3">
+              <p className="text-sm text-primary-600">선택된 환자</p>
+              <p className="font-medium text-primary-900">{selectedPatient.name}</p>
+              {selectedPatient.birth_date && (
+                <p className="text-sm text-primary-700">{selectedPatient.birth_date}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
+          <button onClick={onClose} className="btn-secondary">
+            취소
+          </button>
+          <button
+            onClick={handleLink}
+            disabled={!selectedPatient || linking}
+            className="btn-primary flex items-center gap-2"
+          >
+            {linking ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                연결 중...
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-4 h-4" />
+                환자 연결
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

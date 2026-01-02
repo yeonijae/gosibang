@@ -34,8 +34,12 @@ interface SurveyStore {
   // 세션 관련
   loadSessions: (filters?: { patient_id?: string; status?: string }) => Promise<void>;
   createSession: (patientId: string, templateId: string, createdBy?: string) => Promise<SurveySession>;
+  createKioskSession: (templateId: string, patientId: string | null, respondentName: string) => Promise<SurveySession>;
   getSessionByToken: (token: string) => Promise<{ session: SurveySession; template: SurveyTemplate } | null>;
   expireSession: (id: string) => Promise<void>;
+
+  // 응답-환자 연결
+  linkResponseToPatient: (responseId: string, patientId: string) => Promise<void>;
 
   // 응답 관련
   loadResponses: (filters?: { patient_id?: string; template_id?: string }) => Promise<void>;
@@ -323,6 +327,76 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
         s.id === id ? { ...s, status: 'expired' as const } : s
       ),
     });
+  },
+
+  // 키오스크용 세션 생성 (환자 미등록 지원)
+  createKioskSession: async (templateId, patientId, respondentName) => {
+    const db = getDb();
+    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+    const id = generateUUID();
+    const token = generateSurveyToken();
+    const expiresAt = generateExpiresAt(24);
+    const now = new Date().toISOString();
+
+    // 템플릿 정보 가져오기
+    const localTemplate = await invoke<TauriSurveyTemplate | null>('get_survey_template', { id: templateId });
+    if (!localTemplate) throw new Error('템플릿을 찾을 수 없습니다.');
+
+    // 로컬 DB에 세션 저장
+    db.run(
+      `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, status, expires_at, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, 'kiosk', ?)`,
+      [id, token, patientId, templateId, respondentName, expiresAt, now]
+    );
+    saveDb();
+
+    const session: SurveySession = {
+      id,
+      token,
+      patient_id: patientId || undefined,
+      template_id: templateId,
+      respondent_name: respondentName,
+      status: 'pending',
+      expires_at: expiresAt,
+      created_by: 'kiosk',
+      created_at: now,
+      patient_name: respondentName,
+      template_name: localTemplate.name,
+    };
+
+    set({ sessions: [session, ...get().sessions] });
+    return session;
+  },
+
+  // 응답-환자 연결
+  linkResponseToPatient: async (responseId, patientId) => {
+    const db = getDb();
+    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+    // 환자 이름 가져오기
+    const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [patientId]);
+    if (!patient) throw new Error('환자를 찾을 수 없습니다.');
+
+    // 응답의 patient_id 업데이트
+    db.run(
+      'UPDATE survey_responses SET patient_id = ? WHERE id = ?',
+      [patientId, responseId]
+    );
+
+    // 관련 세션도 업데이트
+    const response = queryOne<{ session_id: string | null }>(db, 'SELECT session_id FROM survey_responses WHERE id = ?', [responseId]);
+    if (response?.session_id) {
+      db.run(
+        'UPDATE survey_sessions SET patient_id = ? WHERE id = ?',
+        [patientId, response.session_id]
+      );
+    }
+
+    saveDb();
+
+    // 응답 목록 새로고침
+    await get().loadResponses();
   },
 
   // ===== 응답 관련 =====

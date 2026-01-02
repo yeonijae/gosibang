@@ -41,6 +41,9 @@ pub fn init_database(_encryption_key: &str) -> AppResult<()> {
     // 테이블 생성
     create_tables(&conn)?;
 
+    // 마이그레이션 실행
+    run_migrations(&conn)?;
+
     let _ = DB_CONNECTION.set(Mutex::new(conn));
 
     // 기본 설문 템플릿 삽입
@@ -260,6 +263,7 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
         CREATE TABLE IF NOT EXISTS patients (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            chart_number TEXT,
             birth_date TEXT,
             gender TEXT,
             phone TEXT,
@@ -375,6 +379,17 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_chart_records_date ON chart_records(visit_date);
         "#,
     )?;
+    Ok(())
+}
+
+/// 마이그레이션 실행
+fn run_migrations(conn: &Connection) -> AppResult<()> {
+    // 환자 테이블에 chart_number 컬럼 추가
+    let _ = conn.execute(
+        "ALTER TABLE patients ADD COLUMN chart_number TEXT",
+        [],
+    );
+
     Ok(())
 }
 
@@ -495,11 +510,12 @@ pub fn debug_get_all_clinic_rows() -> AppResult<Vec<String>> {
 pub fn create_patient(patient: &Patient) -> AppResult<()> {
     let conn = get_conn()?;
     conn.execute(
-        r#"INSERT INTO patients (id, name, birth_date, gender, phone, address, notes, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+        r#"INSERT INTO patients (id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
         params![
             patient.id,
             patient.name,
+            patient.chart_number,
             patient.birth_date,
             patient.gender,
             patient.phone,
@@ -515,7 +531,7 @@ pub fn create_patient(patient: &Patient) -> AppResult<()> {
 pub fn get_patient(id: &str) -> AppResult<Option<Patient>> {
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
-        "SELECT id, name, birth_date, gender, phone, address, notes, created_at, updated_at
+        "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
          FROM patients WHERE id = ?1",
     )?;
 
@@ -523,15 +539,16 @@ pub fn get_patient(id: &str) -> AppResult<Option<Patient>> {
         Ok(Patient {
             id: row.get(0)?,
             name: row.get(1)?,
-            birth_date: row.get(2)?,
-            gender: row.get(3)?,
-            phone: row.get(4)?,
-            address: row.get(5)?,
-            notes: row.get(6)?,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+            chart_number: row.get(2)?,
+            birth_date: row.get(3)?,
+            gender: row.get(4)?,
+            phone: row.get(5)?,
+            address: row.get(6)?,
+            notes: row.get(7)?,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
                 .unwrap()
                 .with_timezone(&Utc),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+            updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
                 .unwrap()
                 .with_timezone(&Utc),
         })
@@ -548,11 +565,11 @@ pub fn list_patients(search: Option<&str>) -> AppResult<Vec<Patient>> {
     let conn = get_conn()?;
     let query = match search {
         Some(_) => {
-            "SELECT id, name, birth_date, gender, phone, address, notes, created_at, updated_at
+            "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
              FROM patients WHERE name LIKE ?1 ORDER BY name"
         }
         None => {
-            "SELECT id, name, birth_date, gender, phone, address, notes, created_at, updated_at
+            "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
              FROM patients ORDER BY name"
         }
     };
@@ -575,15 +592,16 @@ fn map_patient_row(row: &rusqlite::Row) -> rusqlite::Result<Patient> {
     Ok(Patient {
         id: row.get(0)?,
         name: row.get(1)?,
-        birth_date: row.get(2)?,
-        gender: row.get(3)?,
-        phone: row.get(4)?,
-        address: row.get(5)?,
-        notes: row.get(6)?,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+        chart_number: row.get(2)?,
+        birth_date: row.get(3)?,
+        gender: row.get(4)?,
+        phone: row.get(5)?,
+        address: row.get(6)?,
+        notes: row.get(7)?,
+        created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
             .unwrap()
             .with_timezone(&Utc),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+        updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
             .unwrap()
             .with_timezone(&Utc),
     })
@@ -592,11 +610,12 @@ fn map_patient_row(row: &rusqlite::Row) -> rusqlite::Result<Patient> {
 pub fn update_patient(patient: &Patient) -> AppResult<()> {
     let conn = get_conn()?;
     conn.execute(
-        r#"UPDATE patients SET name = ?2, birth_date = ?3, gender = ?4, phone = ?5,
-           address = ?6, notes = ?7, updated_at = ?8 WHERE id = ?1"#,
+        r#"UPDATE patients SET name = ?2, chart_number = ?3, birth_date = ?4, gender = ?5, phone = ?6,
+           address = ?7, notes = ?8, updated_at = ?9 WHERE id = ?1"#,
         params![
             patient.id,
             patient.name,
+            patient.chart_number,
             patient.birth_date,
             patient.gender,
             patient.phone,

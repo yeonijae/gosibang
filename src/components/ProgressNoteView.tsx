@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { X, Plus, Save, Edit, Trash2, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Plus, Save, Edit, Trash2, Loader2, Check, Cloud, AlertCircle } from 'lucide-react';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import type { ProgressNote } from '../types';
+
+type SaveStatus = 'idle' | 'changed' | 'saving' | 'saved' | 'error';
 
 interface Props {
   patientId: string;
@@ -24,6 +26,13 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
     follow_up_plan: '',
     notes: ''
   });
+
+  // 자동 저장 관련
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstRenderRef = useRef(true);
+  const AUTO_SAVE_DELAY = 3000; // 3초
 
   useEffect(() => {
     if (forceNew) {
@@ -63,15 +72,33 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
     }
   };
 
-  const handleSave = async () => {
+  // 내용이 있는지 확인
+  const hasContent = () => {
+    return (
+      (formData.subjective && formData.subjective.trim() !== '') ||
+      (formData.objective && formData.objective.trim() !== '') ||
+      (formData.assessment && formData.assessment.trim() !== '') ||
+      (formData.plan && formData.plan.trim() !== '') ||
+      (formData.follow_up_plan && formData.follow_up_plan.trim() !== '') ||
+      (formData.notes && formData.notes.trim() !== '')
+    );
+  };
+
+  // 자동 저장 함수
+  const performAutoSave = useCallback(async () => {
+    if (!hasContent()) return;
+
     try {
+      setSaveStatus('saving');
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
       const now = new Date().toISOString();
       const noteDate = formData.note_date || now.split('T')[0];
+      const existingId = editingNote?.id || currentNoteId;
 
-      if (editingNote) {
+      if (existingId) {
+        // 기존 기록 업데이트
         db.run(
           `UPDATE progress_notes SET note_date = ?, subjective = ?, objective = ?, assessment = ?, plan = ?, follow_up_plan = ?, notes = ?, updated_at = ?
            WHERE id = ?`,
@@ -84,12 +111,155 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
             formData.follow_up_plan || null,
             formData.notes || null,
             now,
-            editingNote.id
+            existingId
+          ]
+        );
+      } else {
+        // 새 기록 생성
+        const newId = generateUUID();
+        db.run(
+          `INSERT INTO progress_notes (id, patient_id, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newId,
+            patientId,
+            noteDate,
+            formData.subjective || null,
+            formData.objective || null,
+            formData.assessment || null,
+            formData.plan || null,
+            formData.follow_up_plan || null,
+            formData.notes || null,
+            now,
+            now
+          ]
+        );
+        setCurrentNoteId(newId);
+      }
+
+      saveDb();
+      setSaveStatus('saved');
+
+      // 3초 후 상태를 idle로 변경
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
+    } catch (error: any) {
+      console.error('자동 저장 실패:', error);
+      setSaveStatus('error');
+    }
+  }, [formData, editingNote, currentNoteId, patientId]);
+
+  // formData 변경 시 자동 저장 타이머 설정
+  useEffect(() => {
+    // 첫 렌더링 시에는 무시
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    // 폼이 표시되지 않으면 무시
+    if (!showForm) return;
+
+    // 내용이 없으면 무시
+    if (!hasContent()) return;
+
+    // 상태를 "변경됨"으로 설정
+    setSaveStatus('changed');
+
+    // 기존 타이머 취소
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    // 새 타이머 설정
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, AUTO_SAVE_DELAY);
+
+    // 클린업
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [formData, showForm, performAutoSave]);
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 저장 상태 표시 컴포넌트
+  const SaveStatusIndicator = () => {
+    switch (saveStatus) {
+      case 'changed':
+        return (
+          <span className="flex items-center gap-1 text-amber-600 text-sm">
+            <Cloud className="w-4 h-4" />
+            변경됨
+          </span>
+        );
+      case 'saving':
+        return (
+          <span className="flex items-center gap-1 text-blue-600 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            저장 중...
+          </span>
+        );
+      case 'saved':
+        return (
+          <span className="flex items-center gap-1 text-green-600 text-sm">
+            <Check className="w-4 h-4" />
+            자동 저장됨
+          </span>
+        );
+      case 'error':
+        return (
+          <span className="flex items-center gap-1 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4" />
+            저장 실패
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      const now = new Date().toISOString();
+      const noteDate = formData.note_date || now.split('T')[0];
+      const existingId = editingNote?.id || currentNoteId;
+
+      if (existingId) {
+        // 기존 기록 업데이트
+        db.run(
+          `UPDATE progress_notes SET note_date = ?, subjective = ?, objective = ?, assessment = ?, plan = ?, follow_up_plan = ?, notes = ?, updated_at = ?
+           WHERE id = ?`,
+          [
+            noteDate,
+            formData.subjective || null,
+            formData.objective || null,
+            formData.assessment || null,
+            formData.plan || null,
+            formData.follow_up_plan || null,
+            formData.notes || null,
+            now,
+            existingId
           ]
         );
         saveDb();
-        alert('경과기록이 수정되었습니다');
+        alert('경과기록이 저장되었습니다');
       } else {
+        // 새 기록 생성
         const id = generateUUID();
         db.run(
           `INSERT INTO progress_notes (id, patient_id, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, created_at, updated_at)
@@ -114,6 +284,8 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
 
       setShowForm(false);
       setEditingNote(null);
+      setCurrentNoteId(null);
+      setSaveStatus('idle');
       resetForm();
       loadNotes();
     } catch (error: any) {
@@ -169,6 +341,8 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
               onClick={() => {
                 resetForm();
                 setEditingNote(null);
+                setCurrentNoteId(null);
+                setSaveStatus('idle');
                 setShowForm(!showForm);
               }}
               className="btn-primary flex items-center gap-2"
@@ -198,7 +372,12 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
         <div className="flex-1 overflow-y-auto p-6">
           {showForm && (
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
-              <h3 className="font-bold mb-3">{editingNote ? '경과기록 수정' : '경과기록 추가'}</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold">{editingNote ? '경과기록 수정' : '경과기록 추가'}</h3>
+                <div className="bg-white px-3 py-1 rounded border">
+                  <SaveStatusIndicator />
+                </div>
+              </div>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">진료일자</label>
@@ -269,6 +448,8 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
                   onClick={() => {
                     setShowForm(false);
                     setEditingNote(null);
+                    setCurrentNoteId(null);
+                    setSaveStatus('idle');
                     resetForm();
                   }}
                   className="btn-secondary flex items-center gap-2"

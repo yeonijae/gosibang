@@ -200,8 +200,9 @@ export interface SurveyTemplate {
 export interface SurveySession {
   id: string;
   token: string;
-  patient_id: string;
+  patient_id?: string;
   template_id: string;
+  respondent_name?: string;
   status: 'pending' | 'completed' | 'expired';
   expires_at: string;
   completed_at?: string;
@@ -221,9 +222,10 @@ export interface SurveyAnswer {
 // 설문 응답
 export interface SurveyResponse {
   id: string;
-  session_id: string;
-  patient_id: string;
+  session_id?: string;
+  patient_id?: string;
   template_id: string;
+  respondent_name?: string;
   answers: SurveyAnswer[];
   submitted_at: string;
   // 조인 데이터

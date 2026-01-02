@@ -14,6 +14,7 @@ import { Settings } from './pages/Settings';
 import { SurveyTemplates } from './pages/SurveyTemplates';
 import { SurveyResponses } from './pages/SurveyResponses';
 import { PatientSurvey } from './pages/PatientSurvey';
+import { KioskSurvey } from './pages/KioskSurvey';
 import { SubscriptionAdmin } from './pages/SubscriptionAdmin';
 
 import { useAuthStore } from './store/authStore';
@@ -105,6 +106,7 @@ function App() {
 
         {/* 환자용 설문 페이지 (공개) */}
         <Route path="/survey/:token" element={<PatientSurvey />} />
+        <Route path="/kiosk" element={<KioskSurvey />} />
 
         {/* 인증된 사용자만 접근 가능한 페이지들 */}
         <Route
