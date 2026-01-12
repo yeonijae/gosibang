@@ -8,6 +8,8 @@ use std::sync::Mutex;
 
 static AUTH_STATE: OnceCell<Mutex<AuthState>> = OnceCell::new();
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
+static ACCESS_TOKEN: OnceCell<Mutex<Option<String>>> = OnceCell::new();
+static CURRENT_USER_ID: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 
 /// Supabase 설정
 #[derive(Clone)]
@@ -150,6 +152,10 @@ pub async fn login(email: &str, password: &str) -> AppResult<AuthState> {
     let mut state = get_auth_state()?;
     *state = auth_state.clone();
 
+    // Access token 저장 (암호화 키 조회용)
+    store_access_token(&auth_response.access_token);
+    store_user_id(&auth_response.user.id);
+
     log::info!("User logged in successfully");
     Ok(auth_state)
 }
@@ -218,6 +224,7 @@ pub fn get_current_auth_state() -> AppResult<AuthState> {
 pub fn logout() -> AppResult<()> {
     let mut state = get_auth_state()?;
     *state = AuthState::default();
+    clear_tokens();
     log::info!("User logged out");
     Ok(())
 }
@@ -272,6 +279,52 @@ pub async fn signup(email: &str, password: &str) -> AppResult<String> {
     }
 
     Ok("회원가입이 완료되었습니다. 이메일을 확인해주세요.".to_string())
+}
+
+// ============ Access Token / User ID 관리 ============
+
+/// Access token 저장
+fn store_access_token(token: &str) {
+    let _ = ACCESS_TOKEN.get_or_init(|| Mutex::new(None));
+    if let Some(mutex) = ACCESS_TOKEN.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = Some(token.to_string());
+        }
+    }
+}
+
+/// User ID 저장
+fn store_user_id(user_id: &str) {
+    let _ = CURRENT_USER_ID.get_or_init(|| Mutex::new(None));
+    if let Some(mutex) = CURRENT_USER_ID.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = Some(user_id.to_string());
+        }
+    }
+}
+
+/// 저장된 Access token 조회
+pub fn get_access_token() -> Option<String> {
+    ACCESS_TOKEN.get()?.lock().ok()?.clone()
+}
+
+/// 저장된 User ID 조회
+pub fn get_user_id() -> Option<String> {
+    CURRENT_USER_ID.get()?.lock().ok()?.clone()
+}
+
+/// Access token과 User ID 초기화 (로그아웃 시)
+fn clear_tokens() {
+    if let Some(mutex) = ACCESS_TOKEN.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = None;
+        }
+    }
+    if let Some(mutex) = CURRENT_USER_ID.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = None;
+        }
+    }
 }
 
 /// DB 암호화 키 생성 (사용자별 고유 키)

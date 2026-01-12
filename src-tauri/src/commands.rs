@@ -1,5 +1,6 @@
 use crate::auth;
 use crate::db;
+use crate::encryption;
 use crate::models::*;
 use crate::models::SurveyQuestion;
 use crate::server;
@@ -167,6 +168,87 @@ pub fn initialize_app(
     db::init_database(&db_encryption_key).map_err(|e| e.to_string())?;
 
     log::info!("App initialized successfully");
+    Ok(())
+}
+
+// ============ 암호화 데이터베이스 초기화 명령어 ============
+
+/// 로그인 후 암호화 데이터베이스 초기화
+/// - Supabase에서 암호화 키 조회 또는 생성
+/// - 암호화된 사용자별 DB 초기화
+#[tauri::command]
+pub async fn initialize_with_encryption() -> Result<(), String> {
+    // Access token과 user_id 가져오기
+    let access_token = auth::get_access_token()
+        .ok_or_else(|| "로그인이 필요합니다".to_string())?;
+    let user_id = auth::get_user_id()
+        .ok_or_else(|| "사용자 ID를 찾을 수 없습니다".to_string())?;
+
+    // Supabase에서 암호화 키 조회 또는 생성
+    let (encryption_key, is_new) = encryption::fetch_or_create_key(&access_token, &user_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 로컬에 키 캐시 (오프라인 사용 대비)
+    encryption::cache_key_locally(&user_id, &encryption_key)
+        .map_err(|e| e.to_string())?;
+
+    // 암호화된 DB 초기화
+    db::init_database_encrypted(&user_id, &encryption_key)
+        .map_err(|e| e.to_string())?;
+
+    if is_new {
+        log::info!("새 암호화 키 생성 및 데이터베이스 초기화 완료");
+    } else {
+        log::info!("기존 암호화 키로 데이터베이스 초기화 완료");
+    }
+
+    Ok(())
+}
+
+/// 프론트엔드에서 직접 호출: access token과 user_id를 전달받아 암호화 DB 초기화
+#[tauri::command]
+pub async fn initialize_encrypted_db(access_token: String, user_id: String) -> Result<(), String> {
+    // Supabase 초기화 확인
+    auth::ensure_supabase_initialized();
+
+    log::info!("Initializing encrypted DB for user: {}", &user_id[..8.min(user_id.len())]);
+
+    // Supabase에서 암호화 키 조회 또는 생성
+    let (encryption_key, is_new) = encryption::fetch_or_create_key(&access_token, &user_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 로컬에 키 캐시 (오프라인 사용 대비)
+    encryption::cache_key_locally(&user_id, &encryption_key)
+        .map_err(|e| e.to_string())?;
+
+    // 암호화된 DB 초기화
+    db::init_database_encrypted(&user_id, &encryption_key)
+        .map_err(|e| e.to_string())?;
+
+    if is_new {
+        log::info!("새 암호화 키 생성 및 데이터베이스 초기화 완료 (user: {})", &user_id[..8.min(user_id.len())]);
+    } else {
+        log::info!("기존 암호화 키로 데이터베이스 초기화 완료 (user: {})", &user_id[..8.min(user_id.len())]);
+    }
+
+    Ok(())
+}
+
+/// 오프라인 모드로 데이터베이스 초기화 (캐시된 키 사용)
+#[tauri::command]
+pub fn initialize_offline(user_id: String) -> Result<(), String> {
+    // 캐시된 키 조회
+    let encryption_key = encryption::get_cached_key(&user_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "캐시된 암호화 키가 없습니다. 온라인 로그인이 필요합니다.".to_string())?;
+
+    // 암호화된 DB 초기화
+    db::init_database_encrypted(&user_id, &encryption_key)
+        .map_err(|e| e.to_string())?;
+
+    log::info!("오프라인 모드로 데이터베이스 초기화 완료");
     Ok(())
 }
 

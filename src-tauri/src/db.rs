@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 static DB_CONNECTION: OnceCell<Mutex<Connection>> = OnceCell::new();
+static CURRENT_USER_ID: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 
 /// 데이터베이스 경로 가져오기
 fn get_db_path() -> AppResult<PathBuf> {
@@ -51,6 +52,88 @@ pub fn init_database(_encryption_key: &str) -> AppResult<()> {
 
     log::info!("Database initialized at {:?}", db_path);
     Ok(())
+}
+
+/// 사용자별 암호화된 데이터베이스 경로
+fn get_user_db_path(user_id: &str) -> AppResult<PathBuf> {
+    let data_dir = dirs::data_local_dir()
+        .ok_or_else(|| AppError::Custom("Cannot find data directory".to_string()))?;
+    let app_dir = data_dir.join("gosibang").join("databases");
+    std::fs::create_dir_all(&app_dir)?;
+
+    // user_id 앞 8자리를 파일명으로 사용
+    let safe_id = &user_id[..8.min(user_id.len())];
+    Ok(app_dir.join(format!("{}.db", safe_id)))
+}
+
+/// SQLCipher 암호화를 적용한 데이터베이스 초기화
+///
+/// 사용자별로 별도의 암호화된 데이터베이스 파일 생성
+pub fn init_database_encrypted(user_id: &str, encryption_key: &str) -> AppResult<()> {
+    // 이미 초기화되어 있으면 스킵
+    if DB_CONNECTION.get().is_some() {
+        log::info!("Database already initialized, skipping");
+        return Ok(());
+    }
+
+    let db_path = get_user_db_path(user_id)?;
+    let conn = Connection::open(&db_path)?;
+
+    // SQLCipher 암호화 키 설정
+    conn.execute_batch(&format!(
+        "PRAGMA key = 'x\"{}\"';
+         PRAGMA cipher_compatibility = 4;",
+        encryption_key
+    ))?;
+
+    // 키 검증 (잘못된 키면 여기서 에러 발생)
+    conn.execute_batch("SELECT count(*) FROM sqlite_master;")
+        .map_err(|e| {
+            AppError::Custom(format!(
+                "Database key verification failed (wrong key?): {}",
+                e
+            ))
+        })?;
+
+    log::info!("SQLCipher encryption enabled");
+
+    // 테이블 생성
+    create_tables(&conn)?;
+
+    // 마이그레이션 실행
+    run_migrations(&conn)?;
+
+    let _ = DB_CONNECTION.set(Mutex::new(conn));
+
+    // 현재 사용자 ID 저장
+    if let Some(user_mutex) = CURRENT_USER_ID.get() {
+        if let Ok(mut user) = user_mutex.lock() {
+            *user = Some(user_id.to_string());
+        }
+    } else {
+        let _ = CURRENT_USER_ID.set(Mutex::new(Some(user_id.to_string())));
+    }
+
+    // 기본 설문 템플릿 삽입
+    ensure_default_templates()?;
+
+    log::info!("Encrypted database initialized at {:?}", db_path);
+    Ok(())
+}
+
+/// 현재 로그인한 사용자 ID 조회
+#[allow(dead_code)]
+pub fn get_current_user_id() -> Option<String> {
+    CURRENT_USER_ID
+        .get()
+        .and_then(|m| m.lock().ok())
+        .and_then(|u| u.clone())
+}
+
+/// 데이터베이스 연결 상태 확인
+#[allow(dead_code)]
+pub fn is_database_initialized() -> bool {
+    DB_CONNECTION.get().is_some()
 }
 
 /// 기본 설문 템플릿 삽입 또는 업데이트

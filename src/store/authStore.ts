@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { supabase } from '../lib/supabase';
 import type { AuthState } from '../types';
 
@@ -58,6 +59,21 @@ export const useAuthStore = create<AuthStore>((set) => ({
         },
         user_email: data.user?.email,
       };
+
+      // 암호화된 사용자별 데이터베이스 초기화
+      if (data.session?.access_token) {
+        try {
+          await invoke('initialize_encrypted_db', {
+            accessToken: data.session.access_token,
+            userId: data.user!.id,
+          });
+          console.log('Encrypted database initialized');
+        } catch (dbError) {
+          console.error('Failed to initialize encrypted DB:', dbError);
+          // DB 초기화 실패해도 로그인은 진행 (오프라인 모드 대비)
+        }
+      }
+
       set({ authState, isLoading: false });
 
       // 로그인 성공 후 페이지 새로고침 (사용자별 DB 로드)
@@ -119,6 +135,26 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
+        // 암호화된 사용자별 데이터베이스 초기화
+        if (session.access_token) {
+          try {
+            await invoke('initialize_encrypted_db', {
+              accessToken: session.access_token,
+              userId: session.user.id,
+            });
+            console.log('Encrypted database initialized on auth check');
+          } catch (dbError) {
+            console.error('Failed to initialize encrypted DB:', dbError);
+            // DB 초기화 실패 시 오프라인 모드 시도
+            try {
+              await invoke('initialize_offline', { userId: session.user.id });
+              console.log('Initialized with cached key (offline mode)');
+            } catch {
+              console.warn('Offline initialization also failed');
+            }
+          }
+        }
+
         // 구독 정보 조회
         let subscription = undefined;
         try {

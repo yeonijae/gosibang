@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod db;
+mod encryption;
 mod error;
 mod models;
 pub mod server;
@@ -31,6 +32,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // 초기화
             initialize_app,
+            initialize_with_encryption,
+            initialize_encrypted_db,
+            initialize_offline,
             // 인증
             login,
             logout,
