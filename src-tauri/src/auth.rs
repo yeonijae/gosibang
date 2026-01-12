@@ -79,8 +79,11 @@ fn get_auth_state() -> AppResult<std::sync::MutexGuard<'static, AuthState>> {
 #[derive(Debug, Deserialize)]
 struct SupabaseAuthResponse {
     access_token: String,
+    #[allow(dead_code)]
     token_type: String,
+    #[allow(dead_code)]
     expires_in: i64,
+    #[allow(dead_code)]
     refresh_token: String,
     user: SupabaseUser,
 }
@@ -94,6 +97,7 @@ struct SupabaseUser {
 /// 구독 정보 조회 응답
 #[derive(Debug, Deserialize)]
 struct SubscriptionResponse {
+    #[allow(dead_code)]
     id: String,
     user_id: String,
     plan: String,
@@ -271,6 +275,7 @@ pub async fn signup(email: &str, password: &str) -> AppResult<String> {
 }
 
 /// DB 암호화 키 생성 (사용자별 고유 키)
+#[allow(dead_code)]
 pub fn generate_db_encryption_key(user_id: &str, master_secret: &str) -> String {
     use argon2::{
         password_hash::{PasswordHasher, SaltString},

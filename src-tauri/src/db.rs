@@ -1120,6 +1120,7 @@ pub fn get_http_server_port() -> AppResult<u16> {
 }
 
 /// HTTP 서버 포트 설정
+#[allow(dead_code)]
 pub fn set_http_server_port(port: u16) -> AppResult<()> {
     let conn = get_conn()?;
     conn.execute(

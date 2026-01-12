@@ -12,6 +12,7 @@ pub struct ClinicSettings {
     pub doctor_name: Option<String>,    // 원장님 성함
     pub license_number: Option<String>, // 면허번호
     pub created_at: DateTime<Utc>,
+    #[allow(dead_code)]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -47,6 +48,7 @@ pub struct Patient {
 }
 
 impl Patient {
+    #[allow(dead_code)]
     pub fn new(name: String) -> Self {
         let now = Utc::now();
         Self {
@@ -103,6 +105,7 @@ pub struct ChartRecord {
 }
 
 /// 설문지 템플릿
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurveyTemplate {
     pub id: String,
@@ -146,6 +149,7 @@ pub enum QuestionType {
 }
 
 /// 설문 세션 (온라인 설문용)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurveySession {
     pub id: String,
@@ -167,6 +171,7 @@ pub enum SessionStatus {
 }
 
 impl SurveySession {
+    #[allow(dead_code)]
     pub fn new(template_id: String, patient_id: Option<String>, respondent_name: Option<String>) -> Self {
         let now = Utc::now();
         Self {
@@ -182,6 +187,7 @@ impl SurveySession {
     }
 }
 
+#[allow(dead_code)]
 fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -198,6 +204,7 @@ fn generate_token() -> String {
 }
 
 /// 환자 설문 응답
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurveyResponse {
     pub id: String,
@@ -216,6 +223,7 @@ pub struct SurveyAnswer {
 }
 
 /// 복약 관리
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MedicationSchedule {
     pub id: String,
@@ -230,6 +238,7 @@ pub struct MedicationSchedule {
 }
 
 /// 복약 기록
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MedicationLog {
     pub id: String,
@@ -239,6 +248,7 @@ pub struct MedicationLog {
     pub notes: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MedicationStatus {

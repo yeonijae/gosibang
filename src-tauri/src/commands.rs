@@ -55,6 +55,7 @@ pub struct ClinicSettingsInput {
     pub doctor_name: Option<String>,
     pub license_number: Option<String>,
     pub created_at: Option<String>,
+    #[allow(dead_code)]
     pub updated_at: Option<String>,
 }
 

@@ -42,6 +42,7 @@ pub fn is_sync_enabled() -> bool {
 }
 
 /// 동기화 활성화/비활성화
+#[allow(dead_code)]
 pub fn set_sync_enabled(enabled: bool) {
     SYNC_ENABLED.store(enabled, Ordering::SeqCst);
     log::info!("Sync enabled: {}", enabled);
@@ -145,6 +146,7 @@ fn queue_for_sync(response: &db::SurveyResponseDb) -> AppResult<()> {
 }
 
 /// 대기 중인 항목 동기화 재시도
+#[allow(dead_code)]
 pub async fn retry_pending_sync() -> AppResult<u32> {
     if !is_sync_enabled() {
         return Ok(0);
@@ -207,6 +209,7 @@ pub async fn retry_pending_sync() -> AppResult<u32> {
 }
 
 /// 대기 중인 동기화 항목 수
+#[allow(dead_code)]
 pub fn get_pending_count() -> usize {
     PENDING_SYNC
         .get()
