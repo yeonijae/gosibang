@@ -21,8 +21,16 @@ import {
   cleanupBackupHistory,
 } from '../lib/backup';
 import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/backup';
-import type { ClinicSettings, Subscription } from '../types';
+import type { ClinicSettings, Subscription, DisplayConfig } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
+
+// 기본 표시 설정
+const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
+  show_price: false,
+  show_patient_limit: false,
+  show_prescription_limit: false,
+  show_chart_limit: false,
+};
 
 // 기능 레이블 매핑 (gosibang-admin과 동기화)
 const FEATURE_LABELS: Record<string, string> = {
@@ -71,6 +79,7 @@ interface PlanDisplay {
     prescriptions: number;
     charts: number;
   };
+  displayConfig: DisplayConfig;
   featureList: { text: string; included: boolean }[];
   recommended?: boolean;
 }
@@ -83,11 +92,9 @@ const DEFAULT_PLANS: PlanDisplay[] = [
     price: 0,
     priceLabel: '₩0',
     period: '',
-    features: { patients: 10, prescriptions: 20, charts: 20 },
+    features: { patients: -1, prescriptions: -1, charts: -1 },
+    displayConfig: DEFAULT_DISPLAY_CONFIG,
     featureList: [
-      { text: '환자 10명까지', included: true },
-      { text: '월 처방전 20개까지', included: true },
-      { text: '월 차트 20개까지', included: true },
       { text: '대시보드', included: true },
       { text: '환자관리', included: true },
       { text: '처방관리', included: true },
@@ -360,13 +367,21 @@ export function Settings() {
           };
 
           const features = policy.features || {};
+          const displayConfig: DisplayConfig = policy.display_config || DEFAULT_DISPLAY_CONFIG;
 
-          // 기능 목록 동적 생성 (Supabase에서 받아온 features 기반)
-          const featureList: { text: string; included: boolean }[] = [
-            { text: formatLimit(policy.max_patients, '환자'), included: true },
-            { text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true },
-            { text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true },
-          ];
+          // 기능 목록 동적 생성 (display_config 기반)
+          const featureList: { text: string; included: boolean }[] = [];
+
+          // 제한 표시 (display_config에 따라 조건부)
+          if (displayConfig.show_patient_limit) {
+            featureList.push({ text: formatLimit(policy.max_patients, '환자'), included: true });
+          }
+          if (displayConfig.show_prescription_limit) {
+            featureList.push({ text: formatLimit(policy.max_prescriptions_per_month, '월 처방전'), included: true });
+          }
+          if (displayConfig.show_chart_limit) {
+            featureList.push({ text: formatLimit(policy.max_charts_per_month, '월 차트'), included: true });
+          }
 
           // DISPLAY_FEATURES 순서대로 동적으로 추가
           for (const featureKey of DISPLAY_FEATURES) {
@@ -395,6 +410,7 @@ export function Settings() {
               prescriptions: policy.max_prescriptions_per_month,
               charts: policy.max_charts_per_month,
             },
+            displayConfig,
             featureList,
             recommended: policy.plan_type === 'basic',
           };
@@ -1192,9 +1208,11 @@ export function Settings() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-gray-900">{currentPlan.name}</p>
-                  <p className="text-sm text-gray-500">
-                    {currentPlan.priceLabel}{currentPlan.period}
-                  </p>
+                  {currentPlan.displayConfig?.show_price && (
+                    <p className="text-sm text-gray-500">
+                      {currentPlan.priceLabel}{currentPlan.period}
+                    </p>
+                  )}
                 </div>
               </div>
               {currentSubscription.status === 'active' && (
@@ -1287,10 +1305,12 @@ export function Settings() {
 
                   <div className="text-center mb-6">
                     <h3 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h3>
-                    <div className="flex items-baseline justify-center gap-1">
-                      <span className="text-3xl font-bold text-gray-900">{plan.priceLabel}</span>
-                      <span className="text-gray-500">{plan.period}</span>
-                    </div>
+                    {plan.displayConfig?.show_price && (
+                      <div className="flex items-baseline justify-center gap-1">
+                        <span className="text-3xl font-bold text-gray-900">{plan.priceLabel}</span>
+                        <span className="text-gray-500">{plan.period}</span>
+                      </div>
+                    )}
                   </div>
 
                   <ul className="space-y-3 mb-6">

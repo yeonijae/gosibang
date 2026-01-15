@@ -326,6 +326,14 @@ export interface MenuItemMeta {
   path: string;
 }
 
+// 플랜 표시 설정 (gosibang-admin에서 제어)
+export interface DisplayConfig {
+  show_price: boolean;
+  show_patient_limit: boolean;
+  show_prescription_limit: boolean;
+  show_chart_limit: boolean;
+}
+
 // ===== 복약관리 타입 =====
 
 // 복약관리 상태
