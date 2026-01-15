@@ -294,6 +294,18 @@ function migrateDatabase(database: Database) {
     )
   `);
 
+  // prescription_notes 테이블 생성 (처방정의 노트)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS prescription_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prescription_definition_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+    )
+  `);
+
   saveDb();
 }
 
@@ -481,6 +493,15 @@ function createTables(database: Database) {
       contacted_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS prescription_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prescription_definition_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
     );
   `);
 

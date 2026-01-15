@@ -27,6 +27,7 @@ const iconMap: Record<string, LucideIcon> = {
   Users,
   FileText,
   Book: BookOpen,
+  BookOpen,
   ClipboardList,
   FileQuestion: ClipboardCheck,
   MessageSquare,

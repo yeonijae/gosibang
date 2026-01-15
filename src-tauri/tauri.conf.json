@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "고시방",
+  "productName": "Gosibang",
   "version": "0.2.3",
   "identifier": "com.gosibang.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "고시방 - 한약처방관리시스템",
+        "title": "Gosibang - Prescription Manager",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,

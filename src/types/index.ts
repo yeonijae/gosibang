@@ -55,6 +55,15 @@ export interface PrescriptionTemplate {
   updated_at?: string;
 }
 
+// 처방정의 노트 (공부 메모)
+export interface PrescriptionNote {
+  id: number;
+  prescription_definition_id: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // 최종 약재 (조정 후)
 export interface FinalHerb {
   herb_id: number;
@@ -287,7 +296,8 @@ export type FeatureKey =
   | 'charts'
   | 'survey_templates'
   | 'survey_responses'
-  | 'medication';
+  | 'medication'
+  | 'homework';
 
 // 플랜별 기능 권한
 export interface PlanFeatures {
@@ -302,6 +312,7 @@ export interface PlanFeatures {
   medication: boolean;
   survey_internal: boolean;   // 내부 설문 (태블릿/인트라넷)
   survey_external: boolean;   // 외부 설문 (온라인 링크)
+  homework: boolean;          // 숙제 기능 (챌린저 플랜)
   backup?: boolean;
   export?: boolean;
   multiUser?: boolean;
@@ -367,4 +378,40 @@ export interface Announcement {
   starts_at: string;
   ends_at?: string;
   created_at: string;
+}
+
+// ===== 숙제 타입 =====
+
+// 숙제
+export interface Homework {
+  id: string;
+  title: string;
+  description?: string;
+  attachment_url?: string;
+  attachment_name?: string;
+  due_date: string;
+  is_active: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// 숙제 제출 상태
+export type HomeworkSubmissionStatus = 'submitted' | 'reviewed';
+
+// 숙제 제출
+export interface HomeworkSubmission {
+  id: string;
+  homework_id: string;
+  user_id: string;
+  user_email?: string;
+  answer: string;
+  status: HomeworkSubmissionStatus;
+  feedback?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  submitted_at: string;
+  updated_at: string;
+  // 조인 데이터
+  homework_title?: string;
 }

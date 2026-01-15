@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote } from 'lucide-react';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
+import type { PrescriptionNote } from '../types';
 
 interface PrescriptionDefinition {
   id: number;
@@ -35,6 +36,11 @@ export function PrescriptionDefinitions() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
+  // 노트 관련 상태
+  const [notes, setNotes] = useState<PrescriptionNote[]>([]);
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<PrescriptionNote | null>(null);
+
   // 처방정의 수정 권한 체크
   const { hasAccess, planName } = useFeatureStore();
   const canEdit = hasAccess('prescription_definitions_edit');
@@ -43,6 +49,15 @@ export function PrescriptionDefinitions() {
     loadDefinitions();
     loadCategories();
   }, []);
+
+  // 선택된 처방이 변경되면 노트 로드
+  useEffect(() => {
+    if (selectedDef) {
+      loadNotes(selectedDef.id);
+    } else {
+      setNotes([]);
+    }
+  }, [selectedDef]);
 
   const loadDefinitions = async () => {
     try {
@@ -74,6 +89,75 @@ export function PrescriptionDefinitions() {
       setCategories(data);
     } catch (error) {
       console.error('카테고리 로드 실패:', error);
+    }
+  };
+
+  // 노트 로드
+  const loadNotes = (prescriptionDefId: number) => {
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const data = queryToObjects<PrescriptionNote>(
+        db,
+        'SELECT * FROM prescription_notes WHERE prescription_definition_id = ? ORDER BY created_at DESC',
+        [prescriptionDefId]
+      );
+      setNotes(data);
+    } catch (error) {
+      console.error('노트 로드 실패:', error);
+    }
+  };
+
+  // 노트 저장
+  const handleSaveNote = async (note: PrescriptionNote) => {
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      const now = new Date().toISOString();
+
+      if (note.id) {
+        // 수정
+        db.run(
+          'UPDATE prescription_notes SET content = ?, updated_at = ? WHERE id = ?',
+          [note.content, now, note.id]
+        );
+      } else {
+        // 새로 추가
+        db.run(
+          'INSERT INTO prescription_notes (prescription_definition_id, content, created_at, updated_at) VALUES (?, ?, ?, ?)',
+          [note.prescription_definition_id, note.content, now, now]
+        );
+      }
+      saveDb();
+      if (selectedDef) {
+        loadNotes(selectedDef.id);
+      }
+      setIsNoteModalOpen(false);
+      setEditingNote(null);
+    } catch (error) {
+      console.error('노트 저장 실패:', error);
+      alert('저장에 실패했습니다.');
+    }
+  };
+
+  // 노트 삭제
+  const handleDeleteNote = async (noteId: number) => {
+    if (!confirm('이 노트를 삭제하시겠습니까?')) return;
+
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      db.run('DELETE FROM prescription_notes WHERE id = ?', [noteId]);
+      saveDb();
+      if (selectedDef) {
+        loadNotes(selectedDef.id);
+      }
+    } catch (error) {
+      console.error('노트 삭제 실패:', error);
+      alert('삭제에 실패했습니다.');
     }
   };
 
@@ -447,6 +531,82 @@ export function PrescriptionDefinitions() {
                     <p className="text-gray-600 whitespace-pre-wrap">{selectedDef.description}</p>
                   </div>
                 )}
+
+                {/* 나의 노트 */}
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+                      <StickyNote className="w-4 h-4" />
+                      나의 노트
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setEditingNote({
+                          id: 0,
+                          prescription_definition_id: selectedDef.id,
+                          content: '',
+                          created_at: '',
+                          updated_at: '',
+                        });
+                        setIsNoteModalOpen(true);
+                      }}
+                      className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                      노트 추가
+                    </button>
+                  </div>
+
+                  {notes.length === 0 ? (
+                    <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg">
+                      <StickyNote className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">아직 노트가 없습니다.</p>
+                      <p className="text-xs mt-1">나만의 공부 메모를 추가해보세요!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 group"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                              <p className="text-xs text-gray-400 mt-2">
+                                {new Date(note.created_at).toLocaleDateString('ko-KR', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                                {note.updated_at !== note.created_at && ' (수정됨)'}
+                              </p>
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingNote(note);
+                                  setIsNoteModalOpen(true);
+                                }}
+                                className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                title="수정"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteNote(note.id)}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="삭제"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">
@@ -478,6 +638,95 @@ export function PrescriptionDefinitions() {
           onUpdate={loadCategories}
         />
       )}
+
+      {/* 노트 추가/수정 모달 */}
+      {isNoteModalOpen && editingNote && (
+        <NoteModal
+          note={editingNote}
+          onSave={handleSaveNote}
+          onClose={() => {
+            setIsNoteModalOpen(false);
+            setEditingNote(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// 노트 추가/수정 모달
+interface NoteModalProps {
+  note: PrescriptionNote;
+  onSave: (note: PrescriptionNote) => void;
+  onClose: () => void;
+}
+
+function NoteModal({ note, onSave, onClose }: NoteModalProps) {
+  const [content, setContent] = useState(note.content);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!content.trim()) {
+      alert('내용을 입력해주세요.');
+      return;
+    }
+
+    setIsSaving(true);
+    await onSave({
+      ...note,
+      content: content.trim(),
+    });
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <StickyNote className="w-5 h-5 text-yellow-500" />
+            {note.id ? '노트 수정' : '새 노트 추가'}
+          </h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              내용
+            </label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="input-field"
+              rows={6}
+              placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
+              autoFocus
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 btn-secondary">
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 btn-primary flex items-center justify-center gap-2"
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              저장
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

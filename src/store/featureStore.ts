@@ -15,6 +15,7 @@ const DEFAULT_FEATURES: PlanFeatures = {
   medication: false,
   survey_internal: false,   // 무료: 내부 설문 불가
   survey_external: false,   // 무료: 외부 설문 불가
+  homework: false,          // 무료: 숙제 기능 불가 (챌린저 플랜 전용)
   backup: false,
   export: false,
   multiUser: false,
