@@ -80,7 +80,7 @@ export function Homework() {
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">숙제</h1>
+          <h1 className="text-2xl font-bold text-gray-900">나의숙제</h1>
           <p className="text-sm text-gray-500 mt-1">
             총 {activeHomeworks.length}개의 숙제
           </p>

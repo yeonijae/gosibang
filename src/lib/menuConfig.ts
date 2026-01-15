@@ -10,7 +10,7 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'survey_templates', label: '설문템플릿', icon: 'FileQuestion', path: '/survey-templates' },
   { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
   { key: 'medication', label: '복약관리', icon: 'Pill', path: '/medication' },
-  { key: 'homework', label: '숙제', icon: 'BookOpen', path: '/homework' },
+  { key: 'homework', label: '나의숙제', icon: 'BookOpen', path: '/homework' },
 ];
 
 // 고정 메뉴 (순서 변경 불가)
