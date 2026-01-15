@@ -41,15 +41,19 @@ export const useHomeworkStore = create<HomeworkStore>((set, get) => ({
   loadHomeworks: async () => {
     try {
       set({ isLoading: true, error: null });
+      console.log('[DEBUG] loadHomeworks 시작');
 
       const { data, error } = await supabase
         .from('gosibang_homework')
         .select('*')
         .order('due_date', { ascending: true });
 
+      console.log('[DEBUG] loadHomeworks 결과:', { data, error });
+
       if (error) throw error;
 
       set({ homeworks: data || [], isLoading: false });
+      console.log('[DEBUG] homeworks 상태 설정 완료, 개수:', data?.length || 0);
     } catch (error) {
       console.error('[Homework] 숙제 로드 실패:', error);
       set({ error: String(error), isLoading: false });

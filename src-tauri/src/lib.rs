@@ -24,9 +24,19 @@ pub fn run() {
                 ))
                 .build(),
         )
-        .setup(|_app| {
+        .setup(|app| {
             // 동기화 모듈 초기화
             sync::init_sync();
+
+            // 개발 모드에서 devtools 자동 열기
+            #[cfg(debug_assertions)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

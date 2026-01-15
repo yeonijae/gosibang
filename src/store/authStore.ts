@@ -168,7 +168,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
           if (subData) {
             subscription = {
               user_id: subData.user_id,
-              plan: subData.plan_type || 'free',
+              plan: subData.plan_type || 'beginner',
               status: subData.status,
               expires_at: subData.expires_at,
             };
@@ -186,7 +186,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
           user_email: session.user.email,
           subscription: subscription || {
             user_id: session.user.id,
-            plan: 'free',
+            plan: 'beginner',
             status: 'active',
             expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           },

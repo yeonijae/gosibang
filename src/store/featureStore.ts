@@ -2,20 +2,20 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { FeatureKey, PlanFeatures } from '../types';
 
-// 기본 기능 (모든 플랜에서 사용 가능)
+// 기본 기능 (비기너 플랜 기준)
 const DEFAULT_FEATURES: PlanFeatures = {
   dashboard: true,
   patients: true,
   prescriptions: true,
   prescription_definitions: true,
-  prescription_definitions_edit: false,  // 무료 플랜은 처방정의 수정 불가
+  prescription_definitions_edit: false,  // 비기너 플랜은 처방정의 수정 불가
   charts: true,
   survey_templates: false,
   survey_responses: false,
   medication: false,
-  survey_internal: false,   // 무료: 내부 설문 불가
-  survey_external: false,   // 무료: 외부 설문 불가
-  homework: false,          // 무료: 숙제 기능 불가 (챌린저 플랜 전용)
+  survey_internal: false,   // 비기너: 내부 설문 불가
+  survey_external: false,   // 비기너: 외부 설문 불가
+  homework: false,          // 비기너: 숙제 기능 불가 (챌린저/마스터 플랜 전용)
   backup: false,
   export: false,
   multiUser: false,
@@ -36,16 +36,16 @@ interface FeatureStore {
 
 export const useFeatureStore = create<FeatureStore>((set, get) => ({
   features: DEFAULT_FEATURES,
-  planType: 'free',
-  planName: '무료',
+  planType: 'beginner',
+  planName: '비기너',
   isLoading: false,
   error: null,
 
   loadFeatures: async (planType?: string) => {
     set({ isLoading: true, error: null });
     try {
-      // planType이 없으면 free 사용
-      const targetPlan = planType || 'free';
+      // planType이 없으면 beginner 사용
+      const targetPlan = planType || 'beginner';
 
       const { data, error } = await supabase
         .from('gosibang_plan_policies')
@@ -82,6 +82,6 @@ export const useFeatureStore = create<FeatureStore>((set, get) => ({
   },
 
   clearFeatures: () => {
-    set({ features: DEFAULT_FEATURES, planType: 'free', planName: '무료' });
+    set({ features: DEFAULT_FEATURES, planType: 'beginner', planName: '비기너' });
   },
 }));

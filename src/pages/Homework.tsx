@@ -21,11 +21,18 @@ export function Homework() {
   const [viewingFeedback, setViewingFeedback] = useState<HomeworkSubmission | null>(null);
 
   useEffect(() => {
+    console.log('[DEBUG] Homework 컴포넌트 마운트');
     loadHomeworks();
     loadMySubmissions();
     const unsubscribe = subscribeToHomeworks();
     return unsubscribe;
   }, [loadHomeworks, loadMySubmissions, subscribeToHomeworks]);
+
+  // 디버깅용
+  useEffect(() => {
+    console.log('[DEBUG] homeworks 상태 변경:', homeworks);
+    console.log('[DEBUG] activeHomeworks:', homeworks.filter((h) => h.is_active));
+  }, [homeworks]);
 
   // 해당 숙제에 대한 내 제출 찾기
   const getMySubmission = (homeworkId: string) => {
