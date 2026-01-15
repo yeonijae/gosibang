@@ -37,6 +37,7 @@ const FEATURE_LABELS: Record<string, string> = {
   survey_internal: '원내설문지',
   survey_external: '온라인설문지',
   medication: '복약관리',
+  homework: '나의숙제',
   backup: '백업',
   export: '내보내기',
   multiUser: '다중사용자',
@@ -54,6 +55,7 @@ const DISPLAY_FEATURES: string[] = [
   'survey_internal',
   'survey_external',
   'medication',
+  'homework',
   'backup',
 ];
 
@@ -346,7 +348,7 @@ export function Settings() {
         .from('gosibang_plan_policies')
         .select('*')
         .eq('is_active', true)
-        .order('price_monthly');
+        .order('id');
 
       if (error) throw error;
 
@@ -381,12 +383,13 @@ export function Settings() {
             featureList.push({ text: label, included });
           }
 
+          const price = policy.price_monthly ?? 0;
           return {
             id: policy.plan_type,
             name: policy.display_name,
-            price: policy.price_monthly,
-            priceLabel: policy.price_monthly === 0 ? '₩0' : `₩${policy.price_monthly.toLocaleString()}`,
-            period: policy.price_monthly === 0 ? '' : '/월',
+            price,
+            priceLabel: price === 0 ? '₩0' : `₩${price.toLocaleString()}`,
+            period: price === 0 ? '' : '/월',
             features: {
               patients: policy.max_patients,
               prescriptions: policy.max_prescriptions_per_month,
