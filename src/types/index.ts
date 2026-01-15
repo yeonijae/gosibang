@@ -390,6 +390,9 @@ export interface Announcement {
 
 // ===== 숙제 타입 =====
 
+// 플랜 타입
+export type PlanType = 'beginner' | 'challenger' | 'master';
+
 // 숙제
 export interface Homework {
   id: string;
@@ -399,6 +402,7 @@ export interface Homework {
   attachment_name?: string;
   due_date: string;
   is_active: boolean;
+  target_plans?: PlanType[];  // 이 숙제를 볼 수 있는 플랜 목록
   created_by?: string;
   created_at: string;
   updated_at: string;
