@@ -43,17 +43,43 @@ export const useHomeworkStore = create<HomeworkStore>((set, get) => ({
       set({ isLoading: true, error: null });
       console.log('[DEBUG] loadHomeworks 시작');
 
-      const { data, error } = await supabase
+      // 숙제 목록 조회
+      const { data: homeworkData, error } = await supabase
         .from('gosibang_homework')
         .select('*')
         .order('due_date', { ascending: true });
 
-      console.log('[DEBUG] loadHomeworks 결과:', { data, error });
+      console.log('[DEBUG] loadHomeworks 결과:', { data: homeworkData, error });
 
       if (error) throw error;
 
-      set({ homeworks: data || [], isLoading: false });
-      console.log('[DEBUG] homeworks 상태 설정 완료, 개수:', data?.length || 0);
+      // 개별과제인 경우 할당된 내용 조회
+      const { data: { user } } = await supabase.auth.getUser();
+      const homeworks = [];
+
+      for (const hw of homeworkData || []) {
+        if (hw.assignment_type === 'individual' && user) {
+          // 개별과제: 할당된 내용 조회
+          const { data: assignmentData } = await supabase
+            .from('gosibang_homework_assignments')
+            .select('content')
+            .eq('homework_id', hw.id)
+            .eq('user_id', user.id)
+            .single();
+
+          homeworks.push({
+            ...hw,
+            individual_content: assignmentData?.content,
+            // 개별과제는 assignment의 content를 description으로 사용
+            description: assignmentData?.content || hw.description,
+          });
+        } else {
+          homeworks.push(hw);
+        }
+      }
+
+      set({ homeworks, isLoading: false });
+      console.log('[DEBUG] homeworks 상태 설정 완료, 개수:', homeworks.length);
     } catch (error) {
       console.error('[Homework] 숙제 로드 실패:', error);
       set({ error: String(error), isLoading: false });

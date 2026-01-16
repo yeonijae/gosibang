@@ -393,6 +393,9 @@ export interface Announcement {
 // 플랜 타입
 export type PlanType = 'beginner' | 'challenger' | 'master';
 
+// 과제 유형
+export type AssignmentType = 'common' | 'individual';
+
 // 숙제
 export interface Homework {
   id: string;
@@ -402,8 +405,25 @@ export interface Homework {
   attachment_name?: string;
   due_date: string;
   is_active: boolean;
-  target_plans?: PlanType[];  // 이 숙제를 볼 수 있는 플랜 목록
+  assignment_type?: AssignmentType;
+  target_plan?: PlanType;
+  target_plans?: PlanType[];
   created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // 개별과제인 경우 할당된 내용
+  individual_content?: string;
+}
+
+// 개별과제 할당
+export interface HomeworkAssignment {
+  id: string;
+  homework_id: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  content: string;
+  due_date?: string;
   created_at: string;
   updated_at: string;
 }
