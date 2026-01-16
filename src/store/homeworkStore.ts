@@ -187,6 +187,7 @@ export const useHomeworkStore = create<HomeworkStore>((set, get) => ({
           homework_id: homeworkId,
           user_id: user.id,
           user_email: user.email,
+          user_name: user.user_metadata?.name || null,
           answer,
           status: 'submitted',
         })

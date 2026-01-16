@@ -417,6 +417,7 @@ export interface HomeworkSubmission {
   homework_id: string;
   user_id: string;
   user_email?: string;
+  user_name?: string;
   answer: string;
   status: HomeworkSubmissionStatus;
   feedback?: string;
