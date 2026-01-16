@@ -221,7 +221,7 @@ export function Homework() {
       {/* 제출 모달 */}
       {selectedHomework && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-lg w-full max-w-4xl h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">{selectedHomework.title}</h2>
               <button
@@ -235,7 +235,7 @@ export function Homework() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-4 flex flex-col">
               {selectedHomework.description && (
                 <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-600 whitespace-pre-wrap">
@@ -259,7 +259,7 @@ export function Homework() {
                 </div>
               )}
 
-              <div>
+              <div className="flex-1 flex flex-col">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   답변 작성
                 </label>
@@ -267,7 +267,7 @@ export function Homework() {
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
                   placeholder="답변을 입력하세요..."
-                  className="input-field min-h-[300px] resize-none"
+                  className="input-field flex-1 min-h-[400px] resize-none"
                 />
               </div>
             </div>
