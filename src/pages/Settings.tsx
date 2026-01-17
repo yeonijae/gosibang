@@ -449,12 +449,8 @@ export function Settings() {
             const label = FEATURE_LABELS[featureKey];
             if (!label) continue;
 
-            // 기본 기능 (dashboard, patients, prescriptions, prescription_definitions, charts)은
-            // false가 아니면 포함, 나머지는 true일 때만 포함
-            const isBasicFeature = ['dashboard', 'patients', 'prescriptions', 'prescription_definitions', 'charts'].includes(featureKey);
-            const included = isBasicFeature
-              ? features[featureKey] !== false
-              : features[featureKey] === true;
+            // 모든 기능은 명시적으로 true일 때만 포함
+            const included = features[featureKey] === true;
 
             featureList.push({ text: label, included });
           }
