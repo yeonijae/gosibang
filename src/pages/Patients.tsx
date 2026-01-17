@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2, MessageSquare, AlertCircle, ExternalLink } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
-import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import InitialChartView from '../components/InitialChartView';
 import { SurveySessionModal } from '../components/survey/SurveySessionModal';
@@ -461,7 +461,7 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
 
       const data = queryToObjects<Prescription>(
         db,
-        'SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY created_at DESC',
+        'SELECT * FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
         [patient.id]
       );
 
@@ -570,12 +570,10 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
     if (!confirm('이 처방전을 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+      const success = softDelete('prescriptions', prescription.id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM prescriptions WHERE id = ?', [prescription.id]);
-      saveDb();
-
+      alert('처방전이 휴지통으로 이동되었습니다.');
       loadPrescriptions();
     } catch (error) {
       console.error('처방 삭제 실패:', error);
@@ -788,7 +786,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
 
       const initialData = queryToObjects<InitialChart>(
         db,
-        'SELECT * FROM initial_charts WHERE patient_id = ? ORDER BY chart_date DESC',
+        'SELECT * FROM initial_charts WHERE patient_id = ? AND deleted_at IS NULL ORDER BY chart_date DESC',
         [patient.id]
       );
       setInitialCharts(initialData);
@@ -803,11 +801,10 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
     if (!confirm('이 초진차트를 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
+      const success = softDelete('initial_charts', chart.id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM initial_charts WHERE id = ?', [chart.id]);
-      saveDb();
+      alert('초진차트가 휴지통으로 이동되었습니다.');
       loadCharts();
     } catch (error) {
       console.error('초진차트 삭제 실패:', error);

@@ -44,8 +44,30 @@ export async function initLocalDb(userId?: string): Promise<Database> {
   return db;
 }
 
+// 휴지통 관련 타입
+export interface TrashItem {
+  id: string;
+  type: 'patient' | 'prescription' | 'initial_chart' | 'progress_note';
+  name: string;
+  deleted_at: string;
+  extra_info?: string;
+}
+
 // 기존 DB 마이그레이션 (새 테이블 추가)
 function migrateDatabase(database: Database) {
+  // deleted_at 컬럼 추가 (휴지통 기능)
+  try {
+    database.run('ALTER TABLE patients ADD COLUMN deleted_at TEXT');
+  } catch (e) { /* 이미 존재하면 무시 */ }
+  try {
+    database.run('ALTER TABLE prescriptions ADD COLUMN deleted_at TEXT');
+  } catch (e) { /* 이미 존재하면 무시 */ }
+  try {
+    database.run('ALTER TABLE initial_charts ADD COLUMN deleted_at TEXT');
+  } catch (e) { /* 이미 존재하면 무시 */ }
+  try {
+    database.run('ALTER TABLE progress_notes ADD COLUMN deleted_at TEXT');
+  } catch (e) { /* 이미 존재하면 무시 */ }
   // prescription_categories 테이블 생성 (없으면)
   database.run(`
     CREATE TABLE IF NOT EXISTS prescription_categories (
@@ -329,6 +351,7 @@ function createTables(database: Database) {
       phone TEXT,
       address TEXT,
       notes TEXT,
+      deleted_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -380,6 +403,7 @@ function createTables(database: Database) {
       status TEXT DEFAULT 'draft',
       issued_at TEXT,
       created_by TEXT,
+      deleted_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -395,6 +419,7 @@ function createTables(database: Database) {
       notes TEXT,
       prescription_issued INTEGER DEFAULT 0,
       prescription_issued_at TEXT,
+      deleted_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -412,6 +437,7 @@ function createTables(database: Database) {
       notes TEXT,
       prescription_issued INTEGER DEFAULT 0,
       prescription_issued_at TEXT,
+      deleted_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -721,4 +747,201 @@ export function ensureSampleData(): void {
   }
 
   saveDb();
+}
+
+// ===== 휴지통 기능 =====
+
+// 소프트 삭제 (deleted_at 설정)
+export function softDelete(table: 'patients' | 'prescriptions' | 'initial_charts' | 'progress_notes', id: string): boolean {
+  if (!db) return false;
+
+  const now = new Date().toISOString();
+
+  try {
+    db.run(`UPDATE ${table} SET deleted_at = ? WHERE id = ?`, [now, id]);
+
+    // 환자 삭제 시 관련 데이터도 함께 삭제
+    if (table === 'patients') {
+      db.run(`UPDATE prescriptions SET deleted_at = ? WHERE patient_id = ? AND deleted_at IS NULL`, [now, id]);
+      db.run(`UPDATE initial_charts SET deleted_at = ? WHERE patient_id = ? AND deleted_at IS NULL`, [now, id]);
+      db.run(`UPDATE progress_notes SET deleted_at = ? WHERE patient_id = ? AND deleted_at IS NULL`, [now, id]);
+    }
+
+    saveDb();
+    return true;
+  } catch (e) {
+    console.error(`[softDelete] ${table} 삭제 실패:`, e);
+    return false;
+  }
+}
+
+// 복원 (deleted_at 해제)
+export function restoreFromTrash(table: 'patients' | 'prescriptions' | 'initial_charts' | 'progress_notes', id: string): boolean {
+  if (!db) return false;
+
+  try {
+    db.run(`UPDATE ${table} SET deleted_at = NULL WHERE id = ?`, [id]);
+
+    // 환자 복원 시 관련 데이터도 함께 복원
+    if (table === 'patients') {
+      db.run(`UPDATE prescriptions SET deleted_at = NULL WHERE patient_id = ?`, [id]);
+      db.run(`UPDATE initial_charts SET deleted_at = NULL WHERE patient_id = ?`, [id]);
+      db.run(`UPDATE progress_notes SET deleted_at = NULL WHERE patient_id = ?`, [id]);
+    }
+
+    saveDb();
+    return true;
+  } catch (e) {
+    console.error(`[restoreFromTrash] ${table} 복원 실패:`, e);
+    return false;
+  }
+}
+
+// 영구 삭제
+export function permanentDelete(table: 'patients' | 'prescriptions' | 'initial_charts' | 'progress_notes', id: string): boolean {
+  if (!db) return false;
+
+  try {
+    db.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    saveDb();
+    return true;
+  } catch (e) {
+    console.error(`[permanentDelete] ${table} 영구 삭제 실패:`, e);
+    return false;
+  }
+}
+
+// 휴지통 비우기 (모든 삭제된 항목 영구 삭제)
+export function emptyTrash(): { patients: number; prescriptions: number; charts: number } {
+  if (!db) return { patients: 0, prescriptions: 0, charts: 0 };
+
+  try {
+    // 삭제된 항목 수 조회
+    const patientsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM patients WHERE deleted_at IS NOT NULL');
+    const prescriptionsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescriptions WHERE deleted_at IS NOT NULL');
+    const initialChartsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM initial_charts WHERE deleted_at IS NOT NULL');
+    const progressNotesCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM progress_notes WHERE deleted_at IS NOT NULL');
+
+    // 영구 삭제
+    db.run('DELETE FROM progress_notes WHERE deleted_at IS NOT NULL');
+    db.run('DELETE FROM initial_charts WHERE deleted_at IS NOT NULL');
+    db.run('DELETE FROM prescriptions WHERE deleted_at IS NOT NULL');
+    db.run('DELETE FROM patients WHERE deleted_at IS NOT NULL');
+
+    saveDb();
+
+    return {
+      patients: patientsCount?.cnt || 0,
+      prescriptions: prescriptionsCount?.cnt || 0,
+      charts: (initialChartsCount?.cnt || 0) + (progressNotesCount?.cnt || 0),
+    };
+  } catch (e) {
+    console.error('[emptyTrash] 휴지통 비우기 실패:', e);
+    return { patients: 0, prescriptions: 0, charts: 0 };
+  }
+}
+
+// 휴지통 목록 조회
+export function getTrashItems(): TrashItem[] {
+  if (!db) return [];
+
+  const items: TrashItem[] = [];
+
+  try {
+    // 삭제된 환자
+    const patients = queryToObjects<{ id: string; name: string; deleted_at: string; chart_number?: string }>(
+      db,
+      'SELECT id, name, deleted_at, chart_number FROM patients WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+    );
+    patients.forEach(p => {
+      items.push({
+        id: p.id,
+        type: 'patient',
+        name: p.name,
+        deleted_at: p.deleted_at,
+        extra_info: p.chart_number || undefined,
+      });
+    });
+
+    // 삭제된 처방전
+    const prescriptions = queryToObjects<{ id: string; prescription_name: string; patient_name: string; deleted_at: string }>(
+      db,
+      'SELECT id, prescription_name, patient_name, deleted_at FROM prescriptions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+    );
+    prescriptions.forEach(p => {
+      items.push({
+        id: p.id,
+        type: 'prescription',
+        name: p.prescription_name || '처방전',
+        deleted_at: p.deleted_at,
+        extra_info: p.patient_name || undefined,
+      });
+    });
+
+    // 삭제된 초진차트
+    const initialCharts = queryToObjects<{ id: string; chart_date: string; deleted_at: string; patient_id: string }>(
+      db,
+      'SELECT ic.id, ic.chart_date, ic.deleted_at, ic.patient_id FROM initial_charts ic WHERE ic.deleted_at IS NOT NULL ORDER BY ic.deleted_at DESC'
+    );
+    for (const c of initialCharts) {
+      const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [c.patient_id]);
+      items.push({
+        id: c.id,
+        type: 'initial_chart',
+        name: `초진차트 (${c.chart_date})`,
+        deleted_at: c.deleted_at,
+        extra_info: patient?.name || undefined,
+      });
+    }
+
+    // 삭제된 경과기록
+    const progressNotes = queryToObjects<{ id: string; note_date: string; deleted_at: string; patient_id: string }>(
+      db,
+      'SELECT pn.id, pn.note_date, pn.deleted_at, pn.patient_id FROM progress_notes pn WHERE pn.deleted_at IS NOT NULL ORDER BY pn.deleted_at DESC'
+    );
+    for (const n of progressNotes) {
+      const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [n.patient_id]);
+      items.push({
+        id: n.id,
+        type: 'progress_note',
+        name: `경과기록 (${n.note_date})`,
+        deleted_at: n.deleted_at,
+        extra_info: patient?.name || undefined,
+      });
+    }
+
+    // 삭제 시간 기준 정렬
+    items.sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
+
+    return items;
+  } catch (e) {
+    console.error('[getTrashItems] 휴지통 조회 실패:', e);
+    return [];
+  }
+}
+
+// 휴지통 항목 수 조회
+export function getTrashCount(): { total: number; patients: number; prescriptions: number; charts: number } {
+  if (!db) return { total: 0, patients: 0, prescriptions: 0, charts: 0 };
+
+  try {
+    const patients = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM patients WHERE deleted_at IS NOT NULL');
+    const prescriptions = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescriptions WHERE deleted_at IS NOT NULL');
+    const initialCharts = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM initial_charts WHERE deleted_at IS NOT NULL');
+    const progressNotes = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM progress_notes WHERE deleted_at IS NOT NULL');
+
+    const patientsCount = patients?.cnt || 0;
+    const prescriptionsCount = prescriptions?.cnt || 0;
+    const chartsCount = (initialCharts?.cnt || 0) + (progressNotes?.cnt || 0);
+
+    return {
+      total: patientsCount + prescriptionsCount + chartsCount,
+      patients: patientsCount,
+      prescriptions: prescriptionsCount,
+      charts: chartsCount,
+    };
+  } catch (e) {
+    console.error('[getTrashCount] 휴지통 개수 조회 실패:', e);
+    return { total: 0, patients: 0, prescriptions: 0, charts: 0 };
+  }
 }

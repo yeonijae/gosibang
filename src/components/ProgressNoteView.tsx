@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Plus, Save, Edit, Trash2, Loader2, Check, Cloud, AlertCircle } from 'lucide-react';
-import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
 import type { ProgressNote } from '../types';
 
 type SaveStatus = 'idle' | 'changed' | 'saving' | 'saved' | 'error';
@@ -60,7 +60,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
 
       const data = queryToObjects<ProgressNote>(
         db,
-        'SELECT * FROM progress_notes WHERE patient_id = ? ORDER BY note_date DESC',
+        'SELECT * FROM progress_notes WHERE patient_id = ? AND deleted_at IS NULL ORDER BY note_date DESC',
         [patientId]
       );
 
@@ -298,13 +298,10 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
     if (!confirm('이 경과기록을 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+      const success = softDelete('progress_notes', id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM progress_notes WHERE id = ?', [id]);
-      saveDb();
-
-      alert('경과기록이 삭제되었습니다');
+      alert('경과기록이 휴지통으로 이동되었습니다');
       setSelectedNote(null);
       loadNotes();
     } catch (error: any) {

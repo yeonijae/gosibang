@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X, Search } from 'lucide-react';
-import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { Prescription } from '../types';
@@ -58,7 +58,7 @@ export function Prescriptions() {
 
       const data = queryToObjects<Prescription>(
         db,
-        'SELECT * FROM prescriptions ORDER BY created_at DESC'
+        'SELECT * FROM prescriptions WHERE deleted_at IS NULL ORDER BY created_at DESC'
       );
 
       // JSON 파싱
@@ -177,13 +177,10 @@ export function Prescriptions() {
 
   const handleDelete = async (id: string) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+      const success = softDelete('prescriptions', id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM prescriptions WHERE id = ?', [id]);
-      saveDb();
-
-      alert('처방전이 삭제되었습니다.');
+      alert('처방전이 휴지통으로 이동되었습니다.');
       setDeleteConfirm(null);
       loadPrescriptions();
     } catch (error) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
-import { getDb, saveDb, generateUUID, queryToObjects, queryOne } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects, queryOne, softDelete } from '../lib/localDb';
 import PrescriptionInput from '../components/PrescriptionInput';
 import type { PrescriptionData } from '../components/PrescriptionInput';
 import type { InitialChart, ProgressNote, Patient, ProgressEntry } from '../types';
@@ -104,6 +104,7 @@ export function Charts() {
         `SELECT ic.*, p.name as patient_name
          FROM initial_charts ic
          LEFT JOIN patients p ON ic.patient_id = p.id
+         WHERE ic.deleted_at IS NULL
          ORDER BY ic.chart_date DESC`
       );
 
@@ -172,7 +173,7 @@ export function Charts() {
       // 경과기록 로드
       const notesData = queryToObjects<ProgressNote>(
         db,
-        'SELECT * FROM progress_notes WHERE patient_id = ? ORDER BY note_date DESC',
+        'SELECT * FROM progress_notes WHERE patient_id = ? AND deleted_at IS NULL ORDER BY note_date DESC',
         [patientId]
       );
 
@@ -507,13 +508,10 @@ export function Charts() {
     if (!confirm('이 경과를 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
+      const success = softDelete('progress_notes', progressId);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM progress_notes WHERE id = ?', [progressId]);
-      saveDb();
-
-      alert('경과가 삭제되었습니다');
+      alert('경과가 휴지통으로 이동되었습니다');
       await loadDetailData(initialChart!.id, initialChart!.patient_id);
     } catch (error: any) {
       console.error('경과 삭제 실패:', error);
@@ -557,16 +555,13 @@ export function Charts() {
   const handleDeleteChart = async () => {
     if (!initialChart) return;
 
-    if (!confirm('이 진료기록을 삭제하시겠습니까?\n\n삭제된 데이터는 복구할 수 없습니다.')) return;
+    if (!confirm('이 진료기록을 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
+      const success = softDelete('initial_charts', initialChart.id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
-      db.run('DELETE FROM initial_charts WHERE id = ?', [initialChart.id]);
-      saveDb();
-
-      alert('진료기록이 삭제되었습니다');
+      alert('진료기록이 휴지통으로 이동되었습니다');
       closeDetailModal();
     } catch (error: any) {
       console.error('삭제 실패:', error);

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink, Key } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions } from '../lib/localDb';
+import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
@@ -149,6 +149,11 @@ export function Settings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  // 휴지통 관련 상태
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
+  const [trashCount, setTrashCount] = useState({ total: 0, patients: 0, prescriptions: 0, charts: 0 });
+  const [isLoadingTrash, setIsLoadingTrash] = useState(false);
+  const [showTrashModal, setShowTrashModal] = useState(false);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   // 백업 관련 상태
@@ -505,10 +510,10 @@ export function Settings() {
       const db = getDb();
       if (!db) return;
 
-      const patientsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM patients');
-      const prescriptionsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescriptions');
-      const initialChartsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM initial_charts');
-      const progressNotesCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM progress_notes');
+      const patientsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM patients WHERE deleted_at IS NULL');
+      const prescriptionsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescriptions WHERE deleted_at IS NULL');
+      const initialChartsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM initial_charts WHERE deleted_at IS NULL');
+      const progressNotesCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM progress_notes WHERE deleted_at IS NULL');
 
       setUsageStats({
         patients: patientsCount?.cnt || 0,
@@ -516,9 +521,78 @@ export function Settings() {
         initialCharts: initialChartsCount?.cnt || 0,
         progressNotes: progressNotesCount?.cnt || 0,
       });
+
+      // 휴지통 개수도 업데이트
+      setTrashCount(getTrashCount());
     } catch (error) {
       console.error('Failed to load usage stats:', error);
     }
+  };
+
+  // 휴지통 항목 로드
+  const loadTrashItems = () => {
+    setIsLoadingTrash(true);
+    try {
+      const items = getTrashItems();
+      setTrashItems(items);
+      setTrashCount(getTrashCount());
+    } catch (error) {
+      console.error('Failed to load trash items:', error);
+    } finally {
+      setIsLoadingTrash(false);
+    }
+  };
+
+  // 휴지통에서 복원
+  const handleRestore = (item: TrashItem) => {
+    const tableMap = {
+      patient: 'patients',
+      prescription: 'prescriptions',
+      initial_chart: 'initial_charts',
+      progress_note: 'progress_notes',
+    } as const;
+
+    const success = restoreFromTrash(tableMap[item.type], item.id);
+    if (success) {
+      loadTrashItems();
+      loadUsageStats();
+      setMessage({ type: 'success', text: `${item.name}이(가) 복원되었습니다.` });
+    } else {
+      setMessage({ type: 'error', text: '복원에 실패했습니다.' });
+    }
+  };
+
+  // 영구 삭제
+  const handlePermanentDelete = (item: TrashItem) => {
+    if (!confirm(`"${item.name}"을(를) 영구 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
+
+    const tableMap = {
+      patient: 'patients',
+      prescription: 'prescriptions',
+      initial_chart: 'initial_charts',
+      progress_note: 'progress_notes',
+    } as const;
+
+    const success = permanentDelete(tableMap[item.type], item.id);
+    if (success) {
+      loadTrashItems();
+      setMessage({ type: 'success', text: `${item.name}이(가) 영구 삭제되었습니다.` });
+    } else {
+      setMessage({ type: 'error', text: '삭제에 실패했습니다.' });
+    }
+  };
+
+  // 휴지통 비우기
+  const handleEmptyTrash = () => {
+    if (!confirm('휴지통을 비우시겠습니까?\n\n모든 항목이 영구 삭제되며 복구할 수 없습니다.')) return;
+
+    const result = emptyTrash();
+    loadTrashItems();
+    loadUsageStats();
+    setMessage({
+      type: 'success',
+      text: `휴지통이 비워졌습니다. (환자 ${result.patients}명, 처방 ${result.prescriptions}개, 차트 ${result.charts}개 삭제)`,
+    });
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -1724,6 +1798,48 @@ export function Settings() {
             </div>
           </div>
 
+          {/* 휴지통 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">휴지통</h2>
+                <p className="text-sm text-gray-500">삭제된 데이터를 복원하거나 영구 삭제합니다</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="font-medium text-gray-900">삭제된 항목</p>
+                <p className="text-sm text-gray-500">
+                  환자 {trashCount.patients}명 · 처방 {trashCount.prescriptions}개 · 차트 {trashCount.charts}개
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {trashCount.total > 0 && (
+                  <button
+                    onClick={handleEmptyTrash}
+                    className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    비우기
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    loadTrashItems();
+                    setShowTrashModal(true);
+                  }}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  열기
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 초기화 */}
           <div className="card border-red-200">
             <div className="flex items-center gap-3 mb-4">
@@ -2015,6 +2131,119 @@ export function Settings() {
               <li>OneDrive: 문서 폴더 사용</li>
               <li>Dropbox: Dropbox 폴더 내 백업 폴더 생성</li>
             </ul>
+          </div>
+        </div>
+      )}
+
+      {/* 휴지통 모달 */}
+      {showTrashModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">휴지통</h2>
+                  <p className="text-sm text-gray-500">
+                    총 {trashCount.total}개 항목
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTrashModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoadingTrash ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                </div>
+              ) : trashItems.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Trash2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>휴지통이 비어있습니다</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {trashItems.map((item) => (
+                    <div
+                      key={`${item.type}-${item.id}`}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          item.type === 'patient' ? 'bg-blue-100' :
+                          item.type === 'prescription' ? 'bg-green-100' :
+                          'bg-purple-100'
+                        }`}>
+                          {item.type === 'patient' ? (
+                            <Users className="w-4 h-4 text-blue-600" />
+                          ) : item.type === 'prescription' ? (
+                            <FileText className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <ClipboardList className="w-4 h-4 text-purple-600" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{item.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {item.extra_info && `${item.extra_info} · `}
+                            {new Date(item.deleted_at).toLocaleString()} 삭제
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleRestore(item)}
+                          className="px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        >
+                          복원
+                        </button>
+                        <button
+                          onClick={() => handlePermanentDelete(item)}
+                          className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+              <div className="text-sm text-gray-500">
+                {trashCount.total > 0 && (
+                  <span>환자 {trashCount.patients}명 · 처방 {trashCount.prescriptions}개 · 차트 {trashCount.charts}개</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {trashCount.total > 0 && (
+                  <button
+                    onClick={() => {
+                      handleEmptyTrash();
+                      setShowTrashModal(false);
+                    }}
+                    className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    휴지통 비우기
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowTrashModal(false)}
+                  className="btn-secondary"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

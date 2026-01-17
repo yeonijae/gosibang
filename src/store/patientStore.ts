@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
+import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
 import type { Patient, Prescription, ChartRecord } from '../types';
 
 interface PatientStore {
@@ -36,11 +36,11 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      let sql = 'SELECT * FROM patients';
+      let sql = 'SELECT * FROM patients WHERE deleted_at IS NULL';
       const params: string[] = [];
 
       if (search) {
-        sql += ' WHERE name LIKE ? OR phone LIKE ?';
+        sql += ' AND (name LIKE ? OR phone LIKE ?)';
         params.push(`%${search}%`, `%${search}%`);
       }
       sql += ' ORDER BY created_at DESC';
@@ -112,11 +112,8 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   deletePatient: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      db.run('DELETE FROM patients WHERE id = ?', [id]);
-      saveDb();
+      const success = softDelete('patients', id);
+      if (!success) throw new Error('삭제에 실패했습니다.');
 
       await get().loadPatients();
       if (get().selectedPatient?.id === id) {
@@ -136,7 +133,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
       const prescriptions = queryToObjects<Prescription>(
         db,
-        'SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY created_at DESC',
+        'SELECT * FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
         [patientId]
       ).map((p) => ({
         ...p,
