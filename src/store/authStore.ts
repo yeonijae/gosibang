@@ -20,6 +20,7 @@ interface AuthStore {
   signup: (email: string, password: string, metadata: SignupMetadata) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<AuthState | null>;
+  resetPassword: (name: string, phone: string) => Promise<string>;
   clearError: () => void;
 }
 
@@ -200,6 +201,33 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (error) {
       set({ authState: null, isLoading: false });
       return null;
+    }
+  },
+
+  resetPassword: async (name: string, phone: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, phone }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || '비밀번호 초기화에 실패했습니다.');
+      }
+
+      set({ isLoading: false });
+      return result.tempPassword;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      set({ error: errorMessage, isLoading: false });
+      throw error;
     }
   },
 
