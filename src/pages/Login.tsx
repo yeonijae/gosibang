@@ -19,6 +19,7 @@ export function Login() {
   const [pendingType, setPendingType] = useState<'signup' | 'login'>('signup');
   // 비밀번호 찾기
   const [isResetMode, setIsResetMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const [resetName, setResetName] = useState('');
   const [resetPhone, setResetPhone] = useState('');
   const [tempPassword, setTempPassword] = useState('');
@@ -74,12 +75,12 @@ export function Login() {
     e.preventDefault();
     clearError();
 
-    if (!resetName.trim() || !resetPhone.trim()) {
+    if (!resetEmail.trim() || !resetName.trim() || !resetPhone.trim()) {
       return;
     }
 
     try {
-      const newTempPassword = await resetPassword(resetName, resetPhone);
+      const newTempPassword = await resetPassword(resetEmail, resetName, resetPhone);
       setTempPassword(newTempPassword);
     } catch {
       // 에러는 store에서 처리
@@ -94,6 +95,7 @@ export function Login() {
 
   const exitResetMode = () => {
     setIsResetMode(false);
+    setResetEmail('');
     setResetName('');
     setResetPhone('');
     setTempPassword('');
@@ -169,8 +171,23 @@ export function Login() {
               ) : (
                 <form onSubmit={handleResetPassword} className="space-y-4">
                   <p className="text-sm text-gray-600 mb-4">
-                    회원가입 시 등록한 이름과 연락처를 입력해 주세요.
+                    회원가입 시 등록한 이메일, 이름, 연락처를 입력해 주세요.
                   </p>
+                  <div>
+                    <label htmlFor="resetEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                      이메일
+                    </label>
+                    <input
+                      id="resetEmail"
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className="input-field"
+                      placeholder="example@email.com"
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
                   <div>
                     <label htmlFor="resetName" className="block text-sm font-medium text-gray-700 mb-1">
                       이름
@@ -203,7 +220,7 @@ export function Login() {
                   </div>
                   <button
                     type="submit"
-                    disabled={isLoading || !resetName.trim() || !resetPhone.trim()}
+                    disabled={isLoading || !resetEmail.trim() || !resetName.trim() || !resetPhone.trim()}
                     className="w-full btn-primary py-3 flex items-center justify-center gap-2"
                   >
                     {isLoading ? (

@@ -20,7 +20,7 @@ interface AuthStore {
   signup: (email: string, password: string, metadata: SignupMetadata) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<AuthState | null>;
-  resetPassword: (name: string, phone: string) => Promise<string>;
+  resetPassword: (email: string, name: string, phone: string) => Promise<string>;
   clearError: () => void;
 }
 
@@ -204,7 +204,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     }
   },
 
-  resetPassword: async (name: string, phone: string) => {
+  resetPassword: async (email: string, name: string, phone: string) => {
     set({ isLoading: true, error: null });
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -213,7 +213,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ email, name, phone }),
       });
 
       const result = await response.json();

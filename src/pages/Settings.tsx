@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink } from 'lucide-react';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink, Key } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
@@ -144,6 +144,11 @@ export function Settings() {
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', lecture_id: '', is_approved: false });
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  // 비밀번호 변경
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   // 백업 관련 상태
@@ -344,6 +349,59 @@ export function Settings() {
       setMessage({ type: 'error', text: '저장에 실패했습니다.' });
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  // 비밀번호 변경
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setMessage({ type: 'error', text: '모든 필드를 입력해주세요.' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setMessage({ type: 'error', text: '새 비밀번호는 6자 이상이어야 합니다.' });
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setMessage({ type: 'error', text: '새 비밀번호가 일치하지 않습니다.' });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setMessage(null);
+
+    try {
+      // 현재 비밀번호로 로그인 시도하여 검증
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: authState?.user_email || '',
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        throw new Error('현재 비밀번호가 올바르지 않습니다.');
+      }
+
+      // 비밀번호 업데이트
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) throw updateError;
+
+      setMessage({ type: 'success', text: '비밀번호가 변경되었습니다.' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (error) {
+      console.error('Password change error:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다.',
+      });
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -1067,6 +1125,77 @@ export function Settings() {
             )}
           </div>
 
+          {/* 비밀번호 변경 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                <Key className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">비밀번호 변경</h2>
+                <p className="text-sm text-gray-500">계정 비밀번호를 변경합니다</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  현재 비밀번호
+                </label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="현재 비밀번호 입력"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  새 비밀번호
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="새 비밀번호 입력 (6자 이상)"
+                  minLength={6}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  새 비밀번호 확인
+                </label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="새 비밀번호 다시 입력"
+                  minLength={6}
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={handleChangePassword}
+                  disabled={isChangingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {isChangingPassword ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Key className="w-4 h-4" />
+                  )}
+                  비밀번호 변경
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 회원탈퇴 */}
           <div className="card border-red-200 bg-red-50/30">
             <div className="flex items-center gap-3 mb-4">
@@ -1194,80 +1323,6 @@ export function Settings() {
       {/* 구독 관리 탭 */}
       {activeTab === 'subscription' && (
         <div className="space-y-6">
-          {/* 현재 플랜 및 사용량 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 현재 구독 정보 */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">현재 플랜</h2>
-                {getStatusBadge(currentSubscription.status)}
-              </div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center">
-                  <Crown className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{currentPlan.name}</p>
-                  {currentPlan.displayConfig?.show_price && (
-                    <p className="text-sm text-gray-500">
-                      {currentPlan.priceLabel}{currentPlan.period}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {currentSubscription.status === 'active' && (
-                <p className="text-sm text-gray-600">
-                  만료일: {new Date(currentSubscription.expires_at).toLocaleDateString('ko-KR')}
-                </p>
-              )}
-            </div>
-
-            {/* 사용량 통계 */}
-            <div className="card">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">사용량</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-600 mb-1">
-                    <Users className="w-4 h-4" />
-                    <span className="text-sm">환자</span>
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">
-                    {usageStats.patients}
-                    <span className="text-sm font-normal text-gray-500">
-                      /{currentPlan.features.patients === -1 ? '∞' : currentPlan.features.patients}
-                    </span>
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-600 mb-1">
-                    <FileText className="w-4 h-4" />
-                    <span className="text-sm">처방전</span>
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">
-                    {usageStats.prescriptions}
-                    <span className="text-sm font-normal text-gray-500">
-                      /{currentPlan.features.prescriptions === -1 ? '∞' : currentPlan.features.prescriptions}
-                    </span>
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-600 mb-1">
-                    <ClipboardList className="w-4 h-4" />
-                    <span className="text-sm">초진차트</span>
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{usageStats.initialCharts}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-600 mb-1">
-                    <ClipboardList className="w-4 h-4" />
-                    <span className="text-sm">경과기록</span>
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{usageStats.progressNotes}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* 플랜 비교 */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">플랜 비교</h2>
