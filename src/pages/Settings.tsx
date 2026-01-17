@@ -1397,14 +1397,7 @@ export function Settings() {
                     >
                       업그레이드
                     </button>
-                  ) : (
-                    <button
-                      onClick={() => handleUpgradePlan(plan.id)}
-                      className="w-full py-2 px-4 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-                    >
-                      다운그레이드
-                    </button>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </div>
