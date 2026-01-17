@@ -58,12 +58,12 @@ export function SurveyResponses() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">설문 관리</h1>
           <p className="text-sm text-gray-500 mt-1">응답 {filteredResponses.length}건</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {/* 온라인 링크 생성 버튼 - 프리미엄 플랜만 */}
           {canUseFeature('survey_external') && (
             <button
@@ -72,7 +72,8 @@ export function SurveyResponses() {
               disabled={templates.filter(t => t.is_active).length === 0}
             >
               <Link2 className="w-4 h-4" />
-              온라인 링크 생성
+              <span className="hidden sm:inline">온라인 링크 생성</span>
+              <span className="sm:hidden">링크</span>
             </button>
           )}
           <button
@@ -81,14 +82,15 @@ export function SurveyResponses() {
             disabled={templates.filter(t => t.is_active).length === 0}
           >
             <Plus className="w-4 h-4" />
-            새 설문 작성
+            <span className="hidden sm:inline">새 설문 작성</span>
+            <span className="sm:hidden">작성</span>
           </button>
         </div>
       </div>
 
       {/* 필터 */}
-      <div className="flex gap-4 mb-4">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap gap-2 sm:gap-4 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
@@ -101,7 +103,7 @@ export function SurveyResponses() {
         <select
           value={selectedTemplateId}
           onChange={(e) => setSelectedTemplateId(e.target.value)}
-          className="input-field w-48"
+          className="input-field w-40 sm:w-48"
         >
           <option value="">전체 설문</option>
           {templates.map((template) => (
@@ -113,14 +115,14 @@ export function SurveyResponses() {
         {/* 미연결 응답 필터 */}
         <button
           onClick={() => setShowUnlinkedOnly(!showUnlinkedOnly)}
-          className={`px-4 py-2 rounded-lg border flex items-center gap-2 transition-colors ${
+          className={`px-3 sm:px-4 py-2 rounded-lg border flex items-center gap-1 sm:gap-2 transition-colors whitespace-nowrap ${
             showUnlinkedOnly
               ? 'bg-orange-100 border-orange-300 text-orange-700'
               : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
           }`}
         >
           <AlertCircle className="w-4 h-4" />
-          미연결 {unlinkedCount > 0 && `(${unlinkedCount})`}
+          <span className="hidden sm:inline">미연결</span> {unlinkedCount > 0 && `(${unlinkedCount})`}
         </button>
       </div>
 
@@ -130,50 +132,58 @@ export function SurveyResponses() {
           <div className="flex-1 flex items-center justify-center text-gray-500">로딩 중...</div>
         ) : filteredResponses.length > 0 ? (
           <div className="flex-1 overflow-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[600px]">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="border-b text-left">
-                  <th className="px-4 py-3 font-medium text-gray-600">환자명</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">설문명</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">제출일시</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">답변 수</th>
-                  <th className="px-4 py-3 font-medium text-gray-600"></th>
+                  <th className="px-3 sm:px-4 py-3 font-medium text-gray-600">환자명</th>
+                  <th className="px-3 sm:px-4 py-3 font-medium text-gray-600">설문명</th>
+                  <th className="px-3 sm:px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">제출일시</th>
+                  <th className="px-3 sm:px-4 py-3 font-medium text-gray-600 hidden md:table-cell">답변 수</th>
+                  <th className="px-3 sm:px-4 py-3 font-medium text-gray-600 w-24"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredResponses.map((response) => (
                   <tr key={response.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {response.patient_name || response.respondent_name || '-'}
+                    <td className="px-3 sm:px-4 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="truncate max-w-[120px] sm:max-w-none">
+                          {response.patient_name || response.respondent_name || '-'}
+                        </span>
                         {!response.patient_id && (
-                          <span className="px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">
+                          <span className="px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 rounded flex-shrink-0">
                             미연결
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">{response.template_name || '-'}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 sm:px-4 py-3">
+                      <span className="truncate block max-w-[100px] sm:max-w-none">
+                        {response.template_name || '-'}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 hidden sm:table-cell text-sm text-gray-600">
                       {new Date(response.submitted_at).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3">{response.answers.length}개</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="px-3 sm:px-4 py-3 hidden md:table-cell">{response.answers.length}개</td>
+                    <td className="px-3 sm:px-4 py-3">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <button
                           onClick={() => handleViewResponse(response)}
-                          className="text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                          className="text-primary-600 hover:text-primary-800 flex items-center gap-1 p-1"
+                          title="보기"
                         >
                           <Eye className="w-4 h-4" />
-                          보기
+                          <span className="hidden sm:inline">보기</span>
                         </button>
                         {!response.patient_id && (
                           <button
                             onClick={() => setLinkingResponse(response)}
-                            className="text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                            className="text-orange-600 hover:text-orange-800 flex items-center gap-1 p-1"
+                            title="연결"
                           >
                             <UserPlus className="w-4 h-4" />
-                            연결
+                            <span className="hidden sm:inline">연결</span>
                           </button>
                         )}
                       </div>
