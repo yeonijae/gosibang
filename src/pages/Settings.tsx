@@ -1383,21 +1383,14 @@ export function Settings() {
                     ))}
                   </ul>
 
-                  {plan.id === currentSubscription.plan ? (
+                  {plan.id === currentSubscription.plan && (
                     <button
                       disabled
                       className="w-full py-2 px-4 bg-gray-100 text-gray-500 rounded-lg font-medium cursor-not-allowed"
                     >
                       현재 사용 중
                     </button>
-                  ) : plan.price > (currentPlan?.price || 0) ? (
-                    <button
-                      onClick={() => handleUpgradePlan(plan.id)}
-                      className="w-full py-2 px-4 bg-gradient-to-r from-primary-600 to-purple-600 text-white rounded-lg font-medium hover:from-primary-700 hover:to-purple-700 transition-all"
-                    >
-                      업그레이드
-                    </button>
-                  ) : null}
+                  )}
                 </div>
               ))}
             </div>
