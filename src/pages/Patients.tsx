@@ -21,7 +21,7 @@ export function Patients() {
     deletePatient,
   } = usePatientStore();
 
-  const { canAddPatient, refreshUsage, planInfo } = usePlanLimits();
+  const { canAddPatient, canUseFeature, refreshUsage, planInfo } = usePlanLimits();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -195,17 +195,19 @@ export function Patients() {
                           <ClipboardList className="w-3 h-3" />
                           차트
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSurveyPatient(patient);
-                          }}
-                          className="px-2 py-1 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded flex items-center gap-1"
-                          title="설문 보내기"
-                        >
-                          <MessageSquare className="w-3 h-3" />
-                          설문
-                        </button>
+                        {canUseFeature('survey_internal') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSurveyPatient(patient);
+                            }}
+                            className="px-2 py-1 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded flex items-center gap-1"
+                            title="설문 보내기"
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            설문
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -812,7 +814,7 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
   };
 
   const handleChartClick = (chart: InitialChart) => {
-    // 모달 닫고 차팅관리 페이지로 이동
+    // 모달 닫고 차트관리 페이지로 이동
     onClose();
     navigate('/charts', { state: { selectedChartId: chart.id } });
   };

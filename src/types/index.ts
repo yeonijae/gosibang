@@ -141,7 +141,7 @@ export interface ProgressNote {
   updated_at: string;
 }
 
-// 차팅 기록 (레거시 호환용)
+// 차트 기록 (레거시 호환용)
 export interface ChartRecord {
   id: string;
   patient_id: string;

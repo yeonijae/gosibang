@@ -6,7 +6,7 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'patients', label: '환자관리', icon: 'Users', path: '/patients' },
   { key: 'prescriptions', label: '처방관리', icon: 'FileText', path: '/prescriptions' },
   { key: 'prescription_definitions', label: '처방정의', icon: 'Book', path: '/prescription-definitions' },
-  { key: 'charts', label: '차팅관리', icon: 'ClipboardList', path: '/charts' },
+  { key: 'charts', label: '차트관리', icon: 'ClipboardList', path: '/charts' },
   { key: 'survey_templates', label: '설문템플릿', icon: 'FileQuestion', path: '/survey-templates' },
   { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
   { key: 'medication', label: '복약관리', icon: 'Pill', path: '/medication' },

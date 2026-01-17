@@ -99,7 +99,7 @@ const DEFAULT_PLANS: PlanDisplay[] = [
       { text: '환자관리', included: true },
       { text: '처방관리', included: true },
       { text: '처방정의', included: true },
-      { text: '차팅관리', included: true },
+      { text: '차트관리', included: true },
       { text: '설문템플릿', included: false },
       { text: '설문관리', included: false },
       { text: '복약관리', included: false },
@@ -185,8 +185,6 @@ export function Settings() {
     status: 'active',
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   };
-
-  const currentPlan = plans.find(p => p.id === currentSubscription.plan) || plans[0];
 
   useEffect(() => {
     loadSettings();
@@ -620,11 +618,6 @@ export function Settings() {
     setIsSaving(false);
   };
 
-  const handleUpgradePlan = (planId: string) => {
-    // TODO: 실제 결제 연동
-    alert(`${plans.find(p => p.id === planId)?.name} 플랜 업그레이드 기능은 준비 중입니다.\n\n문의: support@gosibang.com`);
-  };
-
   const handleResetUserData = async () => {
     // 백업 기능이 있는 사용자만 백업 여부 확인
     if (canUseFeature('backup') && !backupSettings.lastBackupAt) {
@@ -954,21 +947,6 @@ export function Settings() {
 
     if (backupFileInputRef.current) {
       backupFileInputRef.current.value = '';
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">활성</span>;
-      case 'trial':
-        return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">체험판</span>;
-      case 'expired':
-        return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">만료</span>;
-      case 'cancelled':
-        return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">취소됨</span>;
-      default:
-        return null;
     }
   };
 

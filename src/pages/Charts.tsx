@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send } from 'lucide-react';
+import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send, Search } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { getDb, saveDb, generateUUID, queryToObjects, queryOne, softDelete } from '../lib/localDb';
 import PrescriptionInput from '../components/PrescriptionInput';
@@ -31,6 +31,7 @@ export function Charts() {
   // 목록 상태
   const [chartRecords, setChartRecords] = useState<(InitialChart & { patient_name: string })[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 상세 모달 상태
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -110,11 +111,41 @@ export function Charts() {
 
       setChartRecords(initialCharts);
     } catch (error) {
-      console.error('차팅 목록 로드 실패:', error);
+      console.error('차트 목록 로드 실패:', error);
     } finally {
       setListLoading(false);
     }
   };
+
+  // 검색 필터링 (2글자 이상, 쉼표/공백으로 구분시 AND 검색)
+  const filteredChartRecords = useMemo(() => {
+    // 한글 문자 수 계산 (공백, 쉼표 제외)
+    const koreanChars = searchQuery.replace(/[\s,]/g, '');
+    if (koreanChars.length < 2) {
+      return chartRecords;
+    }
+
+    // 쉼표 또는 공백으로 키워드 분리
+    const keywords = searchQuery
+      .split(/[\s,]+/)
+      .map(k => k.trim().toLowerCase())
+      .filter(k => k.length > 0);
+
+    if (keywords.length === 0) {
+      return chartRecords;
+    }
+
+    return chartRecords.filter(record => {
+      // 검색 대상: 환자명, 차트 내용(notes)
+      const searchTarget = [
+        record.patient_name || '',
+        record.notes || ''
+      ].join(' ').toLowerCase();
+
+      // 모든 키워드가 포함되어야 함 (AND 검색)
+      return keywords.every(keyword => searchTarget.includes(keyword));
+    });
+  }, [chartRecords, searchQuery]);
 
   // 주소증 추출
   const extractChiefComplaint = (notes: string): string => {
@@ -879,12 +910,37 @@ export function Charts() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">차팅 관리</h1>
-          <p className="text-sm text-gray-500 mt-1">초진차트 {chartRecords.length}건</p>
+          <h1 className="text-2xl font-bold text-gray-900">차트 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            초진차트 {filteredChartRecords.length}건
+            {searchQuery.replace(/[\s,]/g, '').length >= 2 && filteredChartRecords.length !== chartRecords.length && (
+              <span className="text-primary-600"> (전체 {chartRecords.length}건)</span>
+            )}
+          </p>
         </div>
-        <p className="text-sm text-gray-500">초진차트를 클릭하여 상세보기</p>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="검색 (2글자 이상)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-48 sm:w-64"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 hidden sm:block">초진차트를 클릭하여 상세보기</p>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
@@ -897,11 +953,17 @@ export function Charts() {
           <div className="flex-1 flex flex-col items-center justify-center">
             <FileText className="w-12 h-12 text-gray-300 mb-4" />
             <p className="text-gray-500">등록된 초진차트가 없습니다</p>
-            <p className="text-sm text-gray-400 mt-2">환자 관리에서 환자를 선택 후 차팅을 시작하세요</p>
+            <p className="text-sm text-gray-400 mt-2">환자 관리에서 환자를 선택 후 차트를 작성하세요</p>
+          </div>
+        ) : filteredChartRecords.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <Search className="w-12 h-12 text-gray-300 mb-4" />
+            <p className="text-gray-500">검색 결과가 없습니다</p>
+            <p className="text-sm text-gray-400 mt-2">다른 키워드로 검색해 보세요</p>
           </div>
         ) : (
           <div className="flex-1 overflow-auto p-4 space-y-2">
-            {chartRecords.map((record) => (
+            {filteredChartRecords.map((record) => (
               <div
                 key={record.id}
                 onClick={() => handleRecordClick(record)}
