@@ -55,6 +55,11 @@ export function Login() {
         setPendingType('login');
         setShowPendingMessage(true);
         clearError();
+      } else if (errorMessage.startsWith('SESSION_LIMIT_REACHED:')) {
+        // 동시접속 한도 초과
+        const maxSessions = errorMessage.split(':')[1];
+        clearError();
+        alert(`이미 ${maxSessions}대의 PC에서 사용 중입니다.\n다른 기기에서 로그아웃 후 다시 시도해주세요.`);
       }
       // 그 외 에러는 store에서 처리
     }
