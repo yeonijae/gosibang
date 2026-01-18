@@ -233,13 +233,22 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
     // Supabase 로그아웃 (실패해도 계속 진행)
     try {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (error) {
       console.error('[Session] Failed to sign out:', error);
     }
 
+    // Supabase localStorage 세션 데이터 강제 삭제
+    // Supabase는 'sb-<project-ref>-auth-token' 형식으로 저장
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        localStorage.removeItem(key);
+        console.log('[Session] Removed Supabase auth token:', key);
+      }
+    });
+
     // 상태 초기화
-    set({ authState: null });
+    set({ authState: null, isLoggingOut: false });
 
     // 페이지 새로고침 (항상 실행)
     window.location.reload();
