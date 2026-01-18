@@ -55,11 +55,23 @@ export function Login() {
         setPendingType('login');
         setShowPendingMessage(true);
         clearError();
-      } else if (errorMessage.startsWith('SESSION_LIMIT_REACHED:')) {
-        // 동시접속 한도 초과
-        const maxSessions = errorMessage.split(':')[1];
+      } else if (errorMessage.startsWith('SESSION_LIMIT_CONFIRM:')) {
+        // 동시접속 한도 - 사용자 확인 필요
+        const [, maxSessions] = errorMessage.split(':');
         clearError();
-        alert(`이미 ${maxSessions}대의 PC에서 사용 중입니다.\n다른 기기에서 로그아웃 후 다시 시도해주세요.`);
+        const confirmed = confirm(
+          `다른 기기에서 사용 중이에요. (최대 ${maxSessions}대)\n기존 기기를 로그아웃하고 여기서 사용할까요?`
+        );
+        if (confirmed) {
+          // 강제 로그인 시도
+          try {
+            await login(email, password, true);
+            navigate('/');
+          } catch (forceErr) {
+            // 강제 로그인 실패 시 에러는 store에서 처리
+            console.error('Force login failed:', forceErr);
+          }
+        }
       }
       // 그 외 에러는 store에서 처리
     }

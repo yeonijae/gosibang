@@ -41,7 +41,7 @@ interface AuthStore {
   error: string | null;
 
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, forceLogoutOthers?: boolean) => Promise<void>;
   signup: (email: string, password: string, metadata: SignupMetadata) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<AuthState | null>;
@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isLoading: false,
   error: null,
 
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string, forceLogoutOthers?: boolean) => {
     set({ isLoading: true, error: null });
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -115,10 +115,18 @@ export const useAuthStore = create<AuthStore>((set) => ({
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
 
-      // 3. max_sessions 도달 시 로그인 거부
+      // 3. max_sessions 도달 시 처리
       if (existingSessions && existingSessions.length >= maxSessions) {
-        await supabase.auth.signOut();
-        throw new Error(`SESSION_LIMIT_REACHED:${maxSessions}`);
+        if (forceLogoutOthers) {
+          // 강제 로그아웃: 모든 기존 세션 삭제
+          for (const session of existingSessions) {
+            await supabase.from('user_sessions').delete().eq('id', session.id);
+          }
+          console.log(`[Session] Force logout: deleted ${existingSessions.length} session(s)`);
+        } else {
+          // 사용자 확인 필요
+          throw new Error(`SESSION_LIMIT_CONFIRM:${maxSessions}:${existingSessions.length}`);
+        }
       }
 
       // 4. 새 세션 생성
