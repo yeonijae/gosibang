@@ -480,3 +480,106 @@ pub fn generate_survey_qr(url: String) -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", base64_str))
 }
 
+// ============ 내부 직원 계정 관리 명령어 ============
+
+/// 직원 계정 생성 요청
+#[derive(serde::Deserialize)]
+pub struct CreateStaffAccountInput {
+    pub username: String,
+    pub display_name: String,
+    pub password: String,
+    pub role: String,
+}
+
+/// 직원 계정 생성
+#[tauri::command]
+pub fn create_staff_account(input: CreateStaffAccountInput) -> Result<String, String> {
+    use crate::models::{StaffAccount, StaffRole};
+
+    // 비밀번호 해시
+    let password_hash = db::hash_staff_password(&input.password)
+        .map_err(|e| e.to_string())?;
+
+    // 역할 파싱
+    let role = StaffRole::from_str(&input.role);
+
+    // 계정 생성
+    let account = StaffAccount::new(
+        input.username,
+        input.display_name,
+        password_hash,
+        role,
+    );
+
+    let id = account.id.clone();
+    db::create_staff_account(&account).map_err(|e| e.to_string())?;
+
+    Ok(id)
+}
+
+/// 직원 계정 목록 조회
+#[tauri::command]
+pub fn list_staff_accounts() -> Result<Vec<crate::models::StaffAccountInfo>, String> {
+    db::list_staff_accounts().map_err(|e| e.to_string())
+}
+
+/// 직원 계정 조회
+#[tauri::command]
+pub fn get_staff_account(id: String) -> Result<Option<crate::models::StaffAccountInfo>, String> {
+    db::get_staff_account(&id)
+        .map(|opt| opt.map(|a| a.into()))
+        .map_err(|e| e.to_string())
+}
+
+/// 직원 계정 수정 요청
+#[derive(serde::Deserialize)]
+pub struct UpdateStaffAccountInput {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    pub password: Option<String>,  // 비어있으면 변경 안함
+    pub role: String,
+    pub permissions: crate::models::StaffPermissions,
+    pub is_active: bool,
+}
+
+/// 직원 계정 수정
+#[tauri::command]
+pub fn update_staff_account(input: UpdateStaffAccountInput) -> Result<(), String> {
+    use crate::models::StaffRole;
+
+    // 기존 계정 조회
+    let existing = db::get_staff_account(&input.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "계정을 찾을 수 없습니다".to_string())?;
+
+    // 비밀번호 해시 (변경된 경우에만)
+    let password_hash = match &input.password {
+        Some(pw) if !pw.is_empty() => {
+            db::hash_staff_password(pw).map_err(|e| e.to_string())?
+        }
+        _ => existing.password_hash.clone(),
+    };
+
+    let account = crate::models::StaffAccount {
+        id: input.id,
+        username: input.username,
+        display_name: input.display_name,
+        password_hash,
+        role: StaffRole::from_str(&input.role),
+        permissions: input.permissions,
+        is_active: input.is_active,
+        last_login_at: existing.last_login_at,
+        created_at: existing.created_at,
+        updated_at: chrono::Utc::now(),
+    };
+
+    db::update_staff_account(&account).map_err(|e| e.to_string())
+}
+
+/// 직원 계정 삭제
+#[tauri::command]
+pub fn delete_staff_account(id: String) -> Result<(), String> {
+    db::delete_staff_account(&id).map_err(|e| e.to_string())
+}
+

@@ -6,6 +6,7 @@ mod error;
 mod models;
 pub mod server;
 mod sync;
+pub mod web_api;
 
 use commands::*;
 
@@ -86,6 +87,12 @@ pub fn run() {
             restore_default_survey_templates,
             // QR 코드 생성
             generate_survey_qr,
+            // 내부 직원 계정 관리
+            create_staff_account,
+            list_staff_accounts,
+            get_staff_account,
+            update_staff_account,
+            delete_staff_account,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

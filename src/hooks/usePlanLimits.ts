@@ -17,6 +17,7 @@ interface PlanPolicy {
     export: boolean;
     backup: boolean;
     multiUser: boolean;
+    staff_accounts: boolean;   // 내부계정 (웹 클라이언트용 직원 계정 관리)
   };
 }
 
@@ -104,7 +105,7 @@ export function usePlanLimits() {
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
         max_sessions: 1,
-        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
+        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false, staff_accounts: false },
       };
 
       // policyData에 max_sessions가 없으면 기본값 1 사용
@@ -124,7 +125,7 @@ export function usePlanLimits() {
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
         max_sessions: 1,
-        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
+        features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false, staff_accounts: false },
       });
     }
     setIsLoading(false);

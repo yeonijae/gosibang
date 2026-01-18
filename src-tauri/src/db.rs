@@ -455,6 +455,21 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
             FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id)
         );
 
+        -- 내부 직원 계정 (웹 클라이언트용)
+        CREATE TABLE IF NOT EXISTS staff_accounts (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            permissions TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            last_login_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_staff_accounts_username ON staff_accounts(username);
+
         -- 인덱스 생성
         CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
         CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
@@ -1354,4 +1369,233 @@ pub fn restore_default_templates() -> AppResult<()> {
     ensure_default_templates()?;
     log::info!("기본 설문 템플릿이 복원되었습니다.");
     Ok(())
+}
+
+// ============ 내부 직원 계정 관리 ============
+
+/// 직원 계정 생성
+pub fn create_staff_account(account: &StaffAccount) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let permissions_json = serde_json::to_string(&account.permissions)?;
+
+    conn.execute(
+        r#"INSERT INTO staff_accounts (id, username, display_name, password_hash, role, permissions, is_active, last_login_at, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
+        params![
+            account.id,
+            account.username,
+            account.display_name,
+            account.password_hash,
+            account.role.as_str(),
+            permissions_json,
+            account.is_active,
+            account.last_login_at.map(|d| d.to_rfc3339()),
+            account.created_at.to_rfc3339(),
+            account.updated_at.to_rfc3339(),
+        ],
+    )?;
+
+    log::info!("직원 계정 생성됨: {} ({})", account.username, account.role.as_str());
+    Ok(())
+}
+
+/// 직원 계정 조회 (ID로)
+pub fn get_staff_account(id: &str) -> AppResult<Option<StaffAccount>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, username, display_name, password_hash, role, permissions, is_active, last_login_at, created_at, updated_at
+           FROM staff_accounts WHERE id = ?1"#,
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        let permissions_str: String = row.get(5)?;
+        let permissions: StaffPermissions = serde_json::from_str(&permissions_str).unwrap_or_default();
+        let role_str: String = row.get(4)?;
+
+        Ok(StaffAccount {
+            id: row.get(0)?,
+            username: row.get(1)?,
+            display_name: row.get(2)?,
+            password_hash: row.get(3)?,
+            role: StaffRole::from_str(&role_str),
+            permissions,
+            is_active: row.get(6)?,
+            last_login_at: row.get::<_, Option<String>>(7)?
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| d.with_timezone(&Utc)),
+            created_at: row.get::<_, String>(8)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(9)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    });
+
+    match result {
+        Ok(account) => Ok(Some(account)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 직원 계정 조회 (username으로)
+pub fn get_staff_account_by_username(username: &str) -> AppResult<Option<StaffAccount>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, username, display_name, password_hash, role, permissions, is_active, last_login_at, created_at, updated_at
+           FROM staff_accounts WHERE username = ?1"#,
+    )?;
+
+    let result = stmt.query_row([username], |row| {
+        let permissions_str: String = row.get(5)?;
+        let permissions: StaffPermissions = serde_json::from_str(&permissions_str).unwrap_or_default();
+        let role_str: String = row.get(4)?;
+
+        Ok(StaffAccount {
+            id: row.get(0)?,
+            username: row.get(1)?,
+            display_name: row.get(2)?,
+            password_hash: row.get(3)?,
+            role: StaffRole::from_str(&role_str),
+            permissions,
+            is_active: row.get(6)?,
+            last_login_at: row.get::<_, Option<String>>(7)?
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| d.with_timezone(&Utc)),
+            created_at: row.get::<_, String>(8)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(9)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    });
+
+    match result {
+        Ok(account) => Ok(Some(account)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 직원 계정 목록 조회
+pub fn list_staff_accounts() -> AppResult<Vec<StaffAccountInfo>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, username, display_name, password_hash, role, permissions, is_active, last_login_at, created_at, updated_at
+           FROM staff_accounts ORDER BY created_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let permissions_str: String = row.get(5)?;
+        let permissions: StaffPermissions = serde_json::from_str(&permissions_str).unwrap_or_default();
+        let role_str: String = row.get(4)?;
+
+        Ok(StaffAccountInfo {
+            id: row.get(0)?,
+            username: row.get(1)?,
+            display_name: row.get(2)?,
+            role: StaffRole::from_str(&role_str),
+            permissions,
+            is_active: row.get(6)?,
+            last_login_at: row.get::<_, Option<String>>(7)?
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| d.with_timezone(&Utc)),
+            created_at: row.get::<_, String>(8)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(9)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    })?;
+
+    let mut accounts = Vec::new();
+    for row in rows {
+        accounts.push(row?);
+    }
+    Ok(accounts)
+}
+
+/// 직원 계정 수정
+pub fn update_staff_account(account: &StaffAccount) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let permissions_json = serde_json::to_string(&account.permissions)?;
+
+    conn.execute(
+        r#"UPDATE staff_accounts
+           SET username = ?2, display_name = ?3, password_hash = ?4, role = ?5,
+               permissions = ?6, is_active = ?7, updated_at = ?8
+           WHERE id = ?1"#,
+        params![
+            account.id,
+            account.username,
+            account.display_name,
+            account.password_hash,
+            account.role.as_str(),
+            permissions_json,
+            account.is_active,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+
+    log::info!("직원 계정 수정됨: {}", account.username);
+    Ok(())
+}
+
+/// 직원 계정 삭제
+pub fn delete_staff_account(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM staff_accounts WHERE id = ?1", [id])?;
+    log::info!("직원 계정 삭제됨: {}", id);
+    Ok(())
+}
+
+/// 직원 로그인 시간 업데이트
+pub fn update_staff_last_login(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE staff_accounts SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1",
+        params![id, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+/// 직원 비밀번호 검증
+pub fn verify_staff_account_password(username: &str, password: &str) -> AppResult<Option<StaffAccount>> {
+    let account = get_staff_account_by_username(username)?;
+
+    match account {
+        Some(acc) if acc.is_active => {
+            // bcrypt 비밀번호 검증
+            match bcrypt::verify(password, &acc.password_hash) {
+                Ok(true) => {
+                    // 로그인 시간 업데이트
+                    let _ = update_staff_last_login(&acc.id);
+                    Ok(Some(acc))
+                }
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+/// 비밀번호 해시 생성
+pub fn hash_staff_password(password: &str) -> AppResult<String> {
+    bcrypt::hash(password, bcrypt::DEFAULT_COST)
+        .map_err(|e| AppError::Custom(format!("Password hashing failed: {}", e)))
 }

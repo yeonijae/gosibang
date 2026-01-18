@@ -294,3 +294,168 @@ impl Default for AuthState {
         }
     }
 }
+
+// ============ 내부계정 (웹 클라이언트용) ============
+
+/// 직원 권한
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StaffPermissions {
+    pub patients_read: bool,
+    pub patients_write: bool,
+    pub prescriptions_read: bool,
+    pub prescriptions_write: bool,
+    pub charts_read: bool,
+    pub charts_write: bool,
+    pub survey_read: bool,
+    pub survey_write: bool,
+    pub settings_read: bool,
+}
+
+impl StaffPermissions {
+    /// 관리자 권한 (모든 권한)
+    pub fn admin() -> Self {
+        Self {
+            patients_read: true,
+            patients_write: true,
+            prescriptions_read: true,
+            prescriptions_write: true,
+            charts_read: true,
+            charts_write: true,
+            survey_read: true,
+            survey_write: true,
+            settings_read: true,
+        }
+    }
+
+    /// 직원 권한 (읽기/쓰기, 설정 제외)
+    pub fn staff() -> Self {
+        Self {
+            patients_read: true,
+            patients_write: true,
+            prescriptions_read: true,
+            prescriptions_write: true,
+            charts_read: true,
+            charts_write: true,
+            survey_read: true,
+            survey_write: true,
+            settings_read: false,
+        }
+    }
+
+    /// 열람자 권한 (읽기만)
+    pub fn viewer() -> Self {
+        Self {
+            patients_read: true,
+            patients_write: false,
+            prescriptions_read: true,
+            prescriptions_write: false,
+            charts_read: true,
+            charts_write: false,
+            survey_read: true,
+            survey_write: false,
+            settings_read: false,
+        }
+    }
+}
+
+/// 직원 역할
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StaffRole {
+    Admin,   // 관리자 (모든 권한)
+    Staff,   // 직원 (읽기/쓰기)
+    Viewer,  // 열람자 (읽기만)
+}
+
+impl Default for StaffRole {
+    fn default() -> Self {
+        StaffRole::Viewer
+    }
+}
+
+impl StaffRole {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "admin" => StaffRole::Admin,
+            "staff" => StaffRole::Staff,
+            _ => StaffRole::Viewer,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StaffRole::Admin => "admin",
+            StaffRole::Staff => "staff",
+            StaffRole::Viewer => "viewer",
+        }
+    }
+}
+
+/// 내부 직원 계정
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffAccount {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    pub password_hash: String,
+    pub role: StaffRole,
+    pub permissions: StaffPermissions,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl StaffAccount {
+    pub fn new(username: String, display_name: String, password_hash: String, role: StaffRole) -> Self {
+        let permissions = match role {
+            StaffRole::Admin => StaffPermissions::admin(),
+            StaffRole::Staff => StaffPermissions::staff(),
+            StaffRole::Viewer => StaffPermissions::viewer(),
+        };
+
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            username,
+            display_name,
+            password_hash,
+            role,
+            permissions,
+            is_active: true,
+            last_login_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+/// 프론트엔드에 전달할 계정 정보 (비밀번호 해시 제외)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffAccountInfo {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    pub role: StaffRole,
+    pub permissions: StaffPermissions,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<StaffAccount> for StaffAccountInfo {
+    fn from(account: StaffAccount) -> Self {
+        Self {
+            id: account.id,
+            username: account.username,
+            display_name: account.display_name,
+            role: account.role,
+            permissions: account.permissions,
+            is_active: account.is_active,
+            last_login_at: account.last_login_at,
+            created_at: account.created_at,
+            updated_at: account.updated_at,
+        }
+    }
+}

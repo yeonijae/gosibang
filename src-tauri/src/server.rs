@@ -1,6 +1,7 @@
 //! HTTP 서버 모듈 (axum 기반)
 //!
 //! 환자 설문 페이지와 직원 대시보드를 인트라넷에서 제공합니다.
+//! 웹 클라이언트용 전체 앱 기능도 제공합니다.
 
 use axum::{
     extract::{Path, State},
@@ -18,11 +19,17 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::db;
 use crate::error::AppResult;
+use crate::web_api;
 
-/// 내장 정적 파일
+/// 내장 정적 파일 (기존 설문 시스템용)
 #[derive(Embed)]
 #[folder = "static/"]
 struct StaticAssets;
+
+/// React 빌드 결과물 (웹 클라이언트용)
+#[derive(Embed)]
+#[folder = "../dist/"]
+struct WebAppAssets;
 
 /// 서버 상태
 #[derive(Clone)]
@@ -62,17 +69,19 @@ impl AppState {
 
 /// 라우터 생성
 pub fn create_router(state: AppState) -> Router {
+    // 웹 API 상태 생성
+    let web_api_state = web_api::WebApiState::new();
+
     Router::new()
         .route("/health", get(health_handler))
-        .route("/", get(index_handler))
-        // 환자 설문 페이지
+        // 환자 설문 페이지 (기존 기능)
         .route("/s/{token}", get(survey_page_handler))
         // 환자 전용 키오스크 페이지
         .route("/patient", get(patient_kiosk_page))
         .route("/api/patient/create-session", post(patient_create_session_api))
         // 설문 API
         .route("/api/survey/{token}", get(get_survey_data).post(submit_survey))
-        // 직원 페이지
+        // 직원 페이지 (간단한 설문 관리용)
         .route("/staff", get(staff_login_page))
         .route("/staff/login", post(staff_login))
         .route("/staff/dashboard", get(staff_dashboard))
@@ -83,9 +92,17 @@ pub fn create_router(state: AppState) -> Router {
         // 디버그 (개발용)
         .route("/debug/db", get(debug_db_handler))
         .route("/debug/create-test-session", post(create_test_session_handler))
-        // 정적 파일
+        // 정적 파일 (기존 설문 시스템용)
         .route("/static/{*path}", get(static_handler))
         .with_state(state)
+        // 웹 클라이언트용 REST API (/api/web/*)
+        .nest("/api/web", web_api::create_web_api_router(web_api_state))
+        // 웹 앱 정적 파일 (React 빌드 결과물)
+        .route("/app", get(webapp_index_handler))
+        .route("/app/", get(webapp_index_handler))
+        .route("/app/{*path}", get(webapp_static_handler))
+        // 메인 인덱스 (안내 페이지)
+        .route("/", get(index_handler))
 }
 
 /// HTTP 서버 시작
@@ -1848,4 +1865,72 @@ fn render_patient_kiosk_page(clinic_name: &str) -> String {
     </script>
 </body>
 </html>"#, clinic_name, clinic_name)
+}
+
+// ============ 웹 앱 (React) 정적 파일 핸들러 ============
+
+/// 웹 앱 index.html 제공
+async fn webapp_index_handler() -> impl IntoResponse {
+    match WebAppAssets::get("index.html") {
+        Some(content) => {
+            (
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                content.data.into_owned(),
+            )
+                .into_response()
+        }
+        None => {
+            // 빌드되지 않은 경우 안내 메시지
+            Html(r#"<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>웹 앱 빌드 필요</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 500px; }
+        h1 { color: #333; margin-bottom: 1rem; }
+        p { color: #666; line-height: 1.6; }
+        code { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>⚠️ 웹 앱 빌드가 필요합니다</h1>
+        <p>웹 클라이언트를 사용하려면 먼저 React 앱을 빌드해야 합니다.</p>
+        <p>프로젝트 루트에서 다음 명령을 실행하세요:</p>
+        <p><code>npm run build</code></p>
+        <p>빌드 후 서버를 재시작하세요.</p>
+    </div>
+</body>
+</html>"#).into_response()
+        }
+    }
+}
+
+/// 웹 앱 정적 파일 제공 (SPA fallback 포함)
+async fn webapp_static_handler(Path(path): Path<String>) -> impl IntoResponse {
+    // 먼저 해당 경로의 파일을 찾아봄
+    if let Some(content) = WebAppAssets::get(&path) {
+        let mime = mime_guess::from_path(&path).first_or_octet_stream();
+        return (
+            [(header::CONTENT_TYPE, mime.as_ref())],
+            content.data.into_owned(),
+        )
+            .into_response();
+    }
+
+    // 파일이 없으면 SPA fallback (index.html 반환)
+    // React Router가 클라이언트 사이드에서 라우팅 처리
+    match WebAppAssets::get("index.html") {
+        Some(content) => {
+            (
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                content.data.into_owned(),
+            )
+                .into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    }
 }

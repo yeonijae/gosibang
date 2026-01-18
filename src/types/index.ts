@@ -308,7 +308,8 @@ export type FeatureKey =
   | 'survey_templates'
   | 'survey_responses'
   | 'medication'
-  | 'homework';
+  | 'homework'
+  | 'staff_accounts';
 
 // 플랜별 기능 권한
 export interface PlanFeatures {
@@ -324,6 +325,7 @@ export interface PlanFeatures {
   survey_internal: boolean;   // 내부 설문 (태블릿/인트라넷)
   survey_external: boolean;   // 외부 설문 (온라인 링크)
   homework: boolean;          // 숙제 기능 (챌린저 플랜)
+  staff_accounts: boolean;    // 내부계정 (웹 클라이언트용 직원 계정 관리)
   backup?: boolean;
   export?: boolean;
   multiUser?: boolean;
@@ -458,4 +460,35 @@ export interface HomeworkSubmission {
   updated_at: string;
   // 조인 데이터
   homework_title?: string;
+}
+
+// ===== 내부계정 타입 =====
+
+// 직원 권한 (웹 클라이언트 접근 권한)
+export interface StaffPermissions {
+  patients_read: boolean;     // 환자 조회
+  patients_write: boolean;    // 환자 수정
+  prescriptions_read: boolean;   // 처방 조회
+  prescriptions_write: boolean;  // 처방 수정
+  charts_read: boolean;       // 차트 조회
+  charts_write: boolean;      // 차트 수정
+  survey_read: boolean;       // 설문 조회
+  survey_write: boolean;      // 설문 수정
+  settings_read: boolean;     // 설정 조회 (읽기전용)
+}
+
+// 기본 권한 프리셋
+export type StaffRole = 'admin' | 'staff' | 'viewer';
+
+// 내부 직원 계정
+export interface StaffAccount {
+  id: string;
+  username: string;
+  display_name: string;
+  role: StaffRole;
+  permissions: StaffPermissions;
+  is_active: boolean;
+  last_login_at?: string;
+  created_at: string;
+  updated_at: string;
 }
