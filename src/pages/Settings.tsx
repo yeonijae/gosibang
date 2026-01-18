@@ -272,7 +272,7 @@ export function Settings() {
     setIsStartingServer(true);
     try {
       const url = await invoke<string>('start_http_server', {
-        port: 3030,
+        port: 8787,
         planType: planInfo.type,
         surveyExternal: canUseFeature('survey_external'),
       });

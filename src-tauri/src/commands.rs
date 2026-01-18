@@ -279,7 +279,7 @@ pub async fn start_http_server(
     // Supabase 초기화 확인 (동기화를 위해 필요)
     auth::ensure_supabase_initialized();
 
-    let port = port.unwrap_or_else(|| db::get_http_server_port().unwrap_or(3030));
+    let port = port.unwrap_or_else(|| db::get_http_server_port().unwrap_or(8787));
     let _ = SERVER_PORT.set(port);
 
     // 플랜 정보
