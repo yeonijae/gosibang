@@ -40,16 +40,16 @@ const FEATURE_LABELS: Record<string, string> = {
   prescription_definitions: '처방정의',
   prescription_definitions_edit: '처방정의변경',
   charts: '차트관리',
-  survey_templates: '설문템플릿',
-  survey_responses: '설문관리',
-  survey_internal: '원내설문지',
-  survey_external: '온라인설문지',
+  survey: '설문지',  // 통합 표시용 (survey_templates, survey_responses, survey_internal, survey_external)
   medication: '복약관리',
   homework: '나의숙제',
   backup: '백업',
   export: '내보내기',
   multiUser: '다중사용자',
 };
+
+// 설문 관련 기능 키들 (하나라도 true면 '설문지' 체크)
+const SURVEY_FEATURE_KEYS = ['survey_templates', 'survey_responses', 'survey_internal', 'survey_external'];
 
 // 기능 표시 순서 (플랜 비교에서 표시할 기능)
 const DISPLAY_FEATURES: string[] = [
@@ -58,10 +58,7 @@ const DISPLAY_FEATURES: string[] = [
   'prescriptions',
   'prescription_definitions',
   'charts',
-  'survey_templates',
-  'survey_responses',
-  'survey_internal',
-  'survey_external',
+  'survey',  // 설문 관련 4개 기능 통합
   'medication',
   'homework',
   'backup',
@@ -449,8 +446,10 @@ export function Settings() {
             const label = FEATURE_LABELS[featureKey];
             if (!label) continue;
 
-            // 모든 기능은 명시적으로 true일 때만 포함
-            const included = features[featureKey] === true;
+            // 'survey'는 설문 관련 4개 기능 중 하나라도 true면 체크
+            const included = featureKey === 'survey'
+              ? SURVEY_FEATURE_KEYS.some(key => features[key] === true)
+              : features[featureKey] === true;
 
             featureList.push({ text: label, included });
           }
