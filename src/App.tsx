@@ -11,7 +11,6 @@ import { PrescriptionDefinitions } from './pages/PrescriptionDefinitions';
 import { Charts } from './pages/Charts';
 import { Medications } from './pages/Medications';
 import { Settings } from './pages/Settings';
-import { SurveyTemplates } from './pages/SurveyTemplates';
 import { SurveyResponses } from './pages/SurveyResponses';
 import { PatientSurvey } from './pages/PatientSurvey';
 import { KioskSurvey } from './pages/KioskSurvey';
@@ -125,7 +124,7 @@ function App() {
           <Route path="/prescriptions" element={<Prescriptions />} />
           <Route path="/prescription-definitions" element={<PrescriptionDefinitions />} />
           <Route path="/charts" element={<Charts />} />
-          <Route path="/survey-templates" element={<SurveyTemplates />} />
+          <Route path="/survey-templates" element={<Navigate to="/survey-responses" replace />} />
           <Route path="/survey-responses" element={<SurveyResponses />} />
           <Route path="/medication" element={<Medications />} />
           <Route path="/homework" element={<Homework />} />
