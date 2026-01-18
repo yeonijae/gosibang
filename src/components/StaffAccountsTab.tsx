@@ -354,17 +354,27 @@ export function StaffAccountsTab() {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">원내 서버</h2>
-            <p className="text-sm text-gray-500">같은 네트워크의 다른 기기에서 접속할 수 있습니다</p>
+            <p className="text-sm text-gray-500">같은 네트워크의 다른 기기에서 접속</p>
           </div>
         </div>
 
-        {/* 포트 설정 */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="font-medium text-gray-900">포트 번호</p>
-              <p className="text-sm text-gray-500">기본값: 8787 (충돌 시 변경)</p>
-            </div>
+        {/* 서버 상태 + 포트 (한 줄) */}
+        <div className="flex items-center gap-3 mb-3">
+          {/* 상태 표시 */}
+          {serverStatus.running ? (
+            <span className="px-3 py-1.5 text-sm font-medium bg-green-100 text-green-700 rounded-lg flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              실행 중
+            </span>
+          ) : (
+            <span className="px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 rounded-lg">
+              중지됨
+            </span>
+          )}
+
+          {/* 포트 입력 */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">포트:</span>
             <input
               type="number"
               value={serverPort}
@@ -372,160 +382,79 @@ export function StaffAccountsTab() {
               disabled={serverStatus.running}
               min={1024}
               max={65535}
-              className="w-24 input-field text-center"
+              className="w-20 input-field text-center text-sm py-1.5"
             />
           </div>
-        </div>
 
-        {/* 자동 시작 설정 */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-900">앱 시작 시 자동으로 서버 시작</p>
-              <p className="text-sm text-gray-500">앱을 열면 서버가 자동으로 시작됩니다</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={serverAutostart}
-                onChange={(e) => handleServerAutostartChange(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-            </label>
-          </div>
-        </div>
-
-        {/* 서버 상태 및 시작/중지 */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="font-medium text-gray-900">서버 상태</p>
-              <p className="text-sm text-gray-500">
-                {serverStatus.running
-                  ? `실행 중: ${serverStatus.url}`
-                  : '서버가 중지되어 있습니다'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {serverStatus.running ? (
-                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                  실행 중
-                </span>
-              ) : (
-                <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                  중지됨
-                </span>
-              )}
-            </div>
-          </div>
-
-          {!serverStatus.running ? (
+          {/* 시작 버튼 */}
+          {!serverStatus.running && (
             <button
               onClick={handleStartServer}
               disabled={isStartingServer}
-              className="btn-primary w-full flex items-center justify-center gap-2"
+              className="btn-primary flex items-center gap-2 ml-auto"
             >
               {isStartingServer ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  시작 중...
-                </>
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  서버 시작
-                </>
+                <Play className="w-4 h-4" />
               )}
+              {isStartingServer ? '시작 중...' : '서버 시작'}
             </button>
-          ) : (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                서버를 중지하려면 앱을 재시작해주세요.
-              </p>
-            </div>
           )}
+        </div>
+
+        {/* 자동 시작 (한 줄) */}
+        <div className="flex items-center justify-between py-2 border-t border-gray-100">
+          <span className="text-sm text-gray-700">앱 시작 시 자동으로 서버 시작</span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={serverAutostart}
+              onChange={(e) => handleServerAutostartChange(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+          </label>
         </div>
 
         {/* 접속 주소 (서버 실행 중일 때만) */}
         {serverStatus.running && (
-          <div className="space-y-3">
-            <p className="font-medium text-gray-900">접속 주소</p>
-
-            {/* 웹 앱 링크 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 flex-shrink-0 w-16">웹앱:</span>
-              <input
-                type="text"
-                value={`${serverStatus.url}/app`}
-                readOnly
-                className="input-field flex-1 bg-white text-sm"
-              />
-              <button
-                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/app`)}
-                className="btn-secondary flex items-center gap-1"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
-              <a
-                href={`${serverStatus.url}/app`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary flex items-center gap-1"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
-
-            {/* 직원 대시보드 링크 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 flex-shrink-0 w-16">직원용:</span>
-              <input
-                type="text"
-                value={`${serverStatus.url}/staff`}
-                readOnly
-                className="input-field flex-1 bg-white text-sm"
-              />
-              <button
-                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/staff`)}
-                className="btn-secondary flex items-center gap-1"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
-              <a
-                href={`${serverStatus.url}/staff`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary flex items-center gap-1"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
-
-            {/* 설문 페이지 링크 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 flex-shrink-0 w-16">설문:</span>
-              <input
-                type="text"
-                value={`${serverStatus.url}/patient`}
-                readOnly
-                className="input-field flex-1 bg-white text-sm"
-              />
-              <button
-                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/patient`)}
-                className="btn-secondary flex items-center gap-1"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-sm font-medium text-gray-900 mb-3">접속 주소</p>
+            <div className="space-y-2">
+              {/* 웹 앱 */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-12">웹앱</span>
+                <code className="flex-1 text-sm bg-gray-100 px-2 py-1 rounded">{serverStatus.url}/app</code>
+                <button onClick={() => copyToClipboard(`${serverStatus.url}/app`)} className="p-1 hover:bg-gray-100 rounded">
+                  <Copy className="w-4 h-4 text-gray-500" />
+                </button>
+                <a href={`${serverStatus.url}/app`} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded">
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </a>
+              </div>
+              {/* 직원용 */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-12">직원용</span>
+                <code className="flex-1 text-sm bg-gray-100 px-2 py-1 rounded">{serverStatus.url}/staff</code>
+                <button onClick={() => copyToClipboard(`${serverStatus.url}/staff`)} className="p-1 hover:bg-gray-100 rounded">
+                  <Copy className="w-4 h-4 text-gray-500" />
+                </button>
+                <a href={`${serverStatus.url}/staff`} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded">
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </a>
+              </div>
+              {/* 설문 */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-12">설문</span>
+                <code className="flex-1 text-sm bg-gray-100 px-2 py-1 rounded">{serverStatus.url}/patient</code>
+                <button onClick={() => copyToClipboard(`${serverStatus.url}/patient`)} className="p-1 hover:bg-gray-100 rounded">
+                  <Copy className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
             </div>
           </div>
         )}
-
-        <div className="text-xs text-gray-500 mt-4">
-          <p>• 같은 Wi-Fi/네트워크에 연결된 기기에서만 접속 가능합니다</p>
-          <p>• 앱을 종료하면 서버도 함께 종료됩니다</p>
-        </div>
       </div>
 
       {/* 헤더 */}

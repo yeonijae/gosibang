@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
@@ -126,8 +125,7 @@ export function Settings() {
   const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'survey' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
-  const [isRestoringTemplates, setIsRestoringTemplates] = useState(false);
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
 
   // 내 정보 관련 상태
   interface UserProfile {
@@ -193,22 +191,6 @@ export function Settings() {
         .finally(() => setIsLoadingSessions(false));
     }
   }, [activeTab, loadUserSessions]);
-
-  // 기본 설문 템플릿 복원
-  const handleRestoreTemplates = async () => {
-    if (!confirm('기본 설문지를 복원하시겠습니까?\n\n삭제된 기본 설문지(여성, 소아)가 다시 생성됩니다.')) {
-      return;
-    }
-    setIsRestoringTemplates(true);
-    try {
-      await invoke('restore_default_survey_templates');
-      setMessage({ type: 'success', text: '기본 설문지가 복원되었습니다.' });
-    } catch (e) {
-      setMessage({ type: 'error', text: `복원 실패: ${e}` });
-    } finally {
-      setIsRestoringTemplates(false);
-    }
-  };
 
   // 사용자 프로필 불러오기
   const loadUserProfile = async () => {
@@ -925,19 +907,6 @@ export function Settings() {
             <Crown className="w-4 h-4" />
             구독 관리
           </button>
-          {canUseFeature('survey_internal') && (
-            <button
-              onClick={() => setActiveTab('survey')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
-                activeTab === 'survey'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <ClipboardList className="w-4 h-4" />
-              설문지
-            </button>
-          )}
           <button
             onClick={() => setActiveTab('data')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -1394,91 +1363,6 @@ export function Settings() {
               구독 관련 문의: <a href="mailto:support@gosibang.com" className="text-primary-600 font-medium hover:underline">support@gosibang.com</a>
             </p>
           </div>
-        </div>
-      )}
-
-      {/* 설문지 탭 */}
-      {activeTab === 'survey' && canUseFeature('survey_internal') && (
-        <div className="space-y-6 max-w-2xl">
-          {/* 설문지 복원 */}
-          <div className="card">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                <RotateCcw className="w-5 h-5 text-orange-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">설문지 복원</h2>
-                <p className="text-sm text-gray-500">삭제된 기본 설문지를 복원합니다</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">기본 설문지 복원</p>
-                <p className="text-sm text-gray-500">기본설문지-여성, 기본설문지-소아</p>
-              </div>
-              <button
-                onClick={handleRestoreTemplates}
-                disabled={isRestoringTemplates}
-                className="btn-secondary flex items-center gap-2"
-              >
-                {isRestoringTemplates ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="w-4 h-4" />
-                )}
-                복원
-              </button>
-            </div>
-          </div>
-
-          {/* 온라인 설문지 */}
-          {canUseFeature('survey_external') ? (
-          <div className="card">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Globe className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">온라인 설문지</h2>
-                <p className="text-sm text-gray-500">환자에게 온라인으로 설문 링크를 전달</p>
-              </div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <span className="text-sm font-medium text-gray-900">서비스 활성화됨</span>
-              </div>
-              <p className="text-sm text-gray-600 mb-3">
-                설문 관리 페이지에서 "온라인 링크 생성" 버튼을 클릭하면<br />
-                환자에게 전달할 수 있는 설문 링크가 생성됩니다.
-              </p>
-              <div className="text-xs text-gray-500">
-                • 링크는 24시간 동안 유효합니다<br />
-                • 환자가 응답을 제출하면 자동으로 동기화됩니다
-              </div>
-            </div>
-          </div>
-          ) : (
-          <div className="card border-2 border-gray-200 bg-gray-50">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
-                <Globe className="w-5 h-5 text-gray-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-500">온라인 설문지</h2>
-                <p className="text-sm text-gray-400">프리미엄 플랜에서 사용 가능</p>
-              </div>
-              <span className="ml-auto px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">
-                <Crown className="w-3 h-3" />
-                프리미엄
-              </span>
-            </div>
-            <p className="text-sm text-gray-500">
-              환자에게 온라인 설문 링크를 전달하고, 응답을 자동으로 수집할 수 있습니다.
-            </p>
-          </div>
-          )}
         </div>
       )}
 
