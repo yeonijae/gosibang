@@ -334,18 +334,46 @@ export const useAuthStore = create<AuthStore>((set) => ({
   verifySession: async () => {
     const sessionToken = getCurrentSessionToken();
     if (!sessionToken) {
-      return { valid: false, message: '세션 토큰이 없습니다.' };
+      return { valid: false, message: '동시접속 한도 초과로 로그아웃되었습니다.' };
     }
 
     try {
       const { data, error } = await supabase
         .from('user_sessions')
-        .select('id')
+        .select('id, user_id')
         .eq('session_token', sessionToken)
         .single();
 
       if (error || !data) {
-        return { valid: false, message: '다른 기기에서 로그인하여 현재 세션이 종료되었습니다.' };
+        // 세션이 삭제됨 - max_sessions 조회하여 메시지에 포함
+        let maxSessions = 1;
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { data: subData } = await supabase
+              .from('gosibang_subscriptions')
+              .select('plan_type')
+              .eq('user_id', session.user.id)
+              .single();
+
+            if (subData?.plan_type) {
+              const { data: policyData } = await supabase
+                .from('gosibang_plan_policies')
+                .select('max_sessions')
+                .eq('plan_type', subData.plan_type)
+                .single();
+
+              maxSessions = policyData?.max_sessions ?? 1;
+            }
+          }
+        } catch {
+          // 조회 실패 시 기본값 사용
+        }
+
+        return {
+          valid: false,
+          message: `PC ${maxSessions}대까지 이용 가능합니다. 동시접속 한도 초과로 로그아웃되었습니다.`,
+        };
       }
 
       return { valid: true };
