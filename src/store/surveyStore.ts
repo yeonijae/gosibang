@@ -46,6 +46,7 @@ interface SurveyStore {
   submitResponse: (sessionId: string, answers: SurveyAnswer[]) => Promise<void>;
   createDirectResponse: (templateId: string, answers: SurveyAnswer[], respondentName?: string) => Promise<void>;
   getResponsesByPatient: (patientId: string) => Promise<SurveyResponse[]>;
+  deleteResponse: (id: string) => Promise<void>;
 }
 
 export const useSurveyStore = create<SurveyStore>((set, get) => ({
@@ -518,5 +519,17 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
     // 응답 목록 새로고침
     await get().loadResponses();
+  },
+
+  // 응답 삭제
+  deleteResponse: async (id) => {
+    const db = getDb();
+    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+    db.run('DELETE FROM survey_responses WHERE id = ?', [id]);
+    saveDb();
+
+    // 응답 목록에서 제거
+    set({ responses: get().responses.filter(r => r.id !== id) });
   },
 }));

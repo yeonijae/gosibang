@@ -13,7 +13,7 @@ import type { SurveyResponse, SurveyTemplate, SurveyAnswer, Patient, SurveyQuest
 const SURVEY_APP_URL = 'https://gosibang-survey.vercel.app';
 
 export function SurveyResponses() {
-  const { responses, templates, isLoading, loadResponses, loadTemplates, getTemplate, linkResponseToPatient, createTemplate, updateTemplate, deleteTemplate } = useSurveyStore();
+  const { responses, templates, isLoading, loadResponses, loadTemplates, getTemplate, linkResponseToPatient, deleteResponse, createTemplate, updateTemplate, deleteTemplate } = useSurveyStore();
   const { authState } = useAuthStore();
   const { canUseFeature } = usePlanLimits();
 
@@ -160,22 +160,12 @@ export function SurveyResponses() {
       {/* 응답 관리 탭 */}
       {activeTab === 'responses' && (
         <>
-          {/* 필터 */}
-          <div className="flex flex-wrap gap-2 sm:gap-4 mb-4">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="환자명 또는 설문명 검색..."
-                className="input-field !pl-11"
-              />
-            </div>
+          {/* 필터 - 한 줄 표시 */}
+          <div className="flex items-center gap-2 mb-4">
             <select
               value={selectedTemplateId}
               onChange={(e) => setSelectedTemplateId(e.target.value)}
-              className="input-field w-40 sm:w-48"
+              className="input-field w-32 sm:w-40 flex-shrink-0"
             >
               <option value="">전체 설문</option>
               {templates.map((template) => (
@@ -184,17 +174,27 @@ export function SurveyResponses() {
                 </option>
               ))}
             </select>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="환자명/설문명 검색"
+                className="input-field !pl-9 w-full"
+              />
+            </div>
             {/* 미연결 응답 필터 */}
             <button
               onClick={() => setShowUnlinkedOnly(!showUnlinkedOnly)}
-              className={`px-3 sm:px-4 py-2 rounded-lg border flex items-center gap-1 sm:gap-2 transition-colors whitespace-nowrap ${
+              className={`px-3 py-2 rounded-lg border flex items-center gap-1 transition-colors whitespace-nowrap flex-shrink-0 ${
                 showUnlinkedOnly
                   ? 'bg-orange-100 border-orange-300 text-orange-700'
                   : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
             >
               <AlertCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">미연결</span> {unlinkedCount > 0 && `(${unlinkedCount})`}
+              <span className="hidden sm:inline">미연결</span>{unlinkedCount > 0 && <span className="ml-1">({unlinkedCount})</span>}
             </button>
           </div>
 
@@ -239,25 +239,34 @@ export function SurveyResponses() {
                         </td>
                         <td className="px-3 sm:px-4 py-3 hidden md:table-cell">{response.answers.length}개</td>
                         <td className="px-3 sm:px-4 py-3">
-                          <div className="flex items-center gap-1 sm:gap-2">
+                          <div className="flex items-center gap-1">
                             <button
                               onClick={() => handleViewResponse(response)}
-                              className="text-primary-600 hover:text-primary-800 flex items-center gap-1 p-1"
+                              className="px-2 py-1 text-xs text-primary-600 hover:bg-primary-50 rounded transition-colors"
                               title="보기"
                             >
-                              <Eye className="w-4 h-4" />
-                              <span className="hidden sm:inline">보기</span>
+                              보기
                             </button>
                             {!response.patient_id && (
                               <button
                                 onClick={() => setLinkingResponse(response)}
-                                className="text-orange-600 hover:text-orange-800 flex items-center gap-1 p-1"
+                                className="px-2 py-1 text-xs text-orange-600 hover:bg-orange-50 rounded transition-colors"
                                 title="연결"
                               >
-                                <UserPlus className="w-4 h-4" />
-                                <span className="hidden sm:inline">연결</span>
+                                연결
                               </button>
                             )}
+                            <button
+                              onClick={() => {
+                                if (confirm('이 설문 응답을 삭제하시겠습니까?')) {
+                                  deleteResponse(response.id);
+                                }
+                              }}
+                              className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="삭제"
+                            >
+                              삭제
+                            </button>
                           </div>
                         </td>
                       </tr>
