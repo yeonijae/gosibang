@@ -207,22 +207,32 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   logout: async () => {
+    // 현재 세션 삭제 (실패해도 계속 진행)
     try {
-      // 현재 세션 삭제
       const sessionToken = getCurrentSessionToken();
       if (sessionToken) {
         await supabase.from('user_sessions').delete().eq('session_token', sessionToken);
-        clearSessionToken();
         console.log('[Session] Session deleted on logout');
       }
-
-      await supabase.auth.signOut();
-      set({ authState: null });
-      // 로그아웃 후 페이지 새로고침 (DB 초기화)
-      window.location.reload();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('[Session] Failed to delete session:', error);
     }
+
+    // 세션 토큰 삭제 (항상 실행)
+    clearSessionToken();
+
+    // Supabase 로그아웃 (실패해도 계속 진행)
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('[Session] Failed to sign out:', error);
+    }
+
+    // 상태 초기화
+    set({ authState: null });
+
+    // 페이지 새로고침 (항상 실행)
+    window.location.reload();
   },
 
   checkAuth: async () => {
