@@ -1,12 +1,22 @@
 /**
  * 내부계정 관리 탭 컴포넌트
  * 웹 클라이언트용 직원 계정을 생성/수정/삭제합니다.
+ * 원내 HTTP 서버 관리 기능도 포함합니다.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Users, Plus, Pencil, Trash2, Loader2, Check, X, Eye, EyeOff } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, Loader2, Check, X, Eye, EyeOff, Server, Play, Copy, ExternalLink } from 'lucide-react';
 import type { StaffPermissions, StaffRole } from '../types';
+import { usePlanLimits } from '../hooks/usePlanLimits';
+
+// 서버 상태 타입
+interface ServerStatus {
+  running: boolean;
+  port: number | null;
+  local_ip: string | null;
+  url: string | null;
+}
 
 // Tauri에서 반환하는 계정 정보 (password_hash 제외)
 interface StaffAccountInfo {
@@ -65,12 +75,21 @@ const ROLE_LABELS: Record<StaffRole, string> = {
 };
 
 export function StaffAccountsTab() {
+  const { planInfo, canUseFeature } = usePlanLimits();
+
+  // 계정 관련 상태
   const [accounts, setAccounts] = useState<StaffAccountInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<StaffAccountInfo | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 서버 관련 상태
+  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false, port: null, local_ip: null, url: null });
+  const [serverPort, setServerPort] = useState(8787);
+  const [serverAutostart, setServerAutostart] = useState(false);
+  const [isStartingServer, setIsStartingServer] = useState(false);
 
   // 폼 상태
   const [formData, setFormData] = useState({
@@ -85,9 +104,34 @@ export function StaffAccountsTab() {
   const [showPassword, setShowPassword] = useState(false);
   const [useCustomPermissions, setUseCustomPermissions] = useState(false);
 
+  // 서버 상태 로드
+  const loadServerStatus = useCallback(async () => {
+    try {
+      const status = await invoke<ServerStatus>('get_server_status');
+      setServerStatus(status);
+      if (status.port) {
+        setServerPort(status.port);
+      }
+    } catch (error) {
+      console.error('서버 상태 확인 실패:', error);
+    }
+  }, []);
+
+  // 자동 시작 설정 로드
+  const loadServerAutostart = useCallback(async () => {
+    try {
+      const autostart = await invoke<boolean>('get_server_autostart');
+      setServerAutostart(autostart);
+    } catch (error) {
+      console.error('자동시작 설정 로드 실패:', error);
+    }
+  }, []);
+
   useEffect(() => {
     loadAccounts();
-  }, []);
+    loadServerStatus();
+    loadServerAutostart();
+  }, [loadServerStatus, loadServerAutostart]);
 
   const loadAccounts = async () => {
     setIsLoading(true);
@@ -99,6 +143,46 @@ export function StaffAccountsTab() {
       setMessage({ type: 'error', text: '계정 목록을 불러오는데 실패했습니다.' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 서버 시작
+  const handleStartServer = async () => {
+    setIsStartingServer(true);
+    try {
+      const url = await invoke<string>('start_http_server', {
+        port: serverPort,
+        planType: planInfo.type,
+        surveyExternal: canUseFeature('survey_external'),
+      });
+      setMessage({ type: 'success', text: `HTTP 서버가 시작되었습니다: ${url}` });
+      await loadServerStatus();
+    } catch (e) {
+      setMessage({ type: 'error', text: `서버 시작 실패: ${e}` });
+    } finally {
+      setIsStartingServer(false);
+    }
+  };
+
+  // 자동 시작 설정 변경
+  const handleServerAutostartChange = async (enabled: boolean) => {
+    try {
+      await invoke('set_server_autostart', { enabled });
+      setServerAutostart(enabled);
+      setMessage({ type: 'success', text: enabled ? '앱 시작 시 서버가 자동으로 시작됩니다.' : '서버 자동 시작이 해제되었습니다.' });
+    } catch (error) {
+      console.error('자동시작 설정 실패:', error);
+      setMessage({ type: 'error', text: `설정 실패: ${error}` });
+    }
+  };
+
+  // 클립보드 복사
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ type: 'success', text: '클립보드에 복사되었습니다.' });
+    } catch {
+      setMessage({ type: 'error', text: '복사에 실패했습니다.' });
     }
   };
 
@@ -262,6 +346,188 @@ export function StaffAccountsTab() {
         </div>
       )}
 
+      {/* 원내 서버 */}
+      <div className="card border-2 border-blue-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+            <Server className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">원내 서버</h2>
+            <p className="text-sm text-gray-500">같은 네트워크의 다른 기기에서 접속할 수 있습니다</p>
+          </div>
+        </div>
+
+        {/* 포트 설정 */}
+        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="font-medium text-gray-900">포트 번호</p>
+              <p className="text-sm text-gray-500">기본값: 8787 (충돌 시 변경)</p>
+            </div>
+            <input
+              type="number"
+              value={serverPort}
+              onChange={(e) => setServerPort(parseInt(e.target.value) || 8787)}
+              disabled={serverStatus.running}
+              min={1024}
+              max={65535}
+              className="w-24 input-field text-center"
+            />
+          </div>
+        </div>
+
+        {/* 자동 시작 설정 */}
+        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-gray-900">앱 시작 시 자동으로 서버 시작</p>
+              <p className="text-sm text-gray-500">앱을 열면 서버가 자동으로 시작됩니다</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={serverAutostart}
+                onChange={(e) => handleServerAutostartChange(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+            </label>
+          </div>
+        </div>
+
+        {/* 서버 상태 및 시작/중지 */}
+        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="font-medium text-gray-900">서버 상태</p>
+              <p className="text-sm text-gray-500">
+                {serverStatus.running
+                  ? `실행 중: ${serverStatus.url}`
+                  : '서버가 중지되어 있습니다'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {serverStatus.running ? (
+                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  실행 중
+                </span>
+              ) : (
+                <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                  중지됨
+                </span>
+              )}
+            </div>
+          </div>
+
+          {!serverStatus.running ? (
+            <button
+              onClick={handleStartServer}
+              disabled={isStartingServer}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              {isStartingServer ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  시작 중...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  서버 시작
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                서버를 중지하려면 앱을 재시작해주세요.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* 접속 주소 (서버 실행 중일 때만) */}
+        {serverStatus.running && (
+          <div className="space-y-3">
+            <p className="font-medium text-gray-900">접속 주소</p>
+
+            {/* 웹 앱 링크 */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 flex-shrink-0 w-16">웹앱:</span>
+              <input
+                type="text"
+                value={`${serverStatus.url}/app`}
+                readOnly
+                className="input-field flex-1 bg-white text-sm"
+              />
+              <button
+                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/app`)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+              <a
+                href={`${serverStatus.url}/app`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary flex items-center gap-1"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+
+            {/* 직원 대시보드 링크 */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 flex-shrink-0 w-16">직원용:</span>
+              <input
+                type="text"
+                value={`${serverStatus.url}/staff`}
+                readOnly
+                className="input-field flex-1 bg-white text-sm"
+              />
+              <button
+                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/staff`)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+              <a
+                href={`${serverStatus.url}/staff`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary flex items-center gap-1"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+
+            {/* 설문 페이지 링크 */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 flex-shrink-0 w-16">설문:</span>
+              <input
+                type="text"
+                value={`${serverStatus.url}/patient`}
+                readOnly
+                className="input-field flex-1 bg-white text-sm"
+              />
+              <button
+                onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/patient`)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="text-xs text-gray-500 mt-4">
+          <p>• 같은 Wi-Fi/네트워크에 연결된 기기에서만 접속 가능합니다</p>
+          <p>• 앱을 종료하면 서버도 함께 종료됩니다</p>
+        </div>
+      </div>
+
       {/* 헤더 */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -289,7 +555,7 @@ export function StaffAccountsTab() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
           <p className="font-medium mb-1">웹 클라이언트 접속 방법</p>
           <ol className="list-decimal list-inside space-y-1 ml-2">
-            <li>설정 &gt; 설문지 탭에서 HTTP 서버를 시작합니다.</li>
+            <li>위의 "원내 서버"에서 서버를 시작합니다.</li>
             <li>다른 PC/기기의 웹 브라우저에서 <code className="bg-blue-100 px-1 rounded">http://서버IP:포트/app</code> 으로 접속합니다.</li>
             <li>아래에서 생성한 계정으로 로그인합니다.</li>
           </ol>

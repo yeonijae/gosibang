@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
@@ -116,7 +116,7 @@ interface UsageStats {
 export function Settings() {
   const { settings, isLoading, loadSettings, saveSettings } = useClinicStore();
   const { authState, loadUserSessions, deleteSession } = useAuthStore();
-  const { canUseFeature, planInfo } = usePlanLimits();
+  const { canUseFeature } = usePlanLimits();
   const [formData, setFormData] = useState<Partial<ClinicSettings>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingUserData, setIsResettingUserData] = useState(false);
@@ -127,7 +127,6 @@ export function Settings() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
   const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'survey' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
-  const [serverAutostart, setServerAutostart] = useState(false);
   const [isRestoringTemplates, setIsRestoringTemplates] = useState(false);
 
   // 내 정보 관련 상태
@@ -165,18 +164,6 @@ export function Settings() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState<string | null>(null);
 
-  // HTTP 서버 관련 상태
-  interface ServerStatus {
-    running: boolean;
-    port: number | null;
-    local_ip: string | null;
-    url: string | null;
-  }
-  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false, port: null, local_ip: null, url: null });
-  const [isStartingServer, setIsStartingServer] = useState(false);
-  const [staffPassword, setStaffPassword] = useState('');
-  const [hasStaffPw, setHasStaffPw] = useState(false);
-
   // DB에서 불러온 플랜 정책
   const [plans, setPlans] = useState<PlanDisplay[]>(DEFAULT_PLANS);
   const [plansLoading, setPlansLoading] = useState(true);
@@ -194,9 +181,6 @@ export function Settings() {
     loadUsageStats();
     loadPlanPolicies();
     loadUserProfile();
-    loadServerStatus();
-    checkStaffPassword();
-    loadServerAutostart();
   }, [loadSettings]);
 
   // 세션 목록 로드 (탭 활성화 시)
@@ -209,27 +193,6 @@ export function Settings() {
         .finally(() => setIsLoadingSessions(false));
     }
   }, [activeTab, loadUserSessions]);
-
-  // 서버 자동 시작 설정 로드
-  const loadServerAutostart = async () => {
-    try {
-      const enabled = await invoke<boolean>('get_server_autostart');
-      setServerAutostart(enabled);
-    } catch (e) {
-      console.error('서버 자동 시작 설정 로드 실패:', e);
-    }
-  };
-
-  // 서버 자동 시작 설정 저장
-  const handleServerAutostartChange = async (enabled: boolean) => {
-    try {
-      await invoke('set_server_autostart', { enabled });
-      setServerAutostart(enabled);
-      setMessage({ type: 'success', text: enabled ? '앱 시작 시 서버가 자동으로 시작됩니다.' : '서버 자동 시작이 해제되었습니다.' });
-    } catch (e) {
-      setMessage({ type: 'error', text: `설정 저장 실패: ${e}` });
-    }
-  };
 
   // 기본 설문 템플릿 복원
   const handleRestoreTemplates = async () => {
@@ -245,66 +208,6 @@ export function Settings() {
     } finally {
       setIsRestoringTemplates(false);
     }
-  };
-
-  // HTTP 서버 상태 확인
-  const loadServerStatus = async () => {
-    try {
-      const status = await invoke<ServerStatus>('get_server_status');
-      setServerStatus(status);
-    } catch (e) {
-      console.error('서버 상태 확인 실패:', e);
-    }
-  };
-
-  // 직원 비밀번호 설정 여부 확인
-  const checkStaffPassword = async () => {
-    try {
-      const hasPw = await invoke<boolean>('has_staff_password');
-      setHasStaffPw(hasPw);
-    } catch (e) {
-      console.error('직원 비밀번호 확인 실패:', e);
-    }
-  };
-
-  // HTTP 서버 시작
-  const handleStartServer = async () => {
-    setIsStartingServer(true);
-    try {
-      const url = await invoke<string>('start_http_server', {
-        port: 8787,
-        planType: planInfo.type,
-        surveyExternal: canUseFeature('survey_external'),
-      });
-      setMessage({ type: 'success', text: `HTTP 서버가 시작되었습니다: ${url}` });
-      await loadServerStatus();
-    } catch (e) {
-      setMessage({ type: 'error', text: `서버 시작 실패: ${e}` });
-    } finally {
-      setIsStartingServer(false);
-    }
-  };
-
-  // 직원 비밀번호 설정
-  const handleSetStaffPassword = async () => {
-    if (!staffPassword || staffPassword.length < 4) {
-      setMessage({ type: 'error', text: '비밀번호는 4자 이상이어야 합니다.' });
-      return;
-    }
-    try {
-      await invoke('set_staff_password', { password: staffPassword });
-      setMessage({ type: 'success', text: '직원 비밀번호가 설정되었습니다.' });
-      setStaffPassword('');
-      setHasStaffPw(true);
-    } catch (e) {
-      setMessage({ type: 'error', text: `비밀번호 설정 실패: ${e}` });
-    }
-  };
-
-  // URL 복사
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setMessage({ type: 'success', text: 'URL이 클립보드에 복사되었습니다.' });
   };
 
   // 사용자 프로필 불러오기
@@ -1528,207 +1431,6 @@ export function Settings() {
               </button>
             </div>
           </div>
-
-          {/* 원내 서버 */}
-          <div className="card border-2 border-blue-200">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Server className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">원내 서버</h2>
-                <p className="text-sm text-gray-500">같은 네트워크의 다른 기기에서 설문/대시보드 접속</p>
-              </div>
-            </div>
-
-            {/* 자동 시작 설정 */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">앱 시작 시 자동으로 서버 시작</p>
-                  <p className="text-sm text-gray-500">앱을 열면 서버가 자동으로 시작됩니다</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={serverAutostart}
-                    onChange={(e) => handleServerAutostartChange(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-              </div>
-            </div>
-
-            {/* 서버 상태 및 시작/중지 */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="font-medium text-gray-900">서버 상태</p>
-                  <p className="text-sm text-gray-500">
-                    {serverStatus.running
-                      ? `실행 중: ${serverStatus.url}`
-                      : '서버가 중지되어 있습니다'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {serverStatus.running ? (
-                    <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                      실행 중
-                    </span>
-                  ) : (
-                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                      중지됨
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {!serverStatus.running ? (
-                <button
-                  onClick={handleStartServer}
-                  disabled={isStartingServer || !hasStaffPw}
-                  className="btn-primary w-full flex items-center justify-center gap-2"
-                >
-                  {isStartingServer ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      시작 중...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" />
-                      서버 시작
-                    </>
-                  )}
-                </button>
-              ) : (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-sm text-amber-800">
-                    서버를 중지하려면 앱을 재시작해주세요.
-                  </p>
-                </div>
-              )}
-
-              {!hasStaffPw && !serverStatus.running && (
-                <p className="text-xs text-amber-600 mt-2">
-                  서버를 시작하려면 먼저 직원 비밀번호를 설정해주세요.
-                </p>
-              )}
-            </div>
-
-            <div className="text-xs text-gray-500">
-              <p>• 같은 Wi-Fi/네트워크에 연결된 기기에서만 접속 가능합니다</p>
-              <p>• 앱을 종료하면 서버도 함께 종료됩니다</p>
-            </div>
-          </div>
-
-          {/* 설문지 관리 - 직원 비밀번호 설정 */}
-          <div className="card">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">설문지 관리</h2>
-                <p className="text-sm text-gray-500">직원 대시보드 접근 설정</p>
-              </div>
-            </div>
-
-            {/* 직원 비밀번호 설정 */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="font-medium text-gray-900">직원 비밀번호</p>
-                  <p className="text-sm text-gray-500">
-                    {hasStaffPw ? '비밀번호가 설정되어 있습니다' : '비밀번호를 먼저 설정해주세요'}
-                  </p>
-                </div>
-                {hasStaffPw && (
-                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full flex items-center gap-1">
-                    <Check className="w-3 h-3" />
-                    설정됨
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={staffPassword}
-                  onChange={(e) => setStaffPassword(e.target.value)}
-                  placeholder={hasStaffPw ? '새 비밀번호 입력' : '비밀번호 입력 (4자 이상)'}
-                  className="input-field flex-1"
-                />
-                <button
-                  onClick={handleSetStaffPassword}
-                  className="btn-secondary"
-                >
-                  {hasStaffPw ? '변경' : '설정'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 원내 설문지 - 접속 주소 */}
-          {serverStatus.running && (
-          <div className="card">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <Server className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">원내 설문지</h2>
-                <p className="text-sm text-gray-500">같은 네트워크에서 접속할 수 있는 주소</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {/* 직원 대시보드 링크 */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 flex-shrink-0 w-16">직원용:</span>
-                <input
-                  type="text"
-                  value={`${serverStatus.url}/staff`}
-                  readOnly
-                  className="input-field flex-1 bg-white text-sm"
-                />
-                <button
-                  onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/staff`)}
-                  className="btn-secondary flex items-center gap-1"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-                <a
-                  href={`${serverStatus.url}/staff`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary flex items-center gap-1"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              </div>
-
-              {/* 설문 페이지 링크 */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 flex-shrink-0 w-16">설문:</span>
-                <input
-                  type="text"
-                  value={`${serverStatus.url}/patient`}
-                  readOnly
-                  className="input-field flex-1 bg-white text-sm"
-                />
-                <button
-                  onClick={() => serverStatus.url && copyToClipboard(`${serverStatus.url}/patient`)}
-                  className="btn-secondary flex items-center gap-1"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-              </div>
-
-            </div>
-          </div>
-          )}
 
           {/* 온라인 설문지 */}
           {canUseFeature('survey_external') ? (
