@@ -38,6 +38,7 @@ const clearSessionToken = () => localStorage.removeItem(SESSION_TOKEN_KEY);
 interface AuthStore {
   authState: AuthState | null;
   isLoading: boolean;
+  isLoggingOut: boolean;
   error: string | null;
 
   // Actions
@@ -55,9 +56,10 @@ interface AuthStore {
   deleteSession: (sessionId: string) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
+export const useAuthStore = create<AuthStore>((set, get) => ({
   authState: null,
   isLoading: false,
+  isLoggingOut: false,
   error: null,
 
   login: async (email: string, password: string, forceLogoutOthers?: boolean) => {
@@ -212,6 +214,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   logout: async () => {
+    // 로그아웃 중 플래그 설정
+    set({ isLoggingOut: true });
+
     // 현재 세션 삭제 (실패해도 계속 진행)
     try {
       const sessionToken = getCurrentSessionToken();
@@ -347,6 +352,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   // 세션 유효성 검증 (사용 중 호출)
   verifySession: async () => {
+    // 로그아웃 중이면 검증 건너뛰기
+    if (get().isLoggingOut) {
+      return { valid: true };
+    }
+
     const sessionToken = getCurrentSessionToken();
     if (!sessionToken) {
       return { valid: false, message: '세션이 만료되었습니다. 다시 로그인해주세요.' };
