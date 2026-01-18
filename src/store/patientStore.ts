@@ -70,9 +70,9 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       const now = new Date().toISOString();
 
       db.run(
-        `INSERT INTO patients (id, name, birth_date, gender, phone, address, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, patient.name, patient.birth_date || null, patient.gender || null,
+        `INSERT INTO patients (id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, patient.name, patient.chart_number || null, patient.birth_date || null, patient.gender || null,
          patient.phone || null, patient.address || null, patient.notes || null, now, now]
       );
       saveDb();
@@ -94,9 +94,9 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       const now = new Date().toISOString();
 
       db.run(
-        `UPDATE patients SET name = ?, birth_date = ?, gender = ?, phone = ?, address = ?, notes = ?, updated_at = ?
+        `UPDATE patients SET name = ?, chart_number = ?, birth_date = ?, gender = ?, phone = ?, address = ?, notes = ?, updated_at = ?
          WHERE id = ?`,
-        [patient.name, patient.birth_date || null, patient.gender || null,
+        [patient.name, patient.chart_number || null, patient.birth_date || null, patient.gender || null,
          patient.phone || null, patient.address || null, patient.notes || null, now, patient.id]
       );
       saveDb();
