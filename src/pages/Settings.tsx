@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink, Key } from 'lucide-react';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Globe, Server, Play, Copy, ExternalLink, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
@@ -21,7 +21,7 @@ import {
   cleanupBackupHistory,
 } from '../lib/backup';
 import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/backup';
-import type { ClinicSettings, Subscription, DisplayConfig } from '../types';
+import type { ClinicSettings, Subscription, DisplayConfig, UserSession } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 
 // 기본 표시 설정
@@ -114,7 +114,7 @@ interface UsageStats {
 
 export function Settings() {
   const { settings, isLoading, loadSettings, saveSettings } = useClinicStore();
-  const { authState } = useAuthStore();
+  const { authState, loadUserSessions, deleteSession } = useAuthStore();
   const { canUseFeature, planInfo } = usePlanLimits();
   const [formData, setFormData] = useState<Partial<ClinicSettings>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -125,7 +125,7 @@ export function Settings() {
   const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'survey' | 'data' | 'backup'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'survey' | 'data' | 'backup' | 'sessions'>('profile');
   const [serverAutostart, setServerAutostart] = useState(false);
   const [isRestoringTemplates, setIsRestoringTemplates] = useState(false);
 
@@ -158,6 +158,11 @@ export function Settings() {
   const [backupHistory, setBackupHistory] = useState<BackupHistoryItem[]>(loadBackupHistory);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // 세션 관리 상태
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isDeletingSession, setIsDeletingSession] = useState<string | null>(null);
 
   // HTTP 서버 관련 상태
   interface ServerStatus {
@@ -192,6 +197,17 @@ export function Settings() {
     checkStaffPassword();
     loadServerAutostart();
   }, [loadSettings]);
+
+  // 세션 목록 로드 (탭 활성화 시)
+  useEffect(() => {
+    if (activeTab === 'sessions') {
+      setIsLoadingSessions(true);
+      loadUserSessions()
+        .then(data => setSessions(data))
+        .catch(e => console.error('세션 로드 실패:', e))
+        .finally(() => setIsLoadingSessions(false));
+    }
+  }, [activeTab, loadUserSessions]);
 
   // 서버 자동 시작 설정 로드
   const loadServerAutostart = async () => {
@@ -1041,6 +1057,17 @@ export function Settings() {
               백업
             </button>
           )}
+          <button
+            onClick={() => setActiveTab('sessions')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+              activeTab === 'sessions'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Smartphone className="w-4 h-4" />
+            기기 관리
+          </button>
         </nav>
       </div>
 
@@ -2103,6 +2130,107 @@ export function Settings() {
               <li>Google Drive: 데스크톱 앱 → 동기화 폴더 선택</li>
               <li>OneDrive: 문서 폴더 사용</li>
               <li>Dropbox: Dropbox 폴더 내 백업 폴더 생성</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* 기기 관리 탭 */}
+      {activeTab === 'sessions' && (
+        <div className="space-y-6 max-w-2xl">
+          {/* 로그인된 기기 목록 */}
+          <div className="card">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <Smartphone className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">로그인된 기기</h2>
+                <p className="text-sm text-gray-500">현재 로그인되어 있는 모든 기기를 확인하고 관리합니다</p>
+              </div>
+            </div>
+
+            {isLoadingSessions ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Smartphone className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p>로그인된 기기 정보가 없습니다</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`flex items-center justify-between p-3 rounded-lg ${
+                      session.is_current ? 'bg-green-50 border border-green-200' : 'bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        session.is_current ? 'bg-green-100' : 'bg-gray-200'
+                      }`}>
+                        {session.device_name.includes('Mac') ? (
+                          <Monitor className="w-5 h-5 text-gray-600" />
+                        ) : (
+                          <Monitor className="w-5 h-5 text-gray-600" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{session.device_name}</p>
+                          {session.is_current && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                              현재 기기
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          마지막 활동: {new Date(session.last_active_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    {!session.is_current && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm('이 기기를 로그아웃하시겠습니까?')) return;
+                          setIsDeletingSession(session.id);
+                          try {
+                            await deleteSession(session.id);
+                            setSessions(sessions.filter(s => s.id !== session.id));
+                            setMessage({ type: 'success', text: '기기가 로그아웃되었습니다.' });
+                          } catch (e) {
+                            setMessage({ type: 'error', text: '로그아웃에 실패했습니다.' });
+                          } finally {
+                            setIsDeletingSession(null);
+                          }
+                        }}
+                        disabled={isDeletingSession === session.id}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {isDeletingSession === session.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <LogOut className="w-4 h-4" />
+                        )}
+                        로그아웃
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 세션 정보 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-medium text-blue-900 mb-2">세션 관리 안내</h3>
+            <ul className="text-sm text-blue-800 space-y-1">
+              <li>• 플랜에 따라 동시 로그인 가능한 기기 수가 제한됩니다.</li>
+              <li>• 새 기기에서 로그인하면 가장 오래된 세션이 자동으로 로그아웃됩니다.</li>
+              <li>• 원격 로그아웃된 기기에서는 다음 활동 시 자동으로 로그아웃됩니다.</li>
             </ul>
           </div>
         </div>

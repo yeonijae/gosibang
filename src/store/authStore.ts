@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { supabase } from '../lib/supabase';
-import type { AuthState } from '../types';
+import type { AuthState, UserSession } from '../types';
 
 // 회원가입 추가 정보
 interface SignupMetadata {
@@ -9,6 +9,31 @@ interface SignupMetadata {
   phone: string;
   lectureId: string;
 }
+
+// 세션 토큰 localStorage 키
+const SESSION_TOKEN_KEY = 'gosibang_session_token';
+
+// 세션 토큰 생성
+const generateSessionToken = () =>
+  `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+
+// 기기 이름 추출
+const getDeviceName = () => {
+  const ua = navigator.userAgent;
+  if (ua.includes('Windows')) return 'Windows PC';
+  if (ua.includes('Mac')) return 'Mac';
+  if (ua.includes('Linux')) return 'Linux PC';
+  return 'Unknown Device';
+};
+
+// 현재 세션 토큰 가져오기
+const getCurrentSessionToken = () => localStorage.getItem(SESSION_TOKEN_KEY);
+
+// 세션 토큰 저장
+const saveSessionToken = (token: string) => localStorage.setItem(SESSION_TOKEN_KEY, token);
+
+// 세션 토큰 삭제
+const clearSessionToken = () => localStorage.removeItem(SESSION_TOKEN_KEY);
 
 interface AuthStore {
   authState: AuthState | null;
@@ -22,6 +47,12 @@ interface AuthStore {
   checkAuth: () => Promise<AuthState | null>;
   resetPassword: (email: string, name: string, phone: string) => Promise<string>;
   clearError: () => void;
+
+  // Session management
+  verifySession: () => Promise<{ valid: boolean; message?: string }>;
+  updateSessionActivity: () => Promise<void>;
+  loadUserSessions: () => Promise<UserSession[]>;
+  deleteSession: (sessionId: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -52,10 +83,66 @@ export const useAuthStore = create<AuthStore>((set) => ({
         throw new Error('PENDING_APPROVAL');
       }
 
+      const userId = data.user!.id;
+
+      // ===== 세션 관리 =====
+      // 1. max_sessions 조회
+      let maxSessions = 1;
+      try {
+        const { data: subData } = await supabase
+          .from('gosibang_subscriptions')
+          .select('plan_type')
+          .eq('user_id', userId)
+          .single();
+
+        if (subData?.plan_type) {
+          const { data: policyData } = await supabase
+            .from('gosibang_plan_policies')
+            .select('max_sessions')
+            .eq('plan_type', subData.plan_type)
+            .single();
+
+          maxSessions = policyData?.max_sessions ?? 1;
+        }
+      } catch (e) {
+        console.log('[Session] Failed to get max_sessions, using default 1');
+      }
+
+      // 2. 현재 활성 세션 수 확인
+      const { data: existingSessions } = await supabase
+        .from('user_sessions')
+        .select('id, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      // 3. max_sessions 초과 시 가장 오래된 세션들 삭제
+      if (existingSessions && existingSessions.length >= maxSessions) {
+        const sessionsToDelete = existingSessions.slice(0, existingSessions.length - maxSessions + 1);
+        for (const session of sessionsToDelete) {
+          await supabase.from('user_sessions').delete().eq('id', session.id);
+        }
+        console.log(`[Session] Deleted ${sessionsToDelete.length} old session(s)`);
+      }
+
+      // 4. 새 세션 생성
+      const sessionToken = generateSessionToken();
+      const deviceName = getDeviceName();
+
+      await supabase.from('user_sessions').insert({
+        user_id: userId,
+        session_token: sessionToken,
+        device_name: deviceName,
+      });
+
+      // 5. 세션 토큰 저장
+      saveSessionToken(sessionToken);
+      console.log('[Session] New session created:', sessionToken);
+      // ===== 세션 관리 끝 =====
+
       const authState: AuthState = {
         is_authenticated: true,
         user: {
-          id: data.user!.id,
+          id: userId,
           email: data.user?.email,
         },
         user_email: data.user?.email,
@@ -66,7 +153,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         try {
           await invoke('initialize_encrypted_db', {
             accessToken: data.session.access_token,
-            userId: data.user!.id,
+            userId: userId,
           });
           console.log('Encrypted database initialized');
         } catch (dbError) {
@@ -121,6 +208,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: async () => {
     try {
+      // 현재 세션 삭제
+      const sessionToken = getCurrentSessionToken();
+      if (sessionToken) {
+        await supabase.from('user_sessions').delete().eq('session_token', sessionToken);
+        clearSessionToken();
+        console.log('[Session] Session deleted on logout');
+      }
+
       await supabase.auth.signOut();
       set({ authState: null });
       // 로그아웃 후 페이지 새로고침 (DB 초기화)
@@ -232,4 +327,88 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  // ===== 세션 관리 함수 =====
+
+  // 세션 유효성 검증 (사용 중 호출)
+  verifySession: async () => {
+    const sessionToken = getCurrentSessionToken();
+    if (!sessionToken) {
+      return { valid: false, message: '세션 토큰이 없습니다.' };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('user_sessions')
+        .select('id')
+        .eq('session_token', sessionToken)
+        .single();
+
+      if (error || !data) {
+        return { valid: false, message: '다른 기기에서 로그인하여 현재 세션이 종료되었습니다.' };
+      }
+
+      return { valid: true };
+    } catch (e) {
+      console.error('[Session] Verify error:', e);
+      return { valid: true }; // 네트워크 오류 시 일단 유효로 처리
+    }
+  },
+
+  // 세션 활동 시간 업데이트
+  updateSessionActivity: async () => {
+    const sessionToken = getCurrentSessionToken();
+    if (!sessionToken) return;
+
+    try {
+      await supabase
+        .from('user_sessions')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('session_token', sessionToken);
+    } catch (e) {
+      console.error('[Session] Update activity error:', e);
+    }
+  },
+
+  // 사용자의 모든 세션 로드
+  loadUserSessions: async (): Promise<UserSession[]> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return [];
+
+    const currentToken = getCurrentSessionToken();
+
+    try {
+      const { data, error } = await supabase
+        .from('user_sessions')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('last_active_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (data || []).map(s => ({
+        ...s,
+        is_current: s.session_token === currentToken,
+      }));
+    } catch (e) {
+      console.error('[Session] Load sessions error:', e);
+      return [];
+    }
+  },
+
+  // 특정 세션 삭제 (원격 로그아웃)
+  deleteSession: async (sessionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('user_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (error) throw error;
+      console.log('[Session] Remote logout:', sessionId);
+    } catch (e) {
+      console.error('[Session] Delete session error:', e);
+      throw e;
+    }
+  },
 }));

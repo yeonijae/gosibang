@@ -9,6 +9,7 @@ interface PlanPolicy {
   max_patients: number;
   max_prescriptions_per_month: number;
   max_charts_per_month: number;
+  max_sessions: number;  // 동시 접속 제한
   features: {
     survey: boolean;
     survey_internal: boolean;  // 내부 설문 (태블릿/인트라넷)
@@ -89,7 +90,7 @@ export function usePlanLimits() {
       // 플랜 정책 가져오기
       const { data: policyData, error: policyError } = await supabase
         .from('gosibang_plan_policies')
-        .select('plan_type, display_name, max_patients, max_prescriptions_per_month, max_charts_per_month, features')
+        .select('plan_type, display_name, max_patients, max_prescriptions_per_month, max_charts_per_month, max_sessions, features')
         .eq('plan_type', currentSubscription.plan_type)
         .single();
 
@@ -102,10 +103,16 @@ export function usePlanLimits() {
         max_patients: 10,
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
+        max_sessions: 1,
         features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
       };
 
-      setPolicy(policyData || defaultPolicy);
+      // policyData에 max_sessions가 없으면 기본값 1 사용
+      const policyWithDefaults = policyData
+        ? { ...policyData, max_sessions: policyData.max_sessions ?? 1 }
+        : defaultPolicy;
+
+      setPolicy(policyWithDefaults);
     } catch (err) {
       console.error('Failed to load subscription/policy:', err);
       // 에러 시 무료 플랜 기본값
@@ -116,6 +123,7 @@ export function usePlanLimits() {
         max_patients: 10,
         max_prescriptions_per_month: 20,
         max_charts_per_month: 20,
+        max_sessions: 1,
         features: { survey: false, survey_internal: false, survey_external: false, export: false, backup: false, multiUser: false },
       });
     }
@@ -222,6 +230,11 @@ export function usePlanLimits() {
     return result;
   }, [policy]);
 
+  // 최대 세션 수 가져오기
+  const getMaxSessions = useCallback((): number => {
+    return policy?.max_sessions ?? 1;
+  }, [policy]);
+
   // 플랜 정보
   const planInfo = {
     type: subscription?.plan_type || 'free',
@@ -240,6 +253,7 @@ export function usePlanLimits() {
     canAddPrescription,
     canAddChart,
     canUseFeature,
+    getMaxSessions,
     refreshUsage,
     reload: loadSubscriptionAndPolicy,
   };

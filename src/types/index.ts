@@ -284,6 +284,17 @@ export interface AuthState {
   last_verified?: string;
 }
 
+// 사용자 세션 (동시 접속 제한용)
+export interface UserSession {
+  id: string;
+  user_id: string;
+  session_token: string;
+  device_name: string;
+  last_active_at: string;
+  created_at: string;
+  is_current?: boolean;
+}
+
 // ===== 기능 권한 타입 =====
 
 // 기능 키 (메뉴와 매핑)
