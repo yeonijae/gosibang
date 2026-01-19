@@ -101,6 +101,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/app", get(webapp_index_handler))
         .route("/app/", get(webapp_index_handler))
         .route("/app/{*path}", get(webapp_static_handler))
+        // 웹 앱 assets (index.html에서 /assets/ 경로로 참조)
+        .route("/assets/{*path}", get(webapp_assets_handler))
         // 메인 인덱스 (안내 페이지)
         .route("/", get(index_handler))
 }
@@ -1933,4 +1935,21 @@ async fn webapp_static_handler(Path(path): Path<String>) -> impl IntoResponse {
         }
         None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
     }
+}
+
+/// 웹 앱 assets 제공 (/assets/ 경로용)
+/// index.html에서 /assets/... 경로로 참조하는 파일들
+async fn webapp_assets_handler(Path(path): Path<String>) -> impl IntoResponse {
+    // assets/ 폴더 내의 파일을 찾음
+    let asset_path = format!("assets/{}", path);
+    if let Some(content) = WebAppAssets::get(&asset_path) {
+        let mime = mime_guess::from_path(&path).first_or_octet_stream();
+        return (
+            [(header::CONTENT_TYPE, mime.as_ref())],
+            content.data.into_owned(),
+        )
+            .into_response();
+    }
+
+    (StatusCode::NOT_FOUND, "Asset Not Found").into_response()
 }

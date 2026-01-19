@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Users, Plus, Pencil, Trash2, Loader2, Check, X, Eye, EyeOff, Server, Play, Copy, ExternalLink } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, Loader2, Check, X, Eye, EyeOff, Server, Play, Square, Copy, ExternalLink } from 'lucide-react';
 import type { StaffPermissions, StaffRole } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 
@@ -90,6 +90,7 @@ export function StaffAccountsTab() {
   const [serverPort, setServerPort] = useState(8787);
   const [serverAutostart, setServerAutostart] = useState(false);
   const [isStartingServer, setIsStartingServer] = useState(false);
+  const [isStoppingServer, setIsStoppingServer] = useState(false);
 
   // 폼 상태
   const [formData, setFormData] = useState({
@@ -161,6 +162,20 @@ export function StaffAccountsTab() {
       setMessage({ type: 'error', text: `서버 시작 실패: ${e}` });
     } finally {
       setIsStartingServer(false);
+    }
+  };
+
+  // 서버 중지
+  const handleStopServer = async () => {
+    setIsStoppingServer(true);
+    try {
+      await invoke('stop_http_server');
+      setMessage({ type: 'success', text: 'HTTP 서버가 중지되었습니다.' });
+      await loadServerStatus();
+    } catch (e) {
+      setMessage({ type: 'error', text: `서버 중지 실패: ${e}` });
+    } finally {
+      setIsStoppingServer(false);
     }
   };
 
@@ -374,7 +389,7 @@ export function StaffAccountsTab() {
 
           {/* 포트 입력 */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">포트:</span>
+            <span className="text-sm text-gray-600 whitespace-nowrap">포트:</span>
             <input
               type="number"
               value={serverPort}
@@ -386,8 +401,21 @@ export function StaffAccountsTab() {
             />
           </div>
 
-          {/* 시작 버튼 */}
-          {!serverStatus.running && (
+          {/* 시작/중지 버튼 */}
+          {serverStatus.running ? (
+            <button
+              onClick={handleStopServer}
+              disabled={isStoppingServer}
+              className="btn-secondary flex items-center gap-2 ml-auto text-red-600 border-red-200 hover:bg-red-50"
+            >
+              {isStoppingServer ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              {isStoppingServer ? '중지 중...' : '서버 중지'}
+            </button>
+          ) : (
             <button
               onClick={handleStartServer}
               disabled={isStartingServer}
