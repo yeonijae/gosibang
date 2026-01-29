@@ -264,6 +264,7 @@ function migrateDatabase(database: Database) {
       token TEXT NOT NULL UNIQUE,
       patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
       template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      respondent_name TEXT,
       status TEXT DEFAULT 'pending',
       expires_at TEXT NOT NULL,
       completed_at TEXT,
@@ -271,6 +272,11 @@ function migrateDatabase(database: Database) {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // 마이그레이션: survey_sessions에 respondent_name 컬럼 추가
+  try {
+    database.run(`ALTER TABLE survey_sessions ADD COLUMN respondent_name TEXT`);
+  } catch (e) { /* 이미 존재하면 무시 */ }
 
   // survey_responses 테이블 생성 (설문 응답)
   database.run(`
@@ -483,6 +489,7 @@ function createTables(database: Database) {
       token TEXT NOT NULL UNIQUE,
       patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
       template_id TEXT NOT NULL REFERENCES survey_templates(id) ON DELETE CASCADE,
+      respondent_name TEXT,
       status TEXT DEFAULT 'pending',
       expires_at TEXT NOT NULL,
       completed_at TEXT,

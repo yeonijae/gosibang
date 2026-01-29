@@ -25,7 +25,7 @@ export function WebLogin() {
 
     const success = await login(username, password);
     if (success) {
-      navigate('/app/dashboard');
+      navigate('/dashboard');
     }
   };
 

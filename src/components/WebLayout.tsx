@@ -17,25 +17,25 @@ import { useWebAuthStore, hasPermission } from '../store/webAuthStore';
 
 const navItems = [
   {
-    to: '/app/dashboard',
+    to: '/dashboard',
     icon: LayoutDashboard,
     label: '대시보드',
     permission: null
   },
   {
-    to: '/app/patients',
+    to: '/patients',
     icon: Users,
     label: '환자관리',
     permission: 'patients_read' as const
   },
   {
-    to: '/app/charts',
+    to: '/charts',
     icon: FileText,
     label: '차트',
     permission: 'charts_read' as const
   },
   {
-    to: '/app/surveys',
+    to: '/surveys',
     icon: ClipboardList,
     label: '설문',
     permission: 'survey_read' as const
@@ -49,7 +49,7 @@ export function WebLayout() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/app/login');
+    navigate('/login');
   };
 
   // 권한에 따라 필터링된 네비게이션

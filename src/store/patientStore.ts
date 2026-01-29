@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { Patient, Prescription, ChartRecord } from '../types';
 
 interface PatientStore {
@@ -33,19 +33,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   loadPatients: async (search?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      let sql = 'SELECT * FROM patients WHERE deleted_at IS NULL';
-      const params: string[] = [];
-
-      if (search) {
-        sql += ' AND (name LIKE ? OR phone LIKE ?)';
-        params.push(`%${search}%`, `%${search}%`);
-      }
-      sql += ' ORDER BY created_at DESC';
-
-      const patients = queryToObjects<Patient>(db, sql, params);
+      const patients = await invoke<Patient[]>('list_patients', { search: search || null });
       set({ patients, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -63,20 +51,23 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   createPatient: async (patient) => {
     set({ isLoading: true, error: null });
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      const id = generateUUID();
+      const id = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO patients (id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, patient.name, patient.chart_number || null, patient.birth_date || null, patient.gender || null,
-         patient.phone || null, patient.address || null, patient.notes || null, now, now]
-      );
-      saveDb();
+      const newPatient: Patient = {
+        id,
+        name: patient.name,
+        chart_number: patient.chart_number || undefined,
+        birth_date: patient.birth_date || undefined,
+        gender: patient.gender || undefined,
+        phone: patient.phone || undefined,
+        address: patient.address || undefined,
+        notes: patient.notes || undefined,
+        created_at: now,
+        updated_at: now,
+      };
 
+      await invoke('create_patient', { patient: newPatient });
       await get().loadPatients();
       set({ isLoading: false });
     } catch (error) {
@@ -88,19 +79,10 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   updatePatient: async (patient: Patient) => {
     set({ isLoading: true, error: null });
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
+      const updatedPatient = { ...patient, updated_at: now };
 
-      db.run(
-        `UPDATE patients SET name = ?, chart_number = ?, birth_date = ?, gender = ?, phone = ?, address = ?, notes = ?, updated_at = ?
-         WHERE id = ?`,
-        [patient.name, patient.chart_number || null, patient.birth_date || null, patient.gender || null,
-         patient.phone || null, patient.address || null, patient.notes || null, now, patient.id]
-      );
-      saveDb();
-
+      await invoke('update_patient', { patient: updatedPatient });
       await get().loadPatients();
       set({ isLoading: false });
     } catch (error) {
@@ -112,8 +94,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   deletePatient: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      const success = softDelete('patients', id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('delete_patient', { id });
 
       await get().loadPatients();
       if (get().selectedPatient?.id === id) {
@@ -128,20 +109,14 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   loadPrescriptions: async (patientId: string) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const prescriptions = queryToObjects<Prescription>(
-        db,
-        'SELECT * FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
-        [patientId]
-      ).map((p) => ({
+      const prescriptions = await invoke<Prescription[]>('get_prescriptions_by_patient', { patientId });
+      // JSON 문자열을 객체로 파싱
+      const parsed = prescriptions.map((p) => ({
         ...p,
         merged_herbs: typeof p.merged_herbs === 'string' ? JSON.parse(p.merged_herbs) : p.merged_herbs || [],
         final_herbs: typeof p.final_herbs === 'string' ? JSON.parse(p.final_herbs) : p.final_herbs || [],
       }));
-
-      set({ prescriptions });
+      set({ prescriptions: parsed });
     } catch (error) {
       console.error('Failed to load prescriptions:', error);
     }
@@ -149,15 +124,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   loadChartRecords: async (patientId: string) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const chartRecords = queryToObjects<ChartRecord>(
-        db,
-        'SELECT * FROM chart_records WHERE patient_id = ? ORDER BY visit_date DESC',
-        [patientId]
-      );
-
+      const chartRecords = await invoke<ChartRecord[]>('get_chart_records_by_patient', { patientId });
       set({ chartRecords });
     } catch (error) {
       console.error('Failed to load chart records:', error);
@@ -167,20 +134,24 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   createChartRecord: async (record) => {
     set({ isLoading: true, error: null });
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      const id = generateUUID();
+      const id = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO chart_records (id, patient_id, visit_date, chief_complaint, symptoms, diagnosis, treatment, prescription_id, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, record.patient_id, record.visit_date, record.chief_complaint || null,
-         record.symptoms || null, record.diagnosis || null, record.treatment || null,
-         record.prescription_id || null, record.notes || null, now, now]
-      );
-      saveDb();
+      const newRecord: ChartRecord = {
+        id,
+        patient_id: record.patient_id,
+        visit_date: record.visit_date,
+        chief_complaint: record.chief_complaint || undefined,
+        symptoms: record.symptoms || undefined,
+        diagnosis: record.diagnosis || undefined,
+        treatment: record.treatment || undefined,
+        prescription_id: record.prescription_id || undefined,
+        notes: record.notes || undefined,
+        created_at: now,
+        updated_at: now,
+      };
+
+      await invoke('create_chart_record', { record: newRecord });
 
       if (get().selectedPatient) {
         await get().loadChartRecords(get().selectedPatient!.id);

@@ -4,9 +4,9 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -124,15 +124,31 @@ impl<T: Serialize> ApiResponse<T> {
 }
 
 /// 쿼리 파라미터에서 토큰 추출
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct AuthQuery {
     pub token: Option<String>,
 }
 
-/// 세션 검증 헬퍼 매크로
+/// Authorization 헤더에서 Bearer 토큰 추출
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            if value.starts_with("Bearer ") {
+                Some(value[7..].to_string())
+            } else {
+                None
+            }
+        })
+}
+
+/// 세션 검증 헬퍼 매크로 (헤더 또는 쿼리에서 토큰 추출)
 macro_rules! require_auth {
-    ($state:expr, $query:expr) => {
-        match $query.token.as_ref().and_then(|t| $state.verify_session(t)) {
+    ($state:expr, $headers:expr, $query:expr) => {{
+        // 헤더에서 먼저 토큰 추출 시도, 없으면 쿼리 파라미터에서 추출
+        let token = extract_bearer_token(&$headers).or_else(|| $query.token.clone());
+        match token.as_ref().and_then(|t| $state.verify_session(t)) {
             Some(session) => session,
             None => {
                 return (
@@ -142,7 +158,7 @@ macro_rules! require_auth {
                     .into_response()
             }
         }
-    };
+    }};
 }
 
 /// 웹 API 라우터 생성
@@ -166,6 +182,14 @@ pub fn create_web_api_router(state: WebApiState) -> Router {
         // 차트 관리
         .route("/charts", post(create_chart_api))
         .route("/charts/patient/{patient_id}", get(get_charts_api))
+        // 초진차트 관리
+        .route("/initial-charts", get(list_initial_charts_api).post(create_initial_chart_api))
+        .route("/initial-charts/{id}", get(get_initial_chart_api).put(update_initial_chart_api).delete(delete_initial_chart_api))
+        .route("/initial-charts/patient/{patient_id}", get(get_initial_charts_by_patient_api))
+        // 경과기록 관리
+        .route("/progress-notes", post(create_progress_note_api))
+        .route("/progress-notes/{id}", get(get_progress_note_api).put(update_progress_note_api).delete(delete_progress_note_api))
+        .route("/progress-notes/patient/{patient_id}", get(get_progress_notes_by_patient_api))
         // 설정
         .route("/settings", get(get_settings_api).post(save_settings_api))
         // 설문 템플릿
@@ -179,6 +203,8 @@ pub fn create_web_api_router(state: WebApiState) -> Router {
         )
         // 설문 응답
         .route("/survey-responses", get(list_survey_responses_api))
+        .route("/survey-responses/{id}", delete(delete_survey_response_api))
+        .route("/survey-responses/{id}/link", post(link_survey_response_api))
         // 내보내기
         .route("/export/patient/{id}", get(export_patient_api))
         .route("/export/all", get(export_all_api))
@@ -196,6 +222,12 @@ struct LoginRequest {
 #[derive(Serialize)]
 struct LoginResponse {
     token: String,
+    user: LoginUser,
+}
+
+#[derive(Serialize)]
+struct LoginUser {
+    id: String,
     username: String,
     display_name: String,
     role: String,
@@ -242,10 +274,13 @@ async fn web_login(
         StatusCode::OK,
         Json(ApiResponse::ok(LoginResponse {
             token,
-            username: account.username,
-            display_name: account.display_name,
-            role: account.role.as_str().to_string(),
-            permissions: account.permissions,
+            user: LoginUser {
+                id: account.id,
+                username: account.username,
+                display_name: account.display_name,
+                role: account.role.as_str().to_string(),
+                permissions: account.permissions,
+            },
         })),
     )
         .into_response()
@@ -253,9 +288,11 @@ async fn web_login(
 
 async fn web_logout(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    if let Some(token) = query.token {
+    let token = extract_bearer_token(&headers).or(query.token);
+    if let Some(token) = token {
         state.remove_session(&token);
     }
     Json(ApiResponse::ok(()))
@@ -263,17 +300,28 @@ async fn web_logout(
 
 async fn web_verify(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    match query.token.as_ref().and_then(|t| state.verify_session(t)) {
-        Some(_) => Json(ApiResponse::ok(true)),
-        None => Json(ApiResponse::ok(false)),
+    let token = extract_bearer_token(&headers).or(query.token);
+    match token.as_ref().and_then(|t| state.verify_session(t)) {
+        Some(session) => Json(ApiResponse::ok(serde_json::json!({
+            "valid": true,
+            "user": {
+                "id": session.account_id,
+                "username": session.username,
+                "display_name": session.display_name,
+                "role": session.role.as_str(),
+                "permissions": session.permissions
+            }
+        }))),
+        None => Json(ApiResponse::ok(serde_json::json!({ "valid": false }))),
     }
 }
 
 // ============ 환자 관리 API ============
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct ListPatientsQuery {
     token: Option<String>,
     search: Option<String>,
@@ -281,27 +329,37 @@ struct ListPatientsQuery {
 
 async fn list_patients_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<ListPatientsQuery>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: query.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
+
+    log::info!("[웹 API] list_patients 호출, search: {:?}", query.search);
 
     match db::list_patients(query.search.as_deref()) {
-        Ok(patients) => Json(ApiResponse::ok(patients)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse::<Vec<Patient>>::err(e.to_string())),
-        )
-            .into_response(),
+        Ok(patients) => {
+            log::info!("[웹 API] list_patients 결과: {}명", patients.len());
+            Json(ApiResponse::ok(patients)).into_response()
+        }
+        Err(e) => {
+            log::error!("[웹 API] list_patients 에러: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<Vec<Patient>>::err(e.to_string())),
+            )
+                .into_response()
+        }
     }
 }
 
 async fn get_patient_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::get_patient(&id) {
         Ok(patient) => Json(ApiResponse::ok(patient)).into_response(),
@@ -322,10 +380,11 @@ struct CreatePatientRequest {
 
 async fn create_patient_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Json(payload): Json<CreatePatientRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     match db::create_patient(&payload.patient) {
         Ok(()) => Json(ApiResponse::ok(payload.patient.id)).into_response(),
@@ -346,11 +405,12 @@ struct UpdatePatientRequest {
 
 async fn update_patient_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(_id): Path<String>,
     Json(payload): Json<UpdatePatientRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     match db::update_patient(&payload.patient) {
         Ok(()) => Json(ApiResponse::ok(())).into_response(),
@@ -364,10 +424,11 @@ async fn update_patient_api(
 
 async fn delete_patient_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::delete_patient(&id) {
         Ok(()) => Json(ApiResponse::ok(())).into_response(),
@@ -390,10 +451,11 @@ struct CreatePrescriptionRequest {
 
 async fn create_prescription_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Json(payload): Json<CreatePrescriptionRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     match db::create_prescription(&payload.prescription) {
         Ok(()) => Json(ApiResponse::ok(payload.prescription.id)).into_response(),
@@ -407,10 +469,11 @@ async fn create_prescription_api(
 
 async fn get_prescriptions_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(patient_id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::get_prescriptions_by_patient(&patient_id) {
         Ok(prescriptions) => Json(ApiResponse::ok(prescriptions)).into_response(),
@@ -433,10 +496,11 @@ struct CreateChartRequest {
 
 async fn create_chart_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Json(payload): Json<CreateChartRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     match db::create_chart_record(&payload.record) {
         Ok(()) => Json(ApiResponse::ok(payload.record.id)).into_response(),
@@ -450,10 +514,11 @@ async fn create_chart_api(
 
 async fn get_charts_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(patient_id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::get_chart_records_by_patient(&patient_id) {
         Ok(charts) => Json(ApiResponse::ok(charts)).into_response(),
@@ -465,13 +530,247 @@ async fn get_charts_api(
     }
 }
 
+// ============ 초진차트 API ============
+
+use crate::models::{InitialChart, ProgressNote};
+
+async fn list_initial_charts_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::list_initial_charts() {
+        Ok(charts) => Json(ApiResponse::ok(charts)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<db::InitialChartWithPatient>>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_initial_chart_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_initial_chart(&id) {
+        Ok(chart) => Json(ApiResponse::ok(chart)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Option<InitialChart>>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_initial_charts_by_patient_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(patient_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_initial_charts_by_patient(&patient_id) {
+        Ok(charts) => Json(ApiResponse::ok(charts)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<InitialChart>>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateInitialChartRequest {
+    #[serde(flatten)]
+    chart: InitialChart,
+    token: Option<String>,
+}
+
+async fn create_initial_chart_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateInitialChartRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::create_initial_chart(&payload.chart) {
+        Ok(()) => Json(ApiResponse::ok(payload.chart.id)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<String>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateInitialChartRequest {
+    #[serde(flatten)]
+    chart: InitialChart,
+    token: Option<String>,
+}
+
+async fn update_initial_chart_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(_id): Path<String>,
+    Json(payload): Json<UpdateInitialChartRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::update_initial_chart(&payload.chart) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_initial_chart_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::delete_initial_chart(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+// ============ 경과기록 API ============
+
+async fn get_progress_note_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_progress_note(&id) {
+        Ok(note) => Json(ApiResponse::ok(note)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Option<ProgressNote>>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_progress_notes_by_patient_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(patient_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_progress_notes_by_patient(&patient_id) {
+        Ok(notes) => Json(ApiResponse::ok(notes)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<ProgressNote>>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateProgressNoteRequest {
+    #[serde(flatten)]
+    note: ProgressNote,
+    token: Option<String>,
+}
+
+async fn create_progress_note_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateProgressNoteRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::create_progress_note(&payload.note) {
+        Ok(()) => Json(ApiResponse::ok(payload.note.id)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<String>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateProgressNoteRequest {
+    #[serde(flatten)]
+    note: ProgressNote,
+    token: Option<String>,
+}
+
+async fn update_progress_note_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(_id): Path<String>,
+    Json(payload): Json<UpdateProgressNoteRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::update_progress_note(&payload.note) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_progress_note_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::delete_progress_note(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
 // ============ 설정 API ============
 
 async fn get_settings_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::get_clinic_settings() {
         Ok(settings) => Json(ApiResponse::ok(settings)).into_response(),
@@ -503,10 +802,11 @@ struct ClinicSettingsInput {
 
 async fn save_settings_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Json(payload): Json<SaveSettingsRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     use chrono::{DateTime, Utc};
 
@@ -543,9 +843,10 @@ async fn save_settings_api(
 
 async fn list_survey_templates_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::list_survey_templates() {
         Ok(templates) => Json(ApiResponse::ok(templates)).into_response(),
@@ -559,10 +860,11 @@ async fn list_survey_templates_api(
 
 async fn get_survey_template_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::get_survey_template(&id) {
         Ok(template) => Json(ApiResponse::ok(template)).into_response(),
@@ -587,10 +889,11 @@ struct SaveSurveyTemplateRequest {
 
 async fn save_survey_template_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Json(payload): Json<SaveSurveyTemplateRequest>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: payload.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     let id = payload.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
@@ -615,10 +918,11 @@ async fn save_survey_template_api(
 
 async fn delete_survey_template_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::delete_survey_template(&id) {
         Ok(()) => Json(ApiResponse::ok(())).into_response(),
@@ -632,7 +936,7 @@ async fn delete_survey_template_api(
 
 // ============ 설문 응답 API ============
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct ListResponsesQuery {
     token: Option<String>,
     limit: Option<i32>,
@@ -640,10 +944,11 @@ struct ListResponsesQuery {
 
 async fn list_survey_responses_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<ListResponsesQuery>,
 ) -> impl IntoResponse {
     let auth_query = AuthQuery { token: query.token };
-    require_auth!(state, auth_query);
+    require_auth!(state, headers, auth_query);
 
     match db::list_survey_responses(query.limit) {
         Ok(responses) => Json(ApiResponse::ok(responses)).into_response(),
@@ -655,14 +960,58 @@ async fn list_survey_responses_api(
     }
 }
 
+async fn delete_survey_response_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::delete_survey_response(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct LinkSurveyResponseRequest {
+    patient_id: String,
+    token: Option<String>,
+}
+
+async fn link_survey_response_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<LinkSurveyResponseRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::link_survey_response_to_patient(&id, &payload.patient_id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        )
+            .into_response(),
+    }
+}
+
 // ============ 내보내기 API ============
 
 async fn export_patient_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::export_patient_data(&id) {
         Ok(data) => Json(ApiResponse::ok(data)).into_response(),
@@ -676,9 +1025,10 @@ async fn export_patient_api(
 
 async fn export_all_api(
     State(state): State<WebApiState>,
+    headers: HeaderMap,
     Query(query): Query<AuthQuery>,
 ) -> impl IntoResponse {
-    require_auth!(state, query);
+    require_auth!(state, headers, query);
 
     match db::export_all_data() {
         Ok(data) => Json(ApiResponse::ok(data)).into_response(),

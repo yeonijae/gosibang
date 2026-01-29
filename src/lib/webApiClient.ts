@@ -4,7 +4,7 @@
  */
 
 import { getApiBaseUrl } from './platform';
-import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse } from '../types';
+import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse, SurveyQuestion, InitialChart, ProgressNote } from '../types';
 
 // 인증 토큰 저장
 let authToken: string | null = null;
@@ -23,6 +23,13 @@ export function getAuthToken(): string | null {
     authToken = localStorage.getItem('web_auth_token');
   }
   return authToken;
+}
+
+// API 응답 타입 (서버의 ApiResponse 구조와 일치)
+interface ApiResponse<T> {
+  success: boolean;
+  data: T | null;
+  error: string | null;
 }
 
 // 공통 fetch 래퍼
@@ -48,17 +55,19 @@ async function apiFetch<T>(
     headers,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `HTTP ${response.status}`);
-  }
-
   // 204 No Content인 경우
   if (response.status === 204) {
     return null as T;
   }
 
-  return response.json();
+  const json: ApiResponse<T> = await response.json();
+
+  // 에러 처리
+  if (!json.success || json.error) {
+    throw new Error(json.error || `HTTP ${response.status}`);
+  }
+
+  return json.data as T;
 }
 
 // ============ 인증 API ============
@@ -165,6 +174,70 @@ export async function createChartRecord(chart: Omit<ChartRecord, 'id' | 'created
   });
 }
 
+// ============ 초진차트 API ============
+
+export interface InitialChartWithPatient extends InitialChart {
+  patient_name: string;
+}
+
+export async function listInitialCharts(): Promise<InitialChartWithPatient[]> {
+  return apiFetch<InitialChartWithPatient[]>('/initial-charts');
+}
+
+export async function getInitialChart(id: string): Promise<InitialChart | null> {
+  return apiFetch<InitialChart | null>(`/initial-charts/${id}`);
+}
+
+export async function getInitialChartsByPatient(patientId: string): Promise<InitialChart[]> {
+  return apiFetch<InitialChart[]>(`/initial-charts/patient/${patientId}`);
+}
+
+export async function createInitialChart(chart: Partial<InitialChart>): Promise<string> {
+  return apiFetch<string>('/initial-charts', {
+    method: 'POST',
+    body: JSON.stringify(chart),
+  });
+}
+
+export async function updateInitialChart(id: string, chart: Partial<InitialChart>): Promise<void> {
+  return apiFetch<void>(`/initial-charts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(chart),
+  });
+}
+
+export async function deleteInitialChart(id: string): Promise<void> {
+  return apiFetch<void>(`/initial-charts/${id}`, { method: 'DELETE' });
+}
+
+// ============ 경과기록 API ============
+
+export async function getProgressNote(id: string): Promise<ProgressNote | null> {
+  return apiFetch<ProgressNote | null>(`/progress-notes/${id}`);
+}
+
+export async function getProgressNotesByPatient(patientId: string): Promise<ProgressNote[]> {
+  return apiFetch<ProgressNote[]>(`/progress-notes/patient/${patientId}`);
+}
+
+export async function createProgressNote(note: Partial<ProgressNote>): Promise<string> {
+  return apiFetch<string>('/progress-notes', {
+    method: 'POST',
+    body: JSON.stringify(note),
+  });
+}
+
+export async function updateProgressNote(id: string, note: Partial<ProgressNote>): Promise<void> {
+  return apiFetch<void>(`/progress-notes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(note),
+  });
+}
+
+export async function deleteProgressNote(id: string): Promise<void> {
+  return apiFetch<void>(`/progress-notes/${id}`, { method: 'DELETE' });
+}
+
 // ============ 설정 API ============
 
 export async function getSettings(): Promise<ClinicSettings | null> {
@@ -186,6 +259,38 @@ export async function getSurveyTemplates(): Promise<SurveyTemplate[]> {
 
 export async function getSurveyResponses(): Promise<SurveyResponse[]> {
   return apiFetch<SurveyResponse[]>('/survey-responses');
+}
+
+export async function deleteSurveyResponse(id: string): Promise<void> {
+  return apiFetch<void>(`/survey-responses/${id}`, { method: 'DELETE' });
+}
+
+export async function linkSurveyResponseToPatient(responseId: string, patientId: string): Promise<void> {
+  return apiFetch<void>(`/survey-responses/${responseId}/link`, {
+    method: 'POST',
+    body: JSON.stringify({ patient_id: patientId }),
+  });
+}
+
+// 설문 템플릿 저장
+export interface SaveSurveyTemplateRequest {
+  id?: string;
+  name: string;
+  description?: string;
+  questions: SurveyQuestion[];
+  display_mode?: string;
+  is_active?: boolean;
+}
+
+export async function saveSurveyTemplate(template: SaveSurveyTemplateRequest): Promise<string> {
+  return apiFetch<string>('/survey-templates', {
+    method: 'POST',
+    body: JSON.stringify(template),
+  });
+}
+
+export async function deleteSurveyTemplate(id: string): Promise<void> {
+  return apiFetch<void>(`/survey-templates/${id}`, { method: 'DELETE' });
 }
 
 // ============ 내보내기 API ============
