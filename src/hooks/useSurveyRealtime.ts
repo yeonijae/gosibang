@@ -11,6 +11,12 @@ interface SurveyResponseTemp {
   template_id: string;
   patient_id: string | null;
   respondent_name: string | null;
+  // 환자 정보
+  patient_name: string | null;
+  chart_number: string | null;
+  doctor_name: string | null;
+  gender: string | null;
+  age: string | null;
   answers: any[];
   synced: boolean;
   created_at: string;
@@ -40,10 +46,10 @@ export function useSurveyRealtime(userId: string | null) {
       const id = generateUUID();
       const now = new Date().toISOString();
 
-      // 응답 저장
+      // 응답 저장 (환자 정보 포함)
       db.run(
-        `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, respondent_name, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, respondent_name, patient_name, chart_number, doctor_name, gender, age, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           response.session_id,
@@ -51,6 +57,11 @@ export function useSurveyRealtime(userId: string | null) {
           response.template_id,
           JSON.stringify(response.answers),
           response.respondent_name,
+          response.patient_name,
+          response.chart_number,
+          response.doctor_name,
+          response.gender,
+          response.age,
           response.created_at,
         ]
       );

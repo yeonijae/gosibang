@@ -826,6 +826,12 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
   const { loadSessions } = useSurveyStore();
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [respondentName, setRespondentName] = useState('');
+  // 환자 정보 필드
+  const [patientName, setPatientName] = useState('');
+  const [chartNumber, setChartNumber] = useState('');
+  const [doctorName, setDoctorName] = useState('');
+  const [gender, setGender] = useState('');
+  const [age, setAge] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -862,9 +868,9 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
       const db = getDb();
       if (db) {
         db.run(
-          `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, status, expires_at, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-          [sessionId, token, '', selectedTemplateId, respondentName || null, expiresAt, userId, now]
+          `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, patient_name, chart_number, doctor_name, gender, age, status, expires_at, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          [sessionId, token, '', selectedTemplateId, respondentName || null, patientName || null, chartNumber || null, doctorName || null, gender || null, age || null, expiresAt, userId, now]
         );
         saveDb();
         console.log('[Survey] 로컬 DB에 세션 저장:', sessionId);
@@ -905,6 +911,11 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
           template_id: selectedTemplateId,
           token,
           respondent_name: respondentName || null,
+          patient_name: patientName || null,
+          chart_number: chartNumber || null,
+          doctor_name: doctorName || null,
+          gender: gender || null,
+          age: age || null,
           expires_at: expiresAt,
         })
         .select()
@@ -947,6 +958,11 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
     setGeneratedLink(null);
     setSelectedTemplateId('');
     setRespondentName('');
+    setPatientName('');
+    setChartNumber('');
+    setDoctorName('');
+    setGender('');
+    setAge('');
     setCopied(false);
   };
 
@@ -1024,21 +1040,71 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  응답자 이름 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={respondentName}
-                  onChange={(e) => setRespondentName(e.target.value)}
-                  placeholder="이름을 입력하세요"
-                  className="input-field"
-                />
+              {/* 환자 정보 입력 섹션 */}
+              <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
+                <p className="text-sm font-medium text-gray-700">환자 정보 (미리 입력)</p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">환자 이름</label>
+                    <input
+                      type="text"
+                      value={patientName}
+                      onChange={(e) => setPatientName(e.target.value)}
+                      placeholder="홍길동"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">차트번호</label>
+                    <input
+                      type="text"
+                      value={chartNumber}
+                      onChange={(e) => setChartNumber(e.target.value)}
+                      placeholder="12345"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">담당의</label>
+                    <input
+                      type="text"
+                      value={doctorName}
+                      onChange={(e) => setDoctorName(e.target.value)}
+                      placeholder="김원장"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">성별</label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="input-field text-sm"
+                    >
+                      <option value="">선택</option>
+                      <option value="male">남</option>
+                      <option value="female">여</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">나이</label>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={(e) => setAge(e.target.value)}
+                      placeholder="35"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
               <p className="text-xs text-gray-500">
-                생성된 링크로 접속하면 설문을 작성할 수 있습니다.<br />
+                환자 정보를 미리 입력하면 환자가 설문 작성 시 해당 정보가 자동으로 채워집니다.<br />
                 링크는 24시간 동안 유효합니다.
               </p>
             </>
