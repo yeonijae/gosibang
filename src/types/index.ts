@@ -258,6 +258,36 @@ export interface MedicationSchedule {
   created_at: string;
 }
 
+// 복약 기록 (MedicationLog)
+export interface MedicationLog {
+  id: string;
+  schedule_id: string;
+  taken_at: string;           // ISO 8601 datetime
+  status: MedicationStatus;
+  notes?: string;
+}
+
+// 복약 슬롯 (UI 표시용, 비영속)
+export interface MedicationSlot {
+  date: string;               // YYYY-MM-DD
+  time: string;               // HH:mm
+  schedule_id: string;
+  log_id?: string;
+  status: MedicationStatus | 'pending';
+  is_past: boolean;
+  is_active: boolean;
+}
+
+// 복약 통계
+export interface MedicationStats {
+  total_slots: number;
+  taken_count: number;
+  missed_count: number;
+  skipped_count: number;
+  adherence_rate: number;     // 0-100
+  consecutive_missed: number;
+}
+
 // 구독 상태
 export type SubscriptionStatus = 'active' | 'expired' | 'cancelled' | 'trial';
 

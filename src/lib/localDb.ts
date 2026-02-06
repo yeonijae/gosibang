@@ -2,6 +2,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import { PRESCRIPTION_DEFINITIONS } from './prescriptionData';
 import { SURVEY_TEMPLATES } from './surveyData';
+import type { MedicationSchedule, MedicationLog, MedicationStats, MedicationStatus } from '../types';
 
 let db: Database | null = null;
 let currentDbKey: string = 'gosibang_db'; // 사용자별 키
@@ -368,6 +369,33 @@ function migrateDatabase(database: Database) {
     )
   `);
 
+  // medication_schedules 테이블 생성 (복약 일정)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS medication_schedules (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      times_per_day INTEGER NOT NULL DEFAULT 2,
+      medication_times TEXT NOT NULL DEFAULT '[]',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // medication_logs 테이블 생성 (복약 기록)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS medication_logs (
+      id TEXT PRIMARY KEY,
+      schedule_id TEXT NOT NULL REFERENCES medication_schedules(id) ON DELETE CASCADE,
+      taken_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('taken', 'missed', 'skipped')),
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   saveDb();
 }
 
@@ -569,6 +597,27 @@ function createTables(database: Database) {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS medication_schedules (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      times_per_day INTEGER NOT NULL DEFAULT 2,
+      medication_times TEXT NOT NULL DEFAULT '[]',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS medication_logs (
+      id TEXT PRIMARY KEY,
+      schedule_id TEXT NOT NULL REFERENCES medication_schedules(id) ON DELETE CASCADE,
+      taken_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('taken', 'missed', 'skipped')),
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
     );
   `);
 
@@ -984,5 +1033,374 @@ export function getTrashCount(): { total: number; patients: number; prescription
   } catch (e) {
     console.error('[getTrashCount] 휴지통 개수 조회 실패:', e);
     return { total: 0, patients: 0, prescriptions: 0, charts: 0 };
+  }
+}
+
+// ===== 복약 일정 (Medication Schedule) 기능 =====
+
+// 복약 일정 목록 조회
+export function getMedicationSchedules(patientId?: string): MedicationSchedule[] {
+  if (!db) return [];
+
+  try {
+    let sql = 'SELECT * FROM medication_schedules WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (patientId) {
+      sql += ' AND patient_id = ?';
+      params.push(patientId);
+    }
+
+    sql += ' ORDER BY start_date DESC';
+
+    const schedules = queryToObjects<MedicationSchedule & { medication_times: string }>(db, sql, params);
+
+    // medication_times JSON 파싱
+    return schedules.map(s => ({
+      ...s,
+      medication_times: typeof s.medication_times === 'string'
+        ? JSON.parse(s.medication_times)
+        : s.medication_times || [],
+    }));
+  } catch (e) {
+    console.error('[getMedicationSchedules] 조회 실패:', e);
+    return [];
+  }
+}
+
+// 복약 일정 단일 조회
+export function getMedicationSchedule(id: string): MedicationSchedule | null {
+  if (!db) return null;
+
+  try {
+    const schedule = queryOne<MedicationSchedule & { medication_times: string }>(
+      db,
+      'SELECT * FROM medication_schedules WHERE id = ?',
+      [id]
+    );
+
+    if (!schedule) return null;
+
+    return {
+      ...schedule,
+      medication_times: typeof schedule.medication_times === 'string'
+        ? JSON.parse(schedule.medication_times)
+        : schedule.medication_times || [],
+    };
+  } catch (e) {
+    console.error('[getMedicationSchedule] 조회 실패:', e);
+    return null;
+  }
+}
+
+// 복약 일정 생성
+export function createMedicationSchedule(
+  schedule: Omit<MedicationSchedule, 'id' | 'created_at'>
+): MedicationSchedule | null {
+  if (!db) return null;
+
+  try {
+    const id = generateUUID();
+    const now = new Date().toISOString();
+
+    db.run(
+      `INSERT INTO medication_schedules (id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        schedule.patient_id,
+        schedule.prescription_id,
+        schedule.start_date,
+        schedule.end_date,
+        schedule.times_per_day,
+        JSON.stringify(schedule.medication_times),
+        schedule.notes || null,
+        now,
+      ]
+    );
+
+    saveDb();
+
+    return {
+      ...schedule,
+      id,
+      created_at: now,
+    };
+  } catch (e) {
+    console.error('[createMedicationSchedule] 생성 실패:', e);
+    return null;
+  }
+}
+
+// 복약 일정 수정
+export function updateMedicationSchedule(
+  id: string,
+  updates: Partial<Omit<MedicationSchedule, 'id' | 'created_at'>>
+): boolean {
+  if (!db) return false;
+
+  try {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.start_date !== undefined) {
+      fields.push('start_date = ?');
+      params.push(updates.start_date);
+    }
+    if (updates.end_date !== undefined) {
+      fields.push('end_date = ?');
+      params.push(updates.end_date);
+    }
+    if (updates.times_per_day !== undefined) {
+      fields.push('times_per_day = ?');
+      params.push(updates.times_per_day);
+    }
+    if (updates.medication_times !== undefined) {
+      fields.push('medication_times = ?');
+      params.push(JSON.stringify(updates.medication_times));
+    }
+    if (updates.notes !== undefined) {
+      fields.push('notes = ?');
+      params.push(updates.notes);
+    }
+
+    if (fields.length === 0) return true;
+
+    params.push(id);
+    db.run(`UPDATE medication_schedules SET ${fields.join(', ')} WHERE id = ?`, params);
+    saveDb();
+
+    return true;
+  } catch (e) {
+    console.error('[updateMedicationSchedule] 수정 실패:', e);
+    return false;
+  }
+}
+
+// 복약 일정 삭제
+export function deleteMedicationSchedule(id: string): boolean {
+  if (!db) return false;
+
+  try {
+    db.run('DELETE FROM medication_schedules WHERE id = ?', [id]);
+    saveDb();
+    return true;
+  } catch (e) {
+    console.error('[deleteMedicationSchedule] 삭제 실패:', e);
+    return false;
+  }
+}
+
+// ===== 복약 기록 (Medication Log) 기능 =====
+
+// 복약 기록 목록 조회
+export function getMedicationLogs(scheduleId: string): MedicationLog[] {
+  if (!db) return [];
+
+  try {
+    return queryToObjects<MedicationLog>(
+      db,
+      'SELECT * FROM medication_logs WHERE schedule_id = ? ORDER BY taken_at DESC',
+      [scheduleId]
+    );
+  } catch (e) {
+    console.error('[getMedicationLogs] 조회 실패:', e);
+    return [];
+  }
+}
+
+// 특정 날짜 범위의 복약 기록 조회
+export function getMedicationLogsByDateRange(
+  scheduleId: string,
+  startDate: string,
+  endDate: string
+): MedicationLog[] {
+  if (!db) return [];
+
+  try {
+    return queryToObjects<MedicationLog>(
+      db,
+      `SELECT * FROM medication_logs
+       WHERE schedule_id = ?
+         AND date(taken_at) >= date(?)
+         AND date(taken_at) <= date(?)
+       ORDER BY taken_at ASC`,
+      [scheduleId, startDate, endDate]
+    );
+  } catch (e) {
+    console.error('[getMedicationLogsByDateRange] 조회 실패:', e);
+    return [];
+  }
+}
+
+// 복약 기록 생성
+export function createMedicationLog(
+  log: Omit<MedicationLog, 'id'>
+): MedicationLog | null {
+  if (!db) return null;
+
+  try {
+    const id = generateUUID();
+
+    db.run(
+      `INSERT INTO medication_logs (id, schedule_id, taken_at, status, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      [id, log.schedule_id, log.taken_at, log.status, log.notes || null]
+    );
+
+    saveDb();
+
+    return {
+      ...log,
+      id,
+    };
+  } catch (e) {
+    console.error('[createMedicationLog] 생성 실패:', e);
+    return null;
+  }
+}
+
+// 복약 기록 수정
+export function updateMedicationLog(
+  id: string,
+  updates: Partial<Omit<MedicationLog, 'id' | 'schedule_id'>>
+): boolean {
+  if (!db) return false;
+
+  try {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.taken_at !== undefined) {
+      fields.push('taken_at = ?');
+      params.push(updates.taken_at);
+    }
+    if (updates.status !== undefined) {
+      fields.push('status = ?');
+      params.push(updates.status);
+    }
+    if (updates.notes !== undefined) {
+      fields.push('notes = ?');
+      params.push(updates.notes);
+    }
+
+    if (fields.length === 0) return true;
+
+    params.push(id);
+    db.run(`UPDATE medication_logs SET ${fields.join(', ')} WHERE id = ?`, params);
+    saveDb();
+
+    return true;
+  } catch (e) {
+    console.error('[updateMedicationLog] 수정 실패:', e);
+    return false;
+  }
+}
+
+// 복약 기록 삭제
+export function deleteMedicationLog(id: string): boolean {
+  if (!db) return false;
+
+  try {
+    db.run('DELETE FROM medication_logs WHERE id = ?', [id]);
+    saveDb();
+    return true;
+  } catch (e) {
+    console.error('[deleteMedicationLog] 삭제 실패:', e);
+    return false;
+  }
+}
+
+// 복약 통계 계산
+export function getMedicationStats(scheduleId: string): MedicationStats {
+  if (!db) {
+    return {
+      total_slots: 0,
+      taken_count: 0,
+      missed_count: 0,
+      skipped_count: 0,
+      adherence_rate: 0,
+      consecutive_missed: 0,
+    };
+  }
+
+  try {
+    // 일정 정보 조회
+    const schedule = getMedicationSchedule(scheduleId);
+    if (!schedule) {
+      return {
+        total_slots: 0,
+        taken_count: 0,
+        missed_count: 0,
+        skipped_count: 0,
+        adherence_rate: 0,
+        consecutive_missed: 0,
+      };
+    }
+
+    // 총 슬롯 수 계산 (일수 * 하루 복약 횟수)
+    const startDate = new Date(schedule.start_date);
+    const endDate = new Date(schedule.end_date);
+    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const total_slots = days * schedule.times_per_day;
+
+    // 상태별 기록 수 조회
+    const stats = queryOne<{ taken: number; missed: number; skipped: number }>(
+      db,
+      `SELECT
+         SUM(CASE WHEN status = 'taken' THEN 1 ELSE 0 END) as taken,
+         SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed,
+         SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped
+       FROM medication_logs
+       WHERE schedule_id = ?`,
+      [scheduleId]
+    );
+
+    const taken_count = stats?.taken || 0;
+    const missed_count = stats?.missed || 0;
+    const skipped_count = stats?.skipped || 0;
+
+    // 순응률 계산 (복용완료 / (전체 - 건너뜀) * 100)
+    const effectiveTotal = total_slots - skipped_count;
+    const adherence_rate = effectiveTotal > 0
+      ? Math.round((taken_count / effectiveTotal) * 100)
+      : 0;
+
+    // 연속 미복용 횟수 계산
+    const logs = queryToObjects<{ status: MedicationStatus }>(
+      db,
+      `SELECT status FROM medication_logs
+       WHERE schedule_id = ?
+       ORDER BY taken_at DESC`,
+      [scheduleId]
+    );
+
+    let consecutive_missed = 0;
+    for (const log of logs) {
+      if (log.status === 'missed') {
+        consecutive_missed++;
+      } else if (log.status === 'taken') {
+        break;
+      }
+    }
+
+    return {
+      total_slots,
+      taken_count,
+      missed_count,
+      skipped_count,
+      adherence_rate,
+      consecutive_missed,
+    };
+  } catch (e) {
+    console.error('[getMedicationStats] 통계 계산 실패:', e);
+    return {
+      total_slots: 0,
+      taken_count: 0,
+      missed_count: 0,
+      skipped_count: 0,
+      adherence_rate: 0,
+      consecutive_missed: 0,
+    };
   }
 }
