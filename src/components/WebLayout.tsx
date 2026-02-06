@@ -8,6 +8,7 @@ import {
   Users,
   FileText,
   ClipboardList,
+  Pill,
   LogOut,
   Menu,
   X
@@ -39,6 +40,12 @@ const navItems = [
     icon: ClipboardList,
     label: '설문',
     permission: 'survey_read' as const
+  },
+  {
+    to: '/medications',
+    icon: Pill,
+    label: '복약관리',
+    permission: 'prescriptions_read' as const
   },
 ];
 

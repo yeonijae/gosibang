@@ -2038,3 +2038,429 @@ pub fn delete_progress_note(id: &str) -> AppResult<()> {
     )?;
     Ok(())
 }
+
+// ============ 복약 일정 관리 ============
+
+use crate::models::{MedicationSchedule, MedicationLog, MedicationStatus, MedicationStats};
+
+/// 복약 일정 목록 조회
+pub fn list_medication_schedules() -> AppResult<Vec<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at
+           FROM medication_schedules ORDER BY created_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let medication_times_json: String = row.get(6)?;
+        let medication_times: Vec<String> = serde_json::from_str(&medication_times_json).unwrap_or_default();
+        Ok(MedicationSchedule {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            prescription_id: row.get(2)?,
+            start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            times_per_day: row.get(5)?,
+            medication_times,
+            notes: row.get(7)?,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                .unwrap()
+                .with_timezone(&Utc),
+        })
+    })?;
+
+    let mut schedules = Vec::new();
+    for row in rows {
+        schedules.push(row?);
+    }
+    Ok(schedules)
+}
+
+/// 복약 일정 조회 (ID로)
+pub fn get_medication_schedule(id: &str) -> AppResult<Option<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at
+           FROM medication_schedules WHERE id = ?1"#,
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        let medication_times_json: String = row.get(6)?;
+        let medication_times: Vec<String> = serde_json::from_str(&medication_times_json).unwrap_or_default();
+        Ok(MedicationSchedule {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            prescription_id: row.get(2)?,
+            start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            times_per_day: row.get(5)?,
+            medication_times,
+            notes: row.get(7)?,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                .unwrap()
+                .with_timezone(&Utc),
+        })
+    });
+
+    match result {
+        Ok(schedule) => Ok(Some(schedule)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 환자별 복약 일정 조회
+pub fn get_medication_schedules_by_patient(patient_id: &str) -> AppResult<Vec<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at
+           FROM medication_schedules WHERE patient_id = ?1 ORDER BY created_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([patient_id], |row| {
+        let medication_times_json: String = row.get(6)?;
+        let medication_times: Vec<String> = serde_json::from_str(&medication_times_json).unwrap_or_default();
+        Ok(MedicationSchedule {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            prescription_id: row.get(2)?,
+            start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            times_per_day: row.get(5)?,
+            medication_times,
+            notes: row.get(7)?,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                .unwrap()
+                .with_timezone(&Utc),
+        })
+    })?;
+
+    let mut schedules = Vec::new();
+    for row in rows {
+        schedules.push(row?);
+    }
+    Ok(schedules)
+}
+
+/// 복약 일정 생성
+pub fn create_medication_schedule(schedule: &MedicationSchedule) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let medication_times_json = serde_json::to_string(&schedule.medication_times)?;
+
+    conn.execute(
+        r#"INSERT INTO medication_schedules (id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+        params![
+            schedule.id,
+            schedule.patient_id,
+            schedule.prescription_id,
+            schedule.start_date.to_rfc3339(),
+            schedule.end_date.to_rfc3339(),
+            schedule.times_per_day,
+            medication_times_json,
+            schedule.notes,
+            schedule.created_at.to_rfc3339(),
+        ],
+    )?;
+
+    log::info!("복약 일정 생성됨: {}", schedule.id);
+    Ok(())
+}
+
+/// 복약 일정 수정
+pub fn update_medication_schedule(id: &str, schedule: &MedicationSchedule) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let medication_times_json = serde_json::to_string(&schedule.medication_times)?;
+
+    conn.execute(
+        r#"UPDATE medication_schedules SET
+           patient_id = ?2, prescription_id = ?3, start_date = ?4, end_date = ?5,
+           times_per_day = ?6, medication_times = ?7, notes = ?8
+           WHERE id = ?1"#,
+        params![
+            id,
+            schedule.patient_id,
+            schedule.prescription_id,
+            schedule.start_date.to_rfc3339(),
+            schedule.end_date.to_rfc3339(),
+            schedule.times_per_day,
+            medication_times_json,
+            schedule.notes,
+        ],
+    )?;
+
+    log::info!("복약 일정 수정됨: {}", id);
+    Ok(())
+}
+
+/// 복약 일정 삭제
+pub fn delete_medication_schedule(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    // 연관된 복약 기록도 삭제
+    conn.execute("DELETE FROM medication_logs WHERE schedule_id = ?1", [id])?;
+    conn.execute("DELETE FROM medication_schedules WHERE id = ?1", [id])?;
+
+    log::info!("복약 일정 삭제됨: {}", id);
+    Ok(())
+}
+
+// ============ 복약 기록 관리 ============
+
+/// 복약 기록 목록 조회
+pub fn list_medication_logs() -> AppResult<Vec<MedicationLog>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, schedule_id, taken_at, status, notes
+           FROM medication_logs ORDER BY taken_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let status_str: String = row.get(3)?;
+        let status = match status_str.as_str() {
+            "taken" => MedicationStatus::Taken,
+            "missed" => MedicationStatus::Missed,
+            "skipped" => MedicationStatus::Skipped,
+            _ => MedicationStatus::Taken,
+        };
+        Ok(MedicationLog {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            taken_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            status,
+            notes: row.get(4)?,
+        })
+    })?;
+
+    let mut logs = Vec::new();
+    for row in rows {
+        logs.push(row?);
+    }
+    Ok(logs)
+}
+
+/// 복약 기록 조회 (ID로)
+pub fn get_medication_log(id: &str) -> AppResult<Option<MedicationLog>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, schedule_id, taken_at, status, notes
+           FROM medication_logs WHERE id = ?1"#,
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        let status_str: String = row.get(3)?;
+        let status = match status_str.as_str() {
+            "taken" => MedicationStatus::Taken,
+            "missed" => MedicationStatus::Missed,
+            "skipped" => MedicationStatus::Skipped,
+            _ => MedicationStatus::Taken,
+        };
+        Ok(MedicationLog {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            taken_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            status,
+            notes: row.get(4)?,
+        })
+    });
+
+    match result {
+        Ok(log) => Ok(Some(log)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 일정별 복약 기록 조회
+pub fn get_medication_logs_by_schedule(schedule_id: &str) -> AppResult<Vec<MedicationLog>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, schedule_id, taken_at, status, notes
+           FROM medication_logs WHERE schedule_id = ?1 ORDER BY taken_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([schedule_id], |row| {
+        let status_str: String = row.get(3)?;
+        let status = match status_str.as_str() {
+            "taken" => MedicationStatus::Taken,
+            "missed" => MedicationStatus::Missed,
+            "skipped" => MedicationStatus::Skipped,
+            _ => MedicationStatus::Taken,
+        };
+        Ok(MedicationLog {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            taken_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            status,
+            notes: row.get(4)?,
+        })
+    })?;
+
+    let mut logs = Vec::new();
+    for row in rows {
+        logs.push(row?);
+    }
+    Ok(logs)
+}
+
+/// 복약 기록 생성
+pub fn create_medication_log(log: &MedicationLog) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let status_str = match log.status {
+        MedicationStatus::Taken => "taken",
+        MedicationStatus::Missed => "missed",
+        MedicationStatus::Skipped => "skipped",
+    };
+
+    conn.execute(
+        r#"INSERT INTO medication_logs (id, schedule_id, taken_at, status, notes)
+           VALUES (?1, ?2, ?3, ?4, ?5)"#,
+        params![
+            log.id,
+            log.schedule_id,
+            log.taken_at.to_rfc3339(),
+            status_str,
+            log.notes,
+        ],
+    )?;
+
+    log::info!("복약 기록 생성됨: {}", log.id);
+    Ok(())
+}
+
+/// 복약 기록 수정
+pub fn update_medication_log(id: &str, log: &MedicationLog) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let status_str = match log.status {
+        MedicationStatus::Taken => "taken",
+        MedicationStatus::Missed => "missed",
+        MedicationStatus::Skipped => "skipped",
+    };
+
+    conn.execute(
+        r#"UPDATE medication_logs SET
+           schedule_id = ?2, taken_at = ?3, status = ?4, notes = ?5
+           WHERE id = ?1"#,
+        params![
+            id,
+            log.schedule_id,
+            log.taken_at.to_rfc3339(),
+            status_str,
+            log.notes,
+        ],
+    )?;
+
+    log::info!("복약 기록 수정됨: {}", id);
+    Ok(())
+}
+
+/// 환자별 복약 통계 조회
+pub fn get_medication_stats_by_patient(patient_id: &str) -> AppResult<MedicationStats> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    // 전체 일정 수
+    let total_schedules: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM medication_schedules WHERE patient_id = ?1",
+        [patient_id],
+        |row| row.get(0),
+    )?;
+
+    // 활성 일정 수 (종료일이 현재 시간 이후)
+    let now = Utc::now().to_rfc3339();
+    let active_schedules: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM medication_schedules WHERE patient_id = ?1 AND end_date > ?2",
+        params![patient_id, now],
+        |row| row.get(0),
+    )?;
+
+    // 복약 기록 통계
+    let total_logs: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medication_logs ml
+           JOIN medication_schedules ms ON ml.schedule_id = ms.id
+           WHERE ms.patient_id = ?1"#,
+        [patient_id],
+        |row| row.get(0),
+    )?;
+
+    let taken_count: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medication_logs ml
+           JOIN medication_schedules ms ON ml.schedule_id = ms.id
+           WHERE ms.patient_id = ?1 AND ml.status = 'taken'"#,
+        [patient_id],
+        |row| row.get(0),
+    )?;
+
+    let missed_count: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medication_logs ml
+           JOIN medication_schedules ms ON ml.schedule_id = ms.id
+           WHERE ms.patient_id = ?1 AND ml.status = 'missed'"#,
+        [patient_id],
+        |row| row.get(0),
+    )?;
+
+    let skipped_count: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medication_logs ml
+           JOIN medication_schedules ms ON ml.schedule_id = ms.id
+           WHERE ms.patient_id = ?1 AND ml.status = 'skipped'"#,
+        [patient_id],
+        |row| row.get(0),
+    )?;
+
+    // 복약 순응률 계산 (복용한 횟수 / 전체 기록 수 * 100)
+    let compliance_rate = if total_logs > 0 {
+        (taken_count as f64 / total_logs as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(MedicationStats {
+        patient_id: patient_id.to_string(),
+        total_schedules,
+        active_schedules,
+        total_logs,
+        taken_count,
+        missed_count,
+        skipped_count,
+        compliance_rate,
+    })
+}

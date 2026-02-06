@@ -305,7 +305,6 @@ pub struct SurveyAnswer {
 }
 
 /// 복약 관리
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MedicationSchedule {
     pub id: String,
@@ -320,7 +319,6 @@ pub struct MedicationSchedule {
 }
 
 /// 복약 기록
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MedicationLog {
     pub id: String,
@@ -330,13 +328,25 @@ pub struct MedicationLog {
     pub notes: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MedicationStatus {
     Taken,      // 복용함
     Missed,     // 미복용
     Skipped,    // 건너뜀
+}
+
+/// 복약 통계
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MedicationStats {
+    pub patient_id: String,
+    pub total_schedules: i32,
+    pub active_schedules: i32,
+    pub total_logs: i32,
+    pub taken_count: i32,
+    pub missed_count: i32,
+    pub skipped_count: i32,
+    pub compliance_rate: f64,  // 복약 순응률 (%)
 }
 
 /// 구독 정보 (Supabase에서 가져옴)
@@ -391,6 +401,10 @@ pub struct StaffPermissions {
     pub survey_read: bool,
     pub survey_write: bool,
     pub settings_read: bool,
+    #[serde(default)]
+    pub medications_read: bool,
+    #[serde(default)]
+    pub medications_write: bool,
 }
 
 impl StaffPermissions {
@@ -406,6 +420,8 @@ impl StaffPermissions {
             survey_read: true,
             survey_write: true,
             settings_read: true,
+            medications_read: true,
+            medications_write: true,
         }
     }
 
@@ -421,6 +437,8 @@ impl StaffPermissions {
             survey_read: true,
             survey_write: true,
             settings_read: false,
+            medications_read: true,
+            medications_write: true,
         }
     }
 
@@ -436,6 +454,8 @@ impl StaffPermissions {
             survey_read: true,
             survey_write: false,
             settings_read: false,
+            medications_read: true,
+            medications_write: false,
         }
     }
 }

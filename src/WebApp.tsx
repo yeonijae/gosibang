@@ -12,6 +12,7 @@ import { WebDashboard } from './pages/WebDashboard';
 import { WebPatients } from './pages/WebPatients';
 import { WebCharts } from './pages/WebCharts';
 import { WebSurveys } from './pages/WebSurveys';
+import { WebMedications } from './pages/WebMedications';
 import { WebLayout } from './components/WebLayout';
 import { useWebAuthStore } from './store/webAuthStore';
 
@@ -75,6 +76,7 @@ export function WebApp() {
           <Route path="/patients" element={<WebPatients />} />
           <Route path="/charts" element={<WebCharts />} />
           <Route path="/surveys" element={<WebSurveys />} />
+          <Route path="/medications" element={<WebMedications />} />
         </Route>
 
         {/* 기본 리다이렉트 */}

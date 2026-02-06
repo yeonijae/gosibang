@@ -208,6 +208,14 @@ pub fn create_web_api_router(state: WebApiState) -> Router {
         // 내보내기
         .route("/export/patient/{id}", get(export_patient_api))
         .route("/export/all", get(export_all_api))
+        // 복약 관리
+        .route("/medications/schedules", get(list_medication_schedules_api).post(create_medication_schedule_api))
+        .route("/medications/schedules/{id}", get(get_medication_schedule_api).put(update_medication_schedule_api).delete(delete_medication_schedule_api))
+        .route("/medications/schedules/patient/{patient_id}", get(get_medication_schedules_by_patient_api))
+        .route("/medications/logs", get(list_medication_logs_api).post(create_medication_log_api))
+        .route("/medications/logs/{id}", get(get_medication_log_api).put(update_medication_log_api))
+        .route("/medications/logs/schedule/{schedule_id}", get(get_medication_logs_by_schedule_api))
+        .route("/medications/stats/patient/{patient_id}", get(get_medication_stats_by_patient_api))
         .with_state(state)
 }
 
@@ -532,7 +540,7 @@ async fn get_charts_api(
 
 // ============ 초진차트 API ============
 
-use crate::models::{InitialChart, ProgressNote};
+use crate::models::{InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats};
 
 async fn list_initial_charts_api(
     State(state): State<WebApiState>,
@@ -1037,5 +1045,327 @@ async fn export_all_api(
             Json(ApiResponse::<String>::err(e.to_string())),
         )
             .into_response(),
+    }
+}
+
+// ============ 복약 일정 API ============
+
+async fn list_medication_schedules_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::list_medication_schedules() {
+        Ok(schedules) => Json(ApiResponse::ok(schedules)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<MedicationSchedule>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_medication_schedule_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::get_medication_schedule(&id) {
+        Ok(schedule) => Json(ApiResponse::ok(schedule)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Option<MedicationSchedule>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_medication_schedules_by_patient_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(patient_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::get_medication_schedules_by_patient(&patient_id) {
+        Ok(schedules) => Json(ApiResponse::ok(schedules)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<MedicationSchedule>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateMedicationScheduleRequest {
+    #[serde(flatten)]
+    schedule: MedicationSchedule,
+    token: Option<String>,
+}
+
+async fn create_medication_schedule_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateMedicationScheduleRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    let session = require_auth!(state, headers, auth_query);
+
+    if !session.permissions.medications_write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 쓰기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::create_medication_schedule(&payload.schedule) {
+        Ok(()) => Json(ApiResponse::ok(payload.schedule.id)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<String>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateMedicationScheduleRequest {
+    #[serde(flatten)]
+    schedule: MedicationSchedule,
+    token: Option<String>,
+}
+
+async fn update_medication_schedule_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateMedicationScheduleRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    let session = require_auth!(state, headers, auth_query);
+
+    if !session.permissions.medications_write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 쓰기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::update_medication_schedule(&id, &payload.schedule) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn delete_medication_schedule_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 쓰기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::delete_medication_schedule(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+// ============ 복약 기록 API ============
+
+async fn list_medication_logs_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::list_medication_logs() {
+        Ok(logs) => Json(ApiResponse::ok(logs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<MedicationLog>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_medication_log_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::get_medication_log(&id) {
+        Ok(log) => Json(ApiResponse::ok(log)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Option<MedicationLog>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_medication_logs_by_schedule_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(schedule_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::get_medication_logs_by_schedule(&schedule_id) {
+        Ok(logs) => Json(ApiResponse::ok(logs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<MedicationLog>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateMedicationLogRequest {
+    #[serde(flatten)]
+    log: MedicationLog,
+    token: Option<String>,
+}
+
+async fn create_medication_log_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateMedicationLogRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    let session = require_auth!(state, headers, auth_query);
+
+    if !session.permissions.medications_write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 쓰기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::create_medication_log(&payload.log) {
+        Ok(()) => Json(ApiResponse::ok(payload.log.id)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<String>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateMedicationLogRequest {
+    #[serde(flatten)]
+    log: MedicationLog,
+    token: Option<String>,
+}
+
+async fn update_medication_log_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateMedicationLogRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    let session = require_auth!(state, headers, auth_query);
+
+    if !session.permissions.medications_write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 쓰기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::update_medication_log(&id, &payload.log) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+// ============ 복약 통계 API ============
+
+async fn get_medication_stats_by_patient_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(patient_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    let session = require_auth!(state, headers, query);
+
+    if !session.permissions.medications_read {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::<()>::err("복약 정보 읽기 권한이 없습니다")),
+        ).into_response();
+    }
+
+    match db::get_medication_stats_by_patient(&patient_id) {
+        Ok(stats) => Json(ApiResponse::ok(stats)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<MedicationStats>::err(e.to_string())),
+        ).into_response(),
     }
 }

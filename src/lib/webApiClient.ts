@@ -4,7 +4,7 @@
  */
 
 import { getApiBaseUrl } from './platform';
-import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse, SurveyQuestion, InitialChart, ProgressNote } from '../types';
+import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse, SurveyQuestion, InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats } from '../types';
 
 // 인증 토큰 저장
 let authToken: string | null = null;
@@ -323,4 +323,81 @@ export async function exportAll(): Promise<Blob> {
   }
 
   return response.blob();
+}
+
+// ============ 복약 관리 API ============
+
+// 복약 일정
+export async function listMedicationSchedules(): Promise<MedicationSchedule[]> {
+  return apiFetch<MedicationSchedule[]>('/medications/schedules');
+}
+
+export async function getMedicationSchedule(id: string): Promise<MedicationSchedule | null> {
+  return apiFetch<MedicationSchedule | null>(`/medications/schedules/${id}`);
+}
+
+export async function getMedicationSchedulesByPatient(patientId: string): Promise<MedicationSchedule[]> {
+  return apiFetch<MedicationSchedule[]>(`/medications/schedules/patient/${patientId}`);
+}
+
+export async function createMedicationSchedule(
+  data: Omit<MedicationSchedule, 'id' | 'created_at'>
+): Promise<string> {
+  return apiFetch<string>('/medications/schedules', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMedicationSchedule(
+  id: string,
+  data: Partial<MedicationSchedule>
+): Promise<void> {
+  return apiFetch<void>(`/medications/schedules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMedicationSchedule(id: string): Promise<void> {
+  return apiFetch<void>(`/medications/schedules/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// 복약 기록
+export async function listMedicationLogs(): Promise<MedicationLog[]> {
+  return apiFetch<MedicationLog[]>('/medications/logs');
+}
+
+export async function getMedicationLog(id: string): Promise<MedicationLog | null> {
+  return apiFetch<MedicationLog | null>(`/medications/logs/${id}`);
+}
+
+export async function getMedicationLogsBySchedule(scheduleId: string): Promise<MedicationLog[]> {
+  return apiFetch<MedicationLog[]>(`/medications/logs/schedule/${scheduleId}`);
+}
+
+export async function createMedicationLog(
+  data: Omit<MedicationLog, 'id'>
+): Promise<string> {
+  return apiFetch<string>('/medications/logs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMedicationLog(
+  id: string,
+  data: Partial<MedicationLog>
+): Promise<void> {
+  return apiFetch<void>(`/medications/logs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// 복약 통계
+export async function getMedicationStatsByPatient(patientId: string): Promise<MedicationStats> {
+  return apiFetch<MedicationStats>(`/medications/stats/patient/${patientId}`);
 }
