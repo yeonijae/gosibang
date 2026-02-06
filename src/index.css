@@ -63,10 +63,30 @@ body {
 }
 
 /* 입력 필드 스타일 */
-.input-field {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm;
+.input-field,
+.input {
+  @apply py-2 border border-gray-300 rounded-md shadow-sm;
   @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
   @apply disabled:bg-gray-100 disabled:cursor-not-allowed;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+/* 아이콘이 있는 입력 필드 (pl-9 등 사용 시 왼쪽 패딩 오버라이드) */
+.input.pl-9,
+.input-field.pl-9 {
+  padding-left: 2.25rem;
+}
+
+.input.pl-10,
+.input-field.pl-10 {
+  padding-left: 2.5rem;
+}
+
+/* select, textarea 스타일 */
+select.input,
+textarea.input {
+  @apply bg-white;
 }
 
 .btn-primary {

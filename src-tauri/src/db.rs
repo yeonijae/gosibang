@@ -21,7 +21,10 @@ fn get_db_path() -> AppResult<PathBuf> {
 /// 데이터베이스가 초기화되어 있는지 확인하고, 안 되어 있으면 자동 초기화
 pub fn ensure_db_initialized() -> AppResult<()> {
     if DB_CONNECTION.get().is_none() {
+        log::info!("[DB] ensure_db_initialized: DB가 초기화되지 않음, init_database 호출");
         init_database("")?;
+    } else {
+        log::debug!("[DB] ensure_db_initialized: DB 이미 초기화됨");
     }
     Ok(())
 }
@@ -30,11 +33,14 @@ pub fn ensure_db_initialized() -> AppResult<()> {
 pub fn init_database(_encryption_key: &str) -> AppResult<()> {
     // 이미 초기화되어 있으면 스킵
     if DB_CONNECTION.get().is_some() {
+        log::info!("[DB] init_database: 이미 초기화됨, 스킵");
         return Ok(());
     }
 
     let db_path = get_db_path()?;
+    log::info!("[DB] init_database: DB 경로 = {:?}", db_path);
     let conn = Connection::open(&db_path)?;
+    log::info!("[DB] init_database: DB 연결 성공");
 
     // TODO: 배포 시 SQLCipher 활성화 후 아래 주석 해제
     // conn.execute_batch(&format!("PRAGMA key = '{}';", encryption_key))?;
@@ -387,6 +393,48 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
             FOREIGN KEY (prescription_id) REFERENCES prescriptions(id)
         );
 
+        -- 초진차트
+        CREATE TABLE IF NOT EXISTS initial_charts (
+            id TEXT PRIMARY KEY,
+            patient_id TEXT NOT NULL,
+            doctor_name TEXT,
+            chart_date TEXT NOT NULL,
+            chief_complaint TEXT,
+            present_illness TEXT,
+            past_medical_history TEXT,
+            notes TEXT,
+            prescription_issued INTEGER DEFAULT 0,
+            prescription_issued_at TEXT,
+            deleted_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (patient_id) REFERENCES patients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_initial_charts_patient ON initial_charts(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_initial_charts_date ON initial_charts(chart_date);
+
+        -- 경과기록
+        CREATE TABLE IF NOT EXISTS progress_notes (
+            id TEXT PRIMARY KEY,
+            patient_id TEXT NOT NULL,
+            doctor_name TEXT,
+            note_date TEXT NOT NULL,
+            subjective TEXT,
+            objective TEXT,
+            assessment TEXT,
+            plan TEXT,
+            follow_up_plan TEXT,
+            notes TEXT,
+            prescription_issued INTEGER DEFAULT 0,
+            prescription_issued_at TEXT,
+            deleted_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (patient_id) REFERENCES patients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_progress_notes_patient ON progress_notes(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_progress_notes_date ON progress_notes(note_date);
+
         -- 설문지 템플릿
         CREATE TABLE IF NOT EXISTS survey_templates (
             id TEXT PRIMARY KEY,
@@ -606,6 +654,7 @@ pub fn debug_get_all_clinic_rows() -> AppResult<Vec<String>> {
 // ============ 환자 관리 ============
 
 pub fn create_patient(patient: &Patient) -> AppResult<()> {
+    ensure_db_initialized()?;
     let conn = get_conn()?;
     conn.execute(
         r#"INSERT INTO patients (id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at)
@@ -627,6 +676,7 @@ pub fn create_patient(patient: &Patient) -> AppResult<()> {
 }
 
 pub fn get_patient(id: &str) -> AppResult<Option<Patient>> {
+    ensure_db_initialized()?;
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
         "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
@@ -660,7 +710,11 @@ pub fn get_patient(id: &str) -> AppResult<Option<Patient>> {
 }
 
 pub fn list_patients(search: Option<&str>) -> AppResult<Vec<Patient>> {
+    log::info!("[DB] list_patients 호출, search: {:?}", search);
+    ensure_db_initialized()?;
     let conn = get_conn()?;
+    log::info!("[DB] list_patients: DB 연결 획득 성공");
+
     let query = match search {
         Some(_) => {
             "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
@@ -683,6 +737,7 @@ pub fn list_patients(search: Option<&str>) -> AppResult<Vec<Patient>> {
     for row in rows {
         patients.push(row?);
     }
+    log::info!("[DB] list_patients: 결과 {}명", patients.len());
     Ok(patients)
 }
 
@@ -706,6 +761,7 @@ fn map_patient_row(row: &rusqlite::Row) -> rusqlite::Result<Patient> {
 }
 
 pub fn update_patient(patient: &Patient) -> AppResult<()> {
+    ensure_db_initialized()?;
     let conn = get_conn()?;
     conn.execute(
         r#"UPDATE patients SET name = ?2, chart_number = ?3, birth_date = ?4, gender = ?5, phone = ?6,
@@ -726,6 +782,7 @@ pub fn update_patient(patient: &Patient) -> AppResult<()> {
 }
 
 pub fn delete_patient(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
     let conn = get_conn()?;
     conn.execute("DELETE FROM patients WHERE id = ?1", [id])?;
     Ok(())
@@ -1363,6 +1420,36 @@ pub fn delete_survey_template(id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// 설문 응답 삭제
+pub fn delete_survey_response(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM survey_responses WHERE id = ?1", [id])?;
+    log::info!("설문 응답 삭제됨: {}", id);
+    Ok(())
+}
+
+/// 설문 응답에 환자 연결
+pub fn link_survey_response_to_patient(response_id: &str, patient_id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    // 환자 이름 조회
+    let patient_name: Option<String> = conn.query_row(
+        "SELECT name FROM patients WHERE id = ?1",
+        [patient_id],
+        |row| row.get(0),
+    ).ok();
+
+    conn.execute(
+        "UPDATE survey_responses SET patient_id = ?1 WHERE id = ?2",
+        params![patient_id, response_id],
+    )?;
+
+    log::info!("설문 응답 환자 연결: {} -> {} ({})", response_id, patient_id, patient_name.unwrap_or_default());
+    Ok(())
+}
+
 /// 기본 설문 템플릿 복원
 pub fn restore_default_templates() -> AppResult<()> {
     ensure_db_initialized()?;
@@ -1598,4 +1685,356 @@ pub fn verify_staff_account_password(username: &str, password: &str) -> AppResul
 pub fn hash_staff_password(password: &str) -> AppResult<String> {
     bcrypt::hash(password, bcrypt::DEFAULT_COST)
         .map_err(|e| AppError::Custom(format!("Password hashing failed: {}", e)))
+}
+
+// ============ 초진차트 관리 ============
+
+use crate::models::{InitialChart, ProgressNote};
+
+/// 초진차트 생성
+pub fn create_initial_chart(chart: &InitialChart) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        r#"INSERT INTO initial_charts (id, patient_id, doctor_name, chart_date, chief_complaint, present_illness, past_medical_history, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+        params![
+            chart.id,
+            chart.patient_id,
+            chart.doctor_name,
+            chart.chart_date,
+            chart.chief_complaint,
+            chart.present_illness,
+            chart.past_medical_history,
+            chart.notes,
+            if chart.prescription_issued { 1 } else { 0 },
+            chart.prescription_issued_at,
+            chart.deleted_at,
+            chart.created_at.to_rfc3339(),
+            chart.updated_at.to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 초진차트 조회
+pub fn get_initial_chart(id: &str) -> AppResult<Option<InitialChart>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, doctor_name, chart_date, chief_complaint, present_illness, past_medical_history, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at
+           FROM initial_charts WHERE id = ?1 AND deleted_at IS NULL"#,
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        Ok(InitialChart {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            doctor_name: row.get(2)?,
+            chart_date: row.get(3)?,
+            chief_complaint: row.get(4)?,
+            present_illness: row.get(5)?,
+            past_medical_history: row.get(6)?,
+            notes: row.get(7)?,
+            prescription_issued: row.get::<_, i32>(8)? != 0,
+            prescription_issued_at: row.get(9)?,
+            deleted_at: row.get(10)?,
+            created_at: row.get::<_, String>(11)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(12)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    });
+
+    match result {
+        Ok(chart) => Ok(Some(chart)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 환자별 초진차트 목록 조회
+pub fn get_initial_charts_by_patient(patient_id: &str) -> AppResult<Vec<InitialChart>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, doctor_name, chart_date, chief_complaint, present_illness, past_medical_history, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at
+           FROM initial_charts WHERE patient_id = ?1 AND deleted_at IS NULL ORDER BY chart_date DESC"#,
+    )?;
+
+    let rows = stmt.query_map([patient_id], |row| {
+        Ok(InitialChart {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            doctor_name: row.get(2)?,
+            chart_date: row.get(3)?,
+            chief_complaint: row.get(4)?,
+            present_illness: row.get(5)?,
+            past_medical_history: row.get(6)?,
+            notes: row.get(7)?,
+            prescription_issued: row.get::<_, i32>(8)? != 0,
+            prescription_issued_at: row.get(9)?,
+            deleted_at: row.get(10)?,
+            created_at: row.get::<_, String>(11)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(12)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    })?;
+
+    let mut charts = Vec::new();
+    for row in rows {
+        charts.push(row?);
+    }
+    Ok(charts)
+}
+
+/// 모든 초진차트 목록 조회 (환자 이름 포함)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InitialChartWithPatient {
+    #[serde(flatten)]
+    pub chart: InitialChart,
+    pub patient_name: String,
+}
+
+pub fn list_initial_charts() -> AppResult<Vec<InitialChartWithPatient>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT ic.id, ic.patient_id, ic.doctor_name, ic.chart_date, ic.chief_complaint, ic.present_illness, ic.past_medical_history, ic.notes, ic.prescription_issued, ic.prescription_issued_at, ic.deleted_at, ic.created_at, ic.updated_at, p.name as patient_name
+           FROM initial_charts ic
+           LEFT JOIN patients p ON ic.patient_id = p.id
+           WHERE ic.deleted_at IS NULL
+           ORDER BY ic.chart_date DESC"#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok(InitialChartWithPatient {
+            chart: InitialChart {
+                id: row.get(0)?,
+                patient_id: row.get(1)?,
+                doctor_name: row.get(2)?,
+                chart_date: row.get(3)?,
+                chief_complaint: row.get(4)?,
+                present_illness: row.get(5)?,
+                past_medical_history: row.get(6)?,
+                notes: row.get(7)?,
+                prescription_issued: row.get::<_, i32>(8)? != 0,
+                prescription_issued_at: row.get(9)?,
+                deleted_at: row.get(10)?,
+                created_at: row.get::<_, String>(11)?
+                    .parse::<chrono::DateTime<Utc>>()
+                    .unwrap_or_else(|_| Utc::now()),
+                updated_at: row.get::<_, String>(12)?
+                    .parse::<chrono::DateTime<Utc>>()
+                    .unwrap_or_else(|_| Utc::now()),
+            },
+            patient_name: row.get(13)?,
+        })
+    })?;
+
+    let mut charts = Vec::new();
+    for row in rows {
+        charts.push(row?);
+    }
+    Ok(charts)
+}
+
+/// 초진차트 수정
+pub fn update_initial_chart(chart: &InitialChart) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        r#"UPDATE initial_charts SET
+           doctor_name = ?2, chart_date = ?3, chief_complaint = ?4, present_illness = ?5,
+           past_medical_history = ?6, notes = ?7, prescription_issued = ?8, prescription_issued_at = ?9,
+           updated_at = ?10
+           WHERE id = ?1"#,
+        params![
+            chart.id,
+            chart.doctor_name,
+            chart.chart_date,
+            chart.chief_complaint,
+            chart.present_illness,
+            chart.past_medical_history,
+            chart.notes,
+            if chart.prescription_issued { 1 } else { 0 },
+            chart.prescription_issued_at,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 초진차트 소프트 삭제
+pub fn delete_initial_chart(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE initial_charts SET deleted_at = ?2 WHERE id = ?1",
+        params![id, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+// ============ 경과기록 관리 ============
+
+/// 경과기록 생성
+pub fn create_progress_note(note: &ProgressNote) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        r#"INSERT INTO progress_notes (id, patient_id, doctor_name, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
+        params![
+            note.id,
+            note.patient_id,
+            note.doctor_name,
+            note.note_date,
+            note.subjective,
+            note.objective,
+            note.assessment,
+            note.plan,
+            note.follow_up_plan,
+            note.notes,
+            if note.prescription_issued { 1 } else { 0 },
+            note.prescription_issued_at,
+            note.deleted_at,
+            note.created_at.to_rfc3339(),
+            note.updated_at.to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 경과기록 조회
+pub fn get_progress_note(id: &str) -> AppResult<Option<ProgressNote>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, doctor_name, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at
+           FROM progress_notes WHERE id = ?1 AND deleted_at IS NULL"#,
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        Ok(ProgressNote {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            doctor_name: row.get(2)?,
+            note_date: row.get(3)?,
+            subjective: row.get(4)?,
+            objective: row.get(5)?,
+            assessment: row.get(6)?,
+            plan: row.get(7)?,
+            follow_up_plan: row.get(8)?,
+            notes: row.get(9)?,
+            prescription_issued: row.get::<_, i32>(10)? != 0,
+            prescription_issued_at: row.get(11)?,
+            deleted_at: row.get(12)?,
+            created_at: row.get::<_, String>(13)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(14)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    });
+
+    match result {
+        Ok(note) => Ok(Some(note)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 환자별 경과기록 목록 조회
+pub fn get_progress_notes_by_patient(patient_id: &str) -> AppResult<Vec<ProgressNote>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, doctor_name, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at
+           FROM progress_notes WHERE patient_id = ?1 AND deleted_at IS NULL ORDER BY note_date DESC"#,
+    )?;
+
+    let rows = stmt.query_map([patient_id], |row| {
+        Ok(ProgressNote {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            doctor_name: row.get(2)?,
+            note_date: row.get(3)?,
+            subjective: row.get(4)?,
+            objective: row.get(5)?,
+            assessment: row.get(6)?,
+            plan: row.get(7)?,
+            follow_up_plan: row.get(8)?,
+            notes: row.get(9)?,
+            prescription_issued: row.get::<_, i32>(10)? != 0,
+            prescription_issued_at: row.get(11)?,
+            deleted_at: row.get(12)?,
+            created_at: row.get::<_, String>(13)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row.get::<_, String>(14)?
+                .parse::<chrono::DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    })?;
+
+    let mut notes = Vec::new();
+    for row in rows {
+        notes.push(row?);
+    }
+    Ok(notes)
+}
+
+/// 경과기록 수정
+pub fn update_progress_note(note: &ProgressNote) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        r#"UPDATE progress_notes SET
+           doctor_name = ?2, note_date = ?3, subjective = ?4, objective = ?5,
+           assessment = ?6, plan = ?7, follow_up_plan = ?8, notes = ?9,
+           prescription_issued = ?10, prescription_issued_at = ?11, updated_at = ?12
+           WHERE id = ?1"#,
+        params![
+            note.id,
+            note.doctor_name,
+            note.note_date,
+            note.subjective,
+            note.objective,
+            note.assessment,
+            note.plan,
+            note.follow_up_plan,
+            note.notes,
+            if note.prescription_issued { 1 } else { 0 },
+            note.prescription_issued_at,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 경과기록 소프트 삭제
+pub fn delete_progress_note(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE progress_notes SET deleted_at = ?2 WHERE id = ?1",
+        params![id, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
 }

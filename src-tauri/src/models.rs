@@ -104,6 +104,88 @@ pub struct ChartRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+/// 초진차트
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitialChart {
+    pub id: String,
+    pub patient_id: String,
+    pub doctor_name: Option<String>,
+    pub chart_date: String,               // 차트 날짜 (YYYY-MM-DD)
+    pub chief_complaint: Option<String>,  // 주소증
+    pub present_illness: Option<String>,  // 현병력
+    pub past_medical_history: Option<String>, // 과거력
+    pub notes: Option<String>,            // 차트 전체 내용 ([주소증], [복진], [설진], etc.)
+    pub prescription_issued: bool,        // 처방 발급 여부
+    pub prescription_issued_at: Option<String>,
+    pub deleted_at: Option<String>,       // 소프트 삭제
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl InitialChart {
+    pub fn new(patient_id: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            patient_id,
+            doctor_name: None,
+            chart_date: now.format("%Y-%m-%d").to_string(),
+            chief_complaint: None,
+            present_illness: None,
+            past_medical_history: None,
+            notes: None,
+            prescription_issued: false,
+            prescription_issued_at: None,
+            deleted_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+/// 경과기록 (Progress Note / SOAP)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgressNote {
+    pub id: String,
+    pub patient_id: String,
+    pub doctor_name: Option<String>,
+    pub note_date: String,                // 경과 날짜 (YYYY-MM-DD)
+    pub subjective: Option<String>,       // S: 주관적 증상
+    pub objective: Option<String>,        // O: 객관적 소견 (경과/진료)
+    pub assessment: Option<String>,       // A: 진단 (복진/설진/맥진/혈색)
+    pub plan: Option<String>,             // P: 치료 계획 (처방)
+    pub follow_up_plan: Option<String>,   // 추후 계획
+    pub notes: Option<String>,            // 기타 메모
+    pub prescription_issued: bool,        // 처방 발급 여부
+    pub prescription_issued_at: Option<String>,
+    pub deleted_at: Option<String>,       // 소프트 삭제
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl ProgressNote {
+    pub fn new(patient_id: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            patient_id,
+            doctor_name: None,
+            note_date: now.format("%Y-%m-%d").to_string(),
+            subjective: None,
+            objective: None,
+            assessment: None,
+            plan: None,
+            follow_up_plan: None,
+            notes: None,
+            prescription_issued: false,
+            prescription_issued_at: None,
+            deleted_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
 /// 설문지 템플릿
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

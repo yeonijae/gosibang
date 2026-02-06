@@ -67,6 +67,19 @@ pub fn run() {
             // 차팅 관리
             create_chart_record,
             get_chart_records_by_patient,
+            // 초진차트 관리
+            create_initial_chart,
+            get_initial_chart,
+            get_initial_charts_by_patient,
+            list_initial_charts,
+            update_initial_chart,
+            delete_initial_chart,
+            // 경과기록 관리
+            create_progress_note,
+            get_progress_note,
+            get_progress_notes_by_patient,
+            update_progress_note,
+            delete_progress_note,
             // 데이터 내보내기
             export_patient_data,
             export_all_data,

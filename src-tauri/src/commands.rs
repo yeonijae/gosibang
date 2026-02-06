@@ -141,6 +141,67 @@ pub fn get_chart_records_by_patient(patient_id: String) -> Result<Vec<ChartRecor
     db::get_chart_records_by_patient(&patient_id).map_err(|e| e.to_string())
 }
 
+// ============ 초진차트 관리 명령어 ============
+
+use crate::models::{InitialChart, ProgressNote};
+
+#[tauri::command]
+pub fn create_initial_chart(chart: InitialChart) -> Result<(), String> {
+    db::create_initial_chart(&chart).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_initial_chart(id: String) -> Result<Option<InitialChart>, String> {
+    db::get_initial_chart(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_initial_charts_by_patient(patient_id: String) -> Result<Vec<InitialChart>, String> {
+    db::get_initial_charts_by_patient(&patient_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_initial_charts() -> Result<Vec<db::InitialChartWithPatient>, String> {
+    db::list_initial_charts().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_initial_chart(chart: InitialChart) -> Result<(), String> {
+    db::update_initial_chart(&chart).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_initial_chart(id: String) -> Result<(), String> {
+    db::delete_initial_chart(&id).map_err(|e| e.to_string())
+}
+
+// ============ 경과기록 관리 명령어 ============
+
+#[tauri::command]
+pub fn create_progress_note(note: ProgressNote) -> Result<(), String> {
+    db::create_progress_note(&note).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_progress_note(id: String) -> Result<Option<ProgressNote>, String> {
+    db::get_progress_note(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_progress_notes_by_patient(patient_id: String) -> Result<Vec<ProgressNote>, String> {
+    db::get_progress_notes_by_patient(&patient_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_progress_note(note: ProgressNote) -> Result<(), String> {
+    db::update_progress_note(&note).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_progress_note(id: String) -> Result<(), String> {
+    db::delete_progress_note(&id).map_err(|e| e.to_string())
+}
+
 // ============ 데이터 내보내기 명령어 ============
 
 #[tauri::command]

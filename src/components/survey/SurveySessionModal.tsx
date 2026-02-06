@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Copy, Check, ExternalLink } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Link2 } from 'lucide-react';
 import { useSurveyStore } from '../../store/surveyStore';
-import { generateSurveyLink, generateQRCodeUrl } from '../../lib/surveyUtils';
+import { generateSurveyLink } from '../../lib/surveyUtils';
 import type { Patient, SurveySession } from '../../types';
 
 interface SurveySessionModalProps {
@@ -55,7 +55,6 @@ export function SurveySessionModal({ patient, onClose }: SurveySessionModalProps
   };
 
   const surveyLink = createdSession ? generateSurveyLink(createdSession.token) : '';
-  const qrCodeUrl = createdSession ? generateQRCodeUrl(surveyLink, 200) : '';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -117,16 +116,15 @@ export function SurveySessionModal({ patient, onClose }: SurveySessionModalProps
             </>
           ) : (
             <>
-              <div className="text-center">
-                <div className="inline-block p-2 bg-gray-100 rounded-lg mb-4">
-                  <img
-                    src={qrCodeUrl}
-                    alt="QR Code"
-                    className="w-48 h-48"
-                  />
+              <div className="text-center py-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Link2 className="w-8 h-8 text-green-600" />
                 </div>
-                <p className="text-sm text-gray-600 mb-2">
-                  QR 코드를 스캔하거나 링크를 복사하세요
+                <p className="text-lg font-medium text-gray-900 mb-1">
+                  설문 링크가 생성되었습니다!
+                </p>
+                <p className="text-sm text-gray-500">
+                  아래 링크를 복사하여 {patient.name}님께 전달하세요.
                 </p>
               </div>
 
@@ -143,7 +141,7 @@ export function SurveySessionModal({ patient, onClose }: SurveySessionModalProps
                     className={`p-2 rounded-lg transition-colors ${
                       copied
                         ? 'bg-green-100 text-green-600'
-                        : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        : 'bg-primary-600 text-white hover:bg-primary-700'
                     }`}
                     title="링크 복사"
                   >

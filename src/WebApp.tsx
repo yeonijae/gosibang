@@ -10,6 +10,8 @@ import { Loader2 } from 'lucide-react';
 import { WebLogin } from './pages/WebLogin';
 import { WebDashboard } from './pages/WebDashboard';
 import { WebPatients } from './pages/WebPatients';
+import { WebCharts } from './pages/WebCharts';
+import { WebSurveys } from './pages/WebSurveys';
 import { WebLayout } from './components/WebLayout';
 import { useWebAuthStore } from './store/webAuthStore';
 
@@ -26,14 +28,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/app/login" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
 }
 
 export function WebApp() {
-  const { checkAuth, isLoading } = useWebAuthStore();
+  const { checkAuth } = useWebAuthStore();
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function WebApp() {
     init();
   }, [checkAuth]);
 
-  if (isInitializing || isLoading) {
+  if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
@@ -71,8 +73,8 @@ export function WebApp() {
         >
           <Route path="/dashboard" element={<WebDashboard />} />
           <Route path="/patients" element={<WebPatients />} />
-          <Route path="/charts" element={<ComingSoon title="차트" />} />
-          <Route path="/surveys" element={<ComingSoon title="설문" />} />
+          <Route path="/charts" element={<WebCharts />} />
+          <Route path="/surveys" element={<WebSurveys />} />
         </Route>
 
         {/* 기본 리다이렉트 */}
@@ -80,16 +82,5 @@ export function WebApp() {
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
-  );
-}
-
-// Coming Soon 페이지
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="text-center py-12">
-      <div className="text-6xl mb-4">🚧</div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
-      <p className="text-gray-500">이 기능은 아직 준비 중입니다.</p>
-    </div>
   );
 }

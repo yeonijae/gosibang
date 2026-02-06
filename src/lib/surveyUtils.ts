@@ -1,5 +1,8 @@
 // 설문 관련 유틸리티 함수
 
+// 온라인 설문 앱 URL
+const SURVEY_APP_URL = 'https://gosibang-survey.vercel.app';
+
 // URL-safe 토큰 생성 (8자리)
 export function generateSurveyToken(): string {
   const array = new Uint8Array(6);
@@ -11,9 +14,9 @@ export function generateSurveyToken(): string {
     .toUpperCase();
 }
 
-// 설문 링크 생성
+// 설문 링크 생성 (온라인 URL)
 export function generateSurveyLink(token: string): string {
-  return `${window.location.origin}/survey/${token}`;
+  return `${SURVEY_APP_URL}/s/${token}`;
 }
 
 // 만료 시간 생성 (기본 24시간)

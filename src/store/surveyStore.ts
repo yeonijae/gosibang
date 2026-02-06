@@ -37,6 +37,7 @@ interface SurveyStore {
   createKioskSession: (templateId: string, patientId: string | null, respondentName: string) => Promise<SurveySession>;
   getSessionByToken: (token: string) => Promise<{ session: SurveySession; template: SurveyTemplate } | null>;
   expireSession: (id: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
 
   // 응답-환자 연결
   linkResponseToPatient: (responseId: string, patientId: string) => Promise<void>;
@@ -149,8 +150,12 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      // 템플릿 목록을 먼저 로드 (Rust DB에서)
-      const templates = get().templates;
+      // 템플릿 목록이 비어있으면 먼저 로드
+      let templates = get().templates;
+      if (templates.length === 0) {
+        await get().loadTemplates();
+        templates = get().templates;
+      }
       const templateMap = new Map(templates.map(t => [t.id, t.name]));
 
       let sql = `
@@ -330,6 +335,27 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     });
   },
 
+  deleteSession: async (id) => {
+    const db = getDb();
+    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+    // 로컬 DB에서 삭제
+    db.run('DELETE FROM survey_sessions WHERE id = ?', [id]);
+    saveDb();
+
+    // Supabase에서도 삭제 (동기화)
+    try {
+      await supabase.from('survey_sessions').delete().eq('id', id);
+    } catch (error) {
+      console.error('[Survey] Supabase 세션 삭제 실패:', error);
+    }
+
+    // 상태에서 제거
+    set({
+      sessions: get().sessions.filter(s => s.id !== id),
+    });
+  },
+
   // 키오스크용 세션 생성 (환자 미등록 지원)
   createKioskSession: async (templateId, patientId, respondentName) => {
     const db = getDb();
@@ -408,8 +434,12 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      // 템플릿 목록을 먼저 로드 (Rust DB에서)
-      const templates = get().templates;
+      // 템플릿 목록이 비어있으면 먼저 로드
+      let templates = get().templates;
+      if (templates.length === 0) {
+        await get().loadTemplates();
+        templates = get().templates;
+      }
       const templateMap = new Map(templates.map(t => [t.id, t.name]));
 
       let sql = `

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Search, Eye, X, ChevronDown, ChevronUp, Plus, Link2, Copy, Check, Loader2, UserPlus, User, AlertCircle, Edit2, Trash2, GripVertical, EyeOff, FileText, ClipboardList } from 'lucide-react';
+import { Search, Eye, X, ChevronDown, ChevronUp, Plus, Link2, Copy, Check, Loader2, UserPlus, User, AlertCircle, Edit2, Trash2, GripVertical, EyeOff, FileText, ClipboardList, Clock } from 'lucide-react';
 import { useSurveyStore } from '../store/surveyStore';
 import { QuestionRenderer } from '../components/survey/QuestionRenderer';
 import { useAuthStore } from '../store/authStore';
 import { usePlanLimits } from '../hooks/usePlanLimits';
+import { useSurveyRealtime } from '../hooks/useSurveyRealtime';
 import { supabase } from '../lib/supabase';
 import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
 import { generateExpiresAt, generateQuestionId } from '../lib/surveyUtils';
@@ -13,12 +14,15 @@ import type { SurveyResponse, SurveyTemplate, SurveyAnswer, Patient, SurveyQuest
 const SURVEY_APP_URL = 'https://gosibang-survey.vercel.app';
 
 export function SurveyResponses() {
-  const { responses, templates, isLoading, loadResponses, loadTemplates, getTemplate, linkResponseToPatient, deleteResponse, createTemplate, updateTemplate, deleteTemplate } = useSurveyStore();
+  const { responses, templates, sessions, isLoading, loadResponses, loadTemplates, loadSessions, getTemplate, linkResponseToPatient, deleteResponse, createTemplate, updateTemplate, deleteTemplate, deleteSession } = useSurveyStore();
   const { authState } = useAuthStore();
   const { canUseFeature } = usePlanLimits();
 
+  // Supabase에서 응답 동기화
+  const { syncPendingResponses } = useSurveyRealtime(authState?.user?.id || null);
+
   // 탭 상태
-  const [activeTab, setActiveTab] = useState<'responses' | 'templates'>('responses');
+  const [activeTab, setActiveTab] = useState<'pending' | 'responses' | 'templates'>('pending');
 
   // 응답 관리 상태
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,7 +46,41 @@ export function SurveyResponses() {
   useEffect(() => {
     loadResponses();
     loadTemplates();
-  }, [loadResponses, loadTemplates]);
+    loadSessions();
+    // Supabase에서 미동기화된 응답 가져오기
+    syncPendingResponses();
+  }, [loadResponses, loadTemplates, loadSessions, syncPendingResponses]);
+
+  // 페이지 포커스 시 자동 새로고침 및 Supabase 동기화
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        // Supabase에서 새 응답 동기화
+        await syncPendingResponses();
+        // 로컬 데이터 새로고침
+        loadResponses();
+        loadSessions();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadResponses, loadSessions, syncPendingResponses]);
+
+  // 주기적 폴링 (10초마다 새 응답 확인)
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      if (document.visibilityState === 'visible') {
+        await syncPendingResponses();
+        loadResponses();
+        loadSessions();
+      }
+    }, 10000); // 10초
+
+    return () => clearInterval(pollInterval);
+  }, [syncPendingResponses, loadResponses, loadSessions]);
 
   // 템플릿 관리 핸들러
   const handleCreateTemplate = () => {
@@ -94,6 +132,10 @@ export function SurveyResponses() {
 
   const handleViewResponse = (response: SurveyResponse) => {
     const template = getTemplate(response.template_id);
+    if (!template) {
+      alert('템플릿 정보를 찾을 수 없습니다. 템플릿이 삭제되었을 수 있습니다.');
+      return;
+    }
     setViewingResponse(response);
     setViewingTemplate(template);
   };
@@ -105,24 +147,24 @@ export function SurveyResponses() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">설문 관리</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {activeTab === 'responses' ? `응답 ${filteredResponses.length}건` : `템플릿 ${templates.length}개`}
+            {activeTab === 'pending' && `대기 중 ${sessions.filter(s => s.status === 'pending').length}건`}
+            {activeTab === 'responses' && `응답 ${filteredResponses.length}건`}
+            {activeTab === 'templates' && `템플릿 ${templates.length}개`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {activeTab === 'responses' ? (
-            /* 온라인 링크 생성 버튼 - 프리미엄 플랜만 */
-            canUseFeature('survey_external') && (
-              <button
-                onClick={() => setShowLinkModal(true)}
-                className="btn-primary flex items-center gap-2"
-                disabled={templates.filter(t => t.is_active).length === 0}
-              >
-                <Link2 className="w-4 h-4" />
-                <span className="hidden sm:inline">온라인 링크 생성</span>
-                <span className="sm:hidden">링크</span>
-              </button>
-            )
-          ) : (
+          {activeTab === 'pending' && canUseFeature('survey_external') && (
+            <button
+              onClick={() => setShowLinkModal(true)}
+              className="btn-primary flex items-center gap-2"
+              disabled={templates.filter(t => t.is_active).length === 0}
+            >
+              <Link2 className="w-4 h-4" />
+              <span className="hidden sm:inline">온라인 링크 생성</span>
+              <span className="sm:hidden">링크</span>
+            </button>
+          )}
+          {activeTab === 'templates' && (
             <button onClick={handleCreateTemplate} className="btn-primary flex items-center gap-2">
               <Plus className="w-4 h-4" />
               새 템플릿
@@ -133,6 +175,17 @@ export function SurveyResponses() {
 
       {/* 탭 */}
       <div className="flex border-b border-gray-200 mb-4">
+        <button
+          onClick={() => setActiveTab('pending')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'pending'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          답변대기
+        </button>
         <button
           onClick={() => setActiveTab('responses')}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -156,6 +209,104 @@ export function SurveyResponses() {
           템플릿 관리
         </button>
       </div>
+
+      {/* 답변대기 탭 */}
+      {activeTab === 'pending' && (
+        <div className="flex-1 min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+          {/* 테이블 헤더 */}
+          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_100px] gap-4 px-4 py-3 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-600">
+            <div>템플릿</div>
+            <div>응답자</div>
+            <div>생성일시</div>
+            <div>만료일시</div>
+            <div className="text-center">액션</div>
+          </div>
+
+          {/* 세션 목록 */}
+          <div className="flex-1 overflow-y-auto">
+            {sessions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
+                <Clock className="w-12 h-12 mb-4" />
+                <p>대기 중인 설문이 없습니다.</p>
+                <p className="text-sm mt-1">온라인 링크를 생성하여 설문을 보내보세요.</p>
+              </div>
+            ) : (
+              sessions.map((session) => {
+                const isExpired = session.status === 'expired' || new Date(session.expires_at) < new Date();
+                return (
+                  <div
+                    key={session.id}
+                    className={`grid grid-cols-[1fr_1fr_1fr_1fr_100px] gap-4 px-4 py-3 border-b border-gray-100 items-center hover:bg-gray-50 ${
+                      isExpired ? 'opacity-50' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 truncate">
+                      {session.template_name || '알 수 없는 템플릿'}
+                    </div>
+                    <div className="text-gray-600 truncate">
+                      {session.respondent_name || session.patient_name || '-'}
+                    </div>
+                    <div className="text-gray-500 text-sm">
+                      {new Date(session.created_at).toLocaleString('ko-KR', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm ${isExpired ? 'text-red-500' : 'text-gray-500'}`}>
+                        {new Date(session.expires_at).toLocaleString('ko-KR', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      {isExpired && (
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded">
+                          만료
+                        </span>
+                      )}
+                      {!isExpired && session.status === 'pending' && (
+                        <span className="px-1.5 py-0.5 bg-green-100 text-green-600 text-xs rounded">
+                          대기중
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      {!isExpired && (
+                        <button
+                          onClick={async () => {
+                            const link = `${SURVEY_APP_URL}/s/${session.token}`;
+                            await navigator.clipboard.writeText(link);
+                            alert('링크가 복사되었습니다.');
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                          title="링크 복사"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={async () => {
+                          if (confirm('이 세션을 삭제하시겠습니까?')) {
+                            await deleteSession(session.id);
+                          }
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="삭제"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 응답 관리 탭 */}
       {activeTab === 'responses' && (
@@ -672,8 +823,15 @@ interface LinkGeneratorModalProps {
 }
 
 function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalProps) {
+  const { loadSessions } = useSurveyStore();
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [respondentName, setRespondentName] = useState('');
+  // 환자 정보 필드
+  const [patientName, setPatientName] = useState('');
+  const [chartNumber, setChartNumber] = useState('');
+  const [doctorName, setDoctorName] = useState('');
+  const [gender, setGender] = useState('');
+  const [age, setAge] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -710,9 +868,9 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
       const db = getDb();
       if (db) {
         db.run(
-          `INSERT INTO survey_sessions (id, token, patient_id, template_id, status, expires_at, created_by, created_at)
-           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-          [sessionId, token, '', selectedTemplateId, expiresAt, userId, now]
+          `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, patient_name, chart_number, doctor_name, gender, age, status, expires_at, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          [sessionId, token, '', selectedTemplateId, respondentName || null, patientName || null, chartNumber || null, doctorName || null, gender || null, age || null, expiresAt, userId, now]
         );
         saveDb();
         console.log('[Survey] 로컬 DB에 세션 저장:', sessionId);
@@ -753,6 +911,11 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
           template_id: selectedTemplateId,
           token,
           respondent_name: respondentName || null,
+          patient_name: patientName || null,
+          chart_number: chartNumber || null,
+          doctor_name: doctorName || null,
+          gender: gender || null,
+          age: age || null,
           expires_at: expiresAt,
         })
         .select()
@@ -767,6 +930,9 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
       // Vercel URL 반환
       const link = `${SURVEY_APP_URL}/s/${token}`;
       setGeneratedLink(link);
+
+      // 세션 목록 새로고침
+      await loadSessions();
     } catch (e) {
       console.error('Link generation error:', e);
       setError(String(e));
@@ -792,6 +958,11 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
     setGeneratedLink(null);
     setSelectedTemplateId('');
     setRespondentName('');
+    setPatientName('');
+    setChartNumber('');
+    setDoctorName('');
+    setGender('');
+    setAge('');
     setCopied(false);
   };
 
@@ -869,21 +1040,71 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  응답자 이름 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={respondentName}
-                  onChange={(e) => setRespondentName(e.target.value)}
-                  placeholder="이름을 입력하세요"
-                  className="input-field"
-                />
+              {/* 환자 정보 입력 섹션 */}
+              <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
+                <p className="text-sm font-medium text-gray-700">환자 정보 (미리 입력)</p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">환자 이름</label>
+                    <input
+                      type="text"
+                      value={patientName}
+                      onChange={(e) => setPatientName(e.target.value)}
+                      placeholder="홍길동"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">차트번호</label>
+                    <input
+                      type="text"
+                      value={chartNumber}
+                      onChange={(e) => setChartNumber(e.target.value)}
+                      placeholder="12345"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">담당의</label>
+                    <input
+                      type="text"
+                      value={doctorName}
+                      onChange={(e) => setDoctorName(e.target.value)}
+                      placeholder="김원장"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">성별</label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="input-field text-sm"
+                    >
+                      <option value="">선택</option>
+                      <option value="male">남</option>
+                      <option value="female">여</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">나이</label>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={(e) => setAge(e.target.value)}
+                      placeholder="35"
+                      className="input-field text-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
               <p className="text-xs text-gray-500">
-                생성된 링크로 접속하면 설문을 작성할 수 있습니다.<br />
+                환자 정보를 미리 입력하면 환자가 설문 작성 시 해당 정보가 자동으로 채워집니다.<br />
                 링크는 24시간 동안 유효합니다.
               </p>
             </>
