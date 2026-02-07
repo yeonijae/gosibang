@@ -561,3 +561,148 @@ impl From<StaffAccount> for StaffAccountInfo {
         }
     }
 }
+
+// ============ 알림 시스템 ============
+
+/// 알림 설정 (전역 또는 복약 일정별)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationSettings {
+    pub id: String,
+    pub schedule_id: Option<String>,              // None = 전역 설정
+    pub enabled: bool,
+    pub pre_reminder_minutes: i32,                // 복약 시간 전 알림 (분)
+    pub missed_reminder_enabled: bool,            // 복약 누락 알림 활성화
+    pub missed_reminder_delay_minutes: i32,       // 복약 누락 판정 시간 (분)
+    pub daily_summary_enabled: bool,              // 일일 요약 알림 활성화
+    pub daily_summary_time: String,               // HH:mm 형식
+    pub sound_enabled: bool,                      // 소리 알림 활성화
+    pub sound_preset: String,                     // default, gentle, urgent
+    pub do_not_disturb_start: Option<String>,     // 방해금지 시작 (HH:mm)
+    pub do_not_disturb_end: Option<String>,       // 방해금지 종료 (HH:mm)
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        let now = Utc::now().to_rfc3339();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            schedule_id: None,
+            enabled: true,
+            pre_reminder_minutes: 5,
+            missed_reminder_enabled: true,
+            missed_reminder_delay_minutes: 30,
+            daily_summary_enabled: false,
+            daily_summary_time: "09:00".to_string(),
+            sound_enabled: true,
+            sound_preset: "default".to_string(),
+            do_not_disturb_start: None,
+            do_not_disturb_end: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+/// 알림 유형
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationType {
+    MedicationReminder,   // 복약 알림
+    MissedMedication,     // 복약 누락 알림
+    DailySummary,         // 일일 요약
+}
+
+impl NotificationType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NotificationType::MedicationReminder => "medication_reminder",
+            NotificationType::MissedMedication => "missed_medication",
+            NotificationType::DailySummary => "daily_summary",
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "medication_reminder" => NotificationType::MedicationReminder,
+            "missed_medication" => NotificationType::MissedMedication,
+            "daily_summary" => NotificationType::DailySummary,
+            _ => NotificationType::MedicationReminder,
+        }
+    }
+}
+
+/// 알림 우선순위
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationPriority {
+    Low,
+    Normal,
+    High,
+    Critical,
+}
+
+impl NotificationPriority {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NotificationPriority::Low => "low",
+            NotificationPriority::Normal => "normal",
+            NotificationPriority::High => "high",
+            NotificationPriority::Critical => "critical",
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "low" => NotificationPriority::Low,
+            "normal" => NotificationPriority::Normal,
+            "high" => NotificationPriority::High,
+            "critical" => NotificationPriority::Critical,
+            _ => NotificationPriority::Normal,
+        }
+    }
+}
+
+/// 알림 기록
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    pub id: String,
+    pub notification_type: String,  // medication_reminder, missed_medication, daily_summary
+    pub title: String,
+    pub body: String,
+    pub priority: String,           // low, normal, high, critical
+    pub schedule_id: Option<String>,
+    pub patient_id: Option<String>,
+    pub is_read: bool,
+    pub is_dismissed: bool,
+    pub action_url: Option<String>,
+    pub created_at: String,
+    pub read_at: Option<String>,
+}
+
+impl Notification {
+    pub fn new(
+        notification_type: NotificationType,
+        title: String,
+        body: String,
+        priority: NotificationPriority,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            notification_type: notification_type.as_str().to_string(),
+            title,
+            body,
+            priority: priority.as_str().to_string(),
+            schedule_id: None,
+            patient_id: None,
+            is_read: false,
+            is_dismissed: false,
+            action_url: None,
+            created_at: Utc::now().to_rfc3339(),
+            read_at: None,
+        }
+    }
+}

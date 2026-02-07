@@ -216,6 +216,14 @@ pub fn create_web_api_router(state: WebApiState) -> Router {
         .route("/medications/logs/{id}", get(get_medication_log_api).put(update_medication_log_api))
         .route("/medications/logs/schedule/{schedule_id}", get(get_medication_logs_by_schedule_api))
         .route("/medications/stats/patient/{patient_id}", get(get_medication_stats_by_patient_api))
+        // 알림 관리
+        .route("/notifications", get(list_notifications_api))
+        .route("/notifications/unread", get(list_unread_notifications_api))
+        .route("/notifications/unread/count", get(get_unread_notification_count_api))
+        .route("/notifications/{id}/read", post(mark_notification_read_api))
+        .route("/notifications/{id}/dismiss", post(dismiss_notification_api))
+        .route("/notifications/read-all", post(mark_all_notifications_read_api))
+        .route("/notifications/settings", get(get_notification_settings_api).put(update_notification_settings_api))
         .with_state(state)
 }
 
@@ -540,7 +548,7 @@ async fn get_charts_api(
 
 // ============ 초진차트 API ============
 
-use crate::models::{InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats};
+use crate::models::{InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats, Notification, NotificationSettings};
 
 async fn list_initial_charts_api(
     State(state): State<WebApiState>,
@@ -1366,6 +1374,153 @@ async fn get_medication_stats_by_patient_api(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::<MedicationStats>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+// ============ 알림 API ============
+
+#[derive(Deserialize, Default)]
+struct ListNotificationsQuery {
+    token: Option<String>,
+    limit: Option<i32>,
+}
+
+async fn list_notifications_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<ListNotificationsQuery>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: query.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::list_notifications(query.limit) {
+        Ok(notifications) => Json(ApiResponse::ok(notifications)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<Notification>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn list_unread_notifications_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::list_unread_notifications() {
+        Ok(notifications) => Json(ApiResponse::ok(notifications)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Vec<Notification>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_unread_notification_count_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_unread_notification_count() {
+        Ok(count) => Json(ApiResponse::ok(count)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<i32>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn mark_notification_read_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::mark_notification_read(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn dismiss_notification_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::dismiss_notification(&id) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn mark_all_notifications_read_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::mark_all_notifications_read() {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+async fn get_notification_settings_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+) -> impl IntoResponse {
+    require_auth!(state, headers, query);
+
+    match db::get_notification_settings() {
+        Ok(settings) => Json(ApiResponse::ok(settings)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<Option<NotificationSettings>>::err(e.to_string())),
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateNotificationSettingsRequest {
+    #[serde(flatten)]
+    settings: NotificationSettings,
+    token: Option<String>,
+}
+
+async fn update_notification_settings_api(
+    State(state): State<WebApiState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateNotificationSettingsRequest>,
+) -> impl IntoResponse {
+    let auth_query = AuthQuery { token: payload.token };
+    require_auth!(state, headers, auth_query);
+
+    match db::update_notification_settings(&payload.settings) {
+        Ok(()) => Json(ApiResponse::ok(())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::err(e.to_string())),
         ).into_response(),
     }
 }

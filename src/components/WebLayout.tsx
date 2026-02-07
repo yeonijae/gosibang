@@ -13,8 +13,20 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebAuthStore, hasPermission } from '../store/webAuthStore';
+import { NotificationBadge } from './notification/NotificationBadge';
+import { NotificationCenter } from './notification/NotificationCenter';
+import { ToastContainer } from './notification/ToastContainer';
+import { NotificationPermissionBanner } from './notification/NotificationPermissionBanner';
+import { useNotificationStore } from '../store/notificationStore';
+import { browserNotification } from '../lib/browserNotification';
+import { notificationSound } from '../lib/notificationSound';
+import * as webApiClient from '../lib/webApiClient';
+import { isWebClient } from '../lib/platform';
+
+// 폴링 간격 (30초)
+const POLLING_INTERVAL = 30000;
 
 const navItems = [
   {
@@ -53,8 +65,95 @@ export function WebLayout() {
   const navigate = useNavigate();
   const { user, logout } = useWebAuthStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showPermissionBanner, setShowPermissionBanner] = useState(false);
+  const { loadNotifications, unreadCount, addNotification, settings } = useNotificationStore();
+  const lastUnreadCountRef = useRef(unreadCount);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 알림 권한 배너 표시 여부 확인
+  useEffect(() => {
+    if (isWebClient()) {
+      const dismissed = localStorage.getItem('notification_permission_dismissed');
+      if (dismissed !== 'true' && browserNotification.needsPermission()) {
+        // 약간의 지연 후 배너 표시
+        const timer = setTimeout(() => {
+          setShowPermissionBanner(true);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
+
+  // 알림 폴링 (웹 클라이언트에서만)
+  const pollNotifications = useCallback(async () => {
+    if (!isWebClient()) return;
+
+    try {
+      const newCount = await webApiClient.getUnreadNotificationCount();
+
+      // 새 알림이 있으면 알림 표시
+      if (newCount > lastUnreadCountRef.current) {
+        // 새 알림 가져오기
+        const notifications = await webApiClient.listUnreadNotifications();
+        const newNotifications = notifications.slice(0, newCount - lastUnreadCountRef.current);
+
+        for (const notification of newNotifications) {
+          // 토스트 표시
+          addNotification({
+            notification_type: notification.notification_type,
+            title: notification.title,
+            body: notification.body,
+            priority: notification.priority,
+            schedule_id: notification.schedule_id,
+            patient_id: notification.patient_id,
+            action_url: notification.action_url,
+          });
+
+          // 브라우저 알림
+          if (browserNotification.isGranted()) {
+            browserNotification.show(notification.title, {
+              body: notification.body,
+              autoClose: 10000,
+            });
+          }
+
+          // 사운드 재생
+          if (settings?.sound_enabled) {
+            const preset = settings?.sound_preset as 'default' | 'gentle' | 'urgent' | 'silent' || 'default';
+            notificationSound.play(preset);
+          }
+        }
+      }
+
+      lastUnreadCountRef.current = newCount;
+      loadNotifications();
+    } catch (error) {
+      console.error('[WebLayout] 알림 폴링 실패:', error);
+    }
+  }, [addNotification, loadNotifications, settings]);
+
+  // 폴링 시작/정리
+  useEffect(() => {
+    if (!isWebClient()) return;
+
+    // 초기 로드
+    loadNotifications();
+
+    // 폴링 시작
+    pollingRef.current = setInterval(pollNotifications, POLLING_INTERVAL);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [loadNotifications, pollNotifications]);
 
   const handleLogout = async () => {
+    // 폴링 정리
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
     await logout();
     navigate('/login');
   };
@@ -97,8 +196,11 @@ export function WebLayout() {
               ))}
             </nav>
 
-            {/* 사용자 정보 및 로그아웃 */}
+            {/* 사용자 정보, 알림, 로그아웃 */}
             <div className="hidden md:flex items-center gap-4">
+              {/* 알림 배지 */}
+              <NotificationBadge />
+
               <div className="text-sm">
                 <span className="text-gray-500">안녕하세요, </span>
                 <span className="font-medium text-gray-900">{user?.display_name}</span>
@@ -119,13 +221,16 @@ export function WebLayout() {
               </button>
             </div>
 
-            {/* 모바일 메뉴 버튼 */}
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+            {/* 모바일: 알림 배지 + 메뉴 버튼 */}
+            <div className="md:hidden flex items-center gap-2">
+              <NotificationBadge />
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -168,10 +273,25 @@ export function WebLayout() {
         )}
       </header>
 
+      {/* 알림 권한 배너 */}
+      {showPermissionBanner && (
+        <div className="max-w-7xl mx-auto px-4 pt-4">
+          <NotificationPermissionBanner
+            onDismiss={() => setShowPermissionBanner(false)}
+          />
+        </div>
+      )}
+
       {/* 메인 콘텐츠 */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Outlet />
       </main>
+
+      {/* 알림 센터 */}
+      <NotificationCenter />
+
+      {/* 토스트 컨테이너 */}
+      <ToastContainer />
     </div>
   );
 }

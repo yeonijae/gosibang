@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut, Bell } from 'lucide-react';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
@@ -23,6 +23,7 @@ import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/back
 import type { ClinicSettings, Subscription, DisplayConfig, UserSession } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { StaffAccountsTab } from '../components/StaffAccountsTab';
+import { NotificationSettings } from '../components/notification';
 
 // 기본 표시 설정
 const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
@@ -125,7 +126,7 @@ export function Settings() {
   const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts' | 'notifications'>('profile');
 
   // 내 정보 관련 상태
   interface UserProfile {
@@ -930,6 +931,17 @@ export function Settings() {
               백업
             </button>
           )}
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+              activeTab === 'notifications'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            알림
+          </button>
           <button
             onClick={() => setActiveTab('sessions')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
@@ -1833,6 +1845,13 @@ export function Settings() {
               <li>• 원격 로그아웃된 기기에서는 다음 활동 시 자동으로 로그아웃됩니다.</li>
             </ul>
           </div>
+        </div>
+      )}
+
+      {/* 알림 설정 탭 */}
+      {activeTab === 'notifications' && (
+        <div className="max-w-2xl">
+          <NotificationSettings />
         </div>
       )}
 

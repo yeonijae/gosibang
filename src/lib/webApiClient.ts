@@ -4,7 +4,7 @@
  */
 
 import { getApiBaseUrl } from './platform';
-import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse, SurveyQuestion, InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats } from '../types';
+import type { Patient, Prescription, ChartRecord, ClinicSettings, SurveyTemplate, SurveyResponse, SurveyQuestion, InitialChart, ProgressNote, MedicationSchedule, MedicationLog, MedicationStats, Notification, NotificationSettings } from '../types';
 
 // 인증 토큰 저장
 let authToken: string | null = null;
@@ -400,4 +400,58 @@ export async function updateMedicationLog(
 // 복약 통계
 export async function getMedicationStatsByPatient(patientId: string): Promise<MedicationStats> {
   return apiFetch<MedicationStats>(`/medications/stats/patient/${patientId}`);
+}
+
+// ============ 알림 API ============
+
+// 알림 목록 조회
+export async function listNotifications(limit?: number): Promise<Notification[]> {
+  const query = limit ? `?limit=${limit}` : '';
+  return apiFetch<Notification[]>(`/notifications${query}`);
+}
+
+// 읽지 않은 알림 조회
+export async function listUnreadNotifications(): Promise<Notification[]> {
+  return apiFetch<Notification[]>('/notifications/unread');
+}
+
+// 읽지 않은 알림 수 조회
+export async function getUnreadNotificationCount(): Promise<number> {
+  return apiFetch<number>('/notifications/unread/count');
+}
+
+// 알림 읽음 처리
+export async function markNotificationRead(id: string): Promise<void> {
+  return apiFetch<void>(`/notifications/${id}/read`, {
+    method: 'POST',
+  });
+}
+
+// 알림 삭제 (dismiss)
+export async function dismissNotification(id: string): Promise<void> {
+  return apiFetch<void>(`/notifications/${id}/dismiss`, {
+    method: 'POST',
+  });
+}
+
+// 모든 알림 읽음 처리
+export async function markAllNotificationsRead(): Promise<void> {
+  return apiFetch<void>('/notifications/read-all', {
+    method: 'POST',
+  });
+}
+
+// 알림 설정 조회
+export async function getNotificationSettings(): Promise<NotificationSettings | null> {
+  return apiFetch<NotificationSettings | null>('/notifications/settings');
+}
+
+// 알림 설정 업데이트
+export async function updateNotificationSettings(
+  settings: Partial<NotificationSettings>
+): Promise<void> {
+  return apiFetch<void>('/notifications/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
 }

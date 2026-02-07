@@ -505,6 +505,8 @@ export interface StaffPermissions {
   survey_read: boolean;       // 설문 조회
   survey_write: boolean;      // 설문 수정
   settings_read: boolean;     // 설정 조회 (읽기전용)
+  medications_read: boolean;  // 복약 정보 조회
+  medications_write: boolean; // 복약 정보 수정
 }
 
 // 기본 권한 프리셋
@@ -519,6 +521,48 @@ export interface StaffAccount {
   permissions: StaffPermissions;
   is_active: boolean;
   last_login_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ===== 알림 타입 =====
+
+// 알림 유형
+export type NotificationType = 'medication_reminder' | 'missed_medication' | 'daily_summary';
+
+// 알림 우선순위
+export type NotificationPriority = 'low' | 'normal' | 'high' | 'critical';
+
+// 알림
+export interface Notification {
+  id: string;
+  notification_type: NotificationType;
+  title: string;
+  body: string;
+  priority: NotificationPriority;
+  schedule_id?: string;
+  patient_id?: string;
+  is_read: boolean;
+  is_dismissed: boolean;
+  action_url?: string;
+  created_at: string;
+  read_at?: string;
+}
+
+// 알림 설정
+export interface NotificationSettings {
+  id: string;
+  schedule_id?: string;        // null이면 전역 설정
+  enabled: boolean;
+  pre_reminder_minutes: number;
+  missed_reminder_enabled: boolean;
+  missed_reminder_delay_minutes: number;
+  daily_summary_enabled: boolean;
+  daily_summary_time: string;  // HH:mm
+  sound_enabled: boolean;
+  sound_preset: string;
+  do_not_disturb_start?: string;  // HH:mm
+  do_not_disturb_end?: string;    // HH:mm
   created_at: string;
   updated_at: string;
 }

@@ -2,7 +2,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import { PRESCRIPTION_DEFINITIONS } from './prescriptionData';
 import { SURVEY_TEMPLATES } from './surveyData';
-import type { MedicationSchedule, MedicationLog, MedicationStats, MedicationStatus } from '../types';
+import type { MedicationSchedule, MedicationLog, MedicationStats, MedicationStatus, Notification, NotificationSettings } from '../types';
 
 let db: Database | null = null;
 let currentDbKey: string = 'gosibang_db'; // 사용자별 키
@@ -1403,4 +1403,407 @@ export function getMedicationStats(scheduleId: string): MedicationStats {
       consecutive_missed: 0,
     };
   }
+}
+
+// ===== 알림 (Notification) 기능 =====
+
+// 알림 테이블 생성 (마이그레이션용)
+export function migrateNotificationTables() {
+  if (!db) return;
+
+  try {
+    // notifications 테이블
+    db.run(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        notification_type TEXT NOT NULL CHECK (notification_type IN ('medication_reminder', 'missed_medication', 'daily_summary')),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'critical')),
+        schedule_id TEXT REFERENCES medication_schedules(id) ON DELETE CASCADE,
+        patient_id TEXT REFERENCES patients(id) ON DELETE CASCADE,
+        is_read INTEGER DEFAULT 0,
+        is_dismissed INTEGER DEFAULT 0,
+        action_url TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        read_at TEXT
+      )
+    `);
+
+    // notification_settings 테이블
+    db.run(`
+      CREATE TABLE IF NOT EXISTS notification_settings (
+        id TEXT PRIMARY KEY,
+        schedule_id TEXT REFERENCES medication_schedules(id) ON DELETE CASCADE,
+        enabled INTEGER DEFAULT 1,
+        pre_reminder_minutes INTEGER DEFAULT 10,
+        missed_reminder_enabled INTEGER DEFAULT 1,
+        missed_reminder_delay_minutes INTEGER DEFAULT 30,
+        daily_summary_enabled INTEGER DEFAULT 0,
+        daily_summary_time TEXT DEFAULT '21:00',
+        sound_enabled INTEGER DEFAULT 1,
+        sound_preset TEXT DEFAULT 'default',
+        do_not_disturb_start TEXT,
+        do_not_disturb_end TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    // 기본 전역 설정 생성
+    const existingSettings = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM notification_settings WHERE schedule_id IS NULL');
+    if (!existingSettings || existingSettings.cnt === 0) {
+      const id = generateUUID();
+      db.run(`
+        INSERT INTO notification_settings (id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled, missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time, sound_enabled, sound_preset)
+        VALUES (?, NULL, 1, 10, 1, 30, 0, '21:00', 1, 'default')
+      `, [id]);
+    }
+
+    saveDb();
+  } catch (e) {
+    console.error('[migrateNotificationTables] 마이그레이션 실패:', e);
+  }
+}
+
+// 알림 목록 조회 (읽지 않은 알림 + 최근 100개)
+export function getNotifications(limit: number = 100): Notification[] {
+  if (!db) return [];
+
+  try {
+    // 테이블 존재 확인 및 생성
+    migrateNotificationTables();
+
+    const notifications = queryToObjects<Notification & { is_read: number; is_dismissed: number }>(
+      db,
+      `SELECT * FROM notifications
+       WHERE is_dismissed = 0
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    return notifications.map(n => ({
+      ...n,
+      is_read: n.is_read === 1,
+      is_dismissed: n.is_dismissed === 1,
+    }));
+  } catch (e) {
+    console.error('[getNotifications] 조회 실패:', e);
+    return [];
+  }
+}
+
+// 읽지 않은 알림 조회
+export function getUnreadNotifications(): Notification[] {
+  if (!db) return [];
+
+  try {
+    migrateNotificationTables();
+
+    const notifications = queryToObjects<Notification & { is_read: number; is_dismissed: number }>(
+      db,
+      `SELECT * FROM notifications
+       WHERE is_read = 0 AND is_dismissed = 0
+       ORDER BY created_at DESC`
+    );
+
+    return notifications.map(n => ({
+      ...n,
+      is_read: false,
+      is_dismissed: false,
+    }));
+  } catch (e) {
+    console.error('[getUnreadNotifications] 조회 실패:', e);
+    return [];
+  }
+}
+
+// 읽지 않은 알림 수 조회
+export function getUnreadNotificationCount(): number {
+  if (!db) return 0;
+
+  try {
+    migrateNotificationTables();
+
+    const result = queryOne<{ cnt: number }>(
+      db,
+      'SELECT COUNT(*) as cnt FROM notifications WHERE is_read = 0 AND is_dismissed = 0'
+    );
+    return result?.cnt || 0;
+  } catch (e) {
+    console.error('[getUnreadNotificationCount] 조회 실패:', e);
+    return 0;
+  }
+}
+
+// 알림 생성
+export function createNotification(
+  notification: Omit<Notification, 'id' | 'created_at' | 'is_read' | 'is_dismissed'>
+): Notification | null {
+  if (!db) return null;
+
+  try {
+    migrateNotificationTables();
+
+    const id = generateUUID();
+    const now = new Date().toISOString();
+
+    db.run(
+      `INSERT INTO notifications (id, notification_type, title, body, priority, schedule_id, patient_id, is_read, is_dismissed, action_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+      [
+        id,
+        notification.notification_type,
+        notification.title,
+        notification.body,
+        notification.priority,
+        notification.schedule_id || null,
+        notification.patient_id || null,
+        notification.action_url || null,
+        now,
+      ]
+    );
+
+    saveDb();
+
+    return {
+      ...notification,
+      id,
+      is_read: false,
+      is_dismissed: false,
+      created_at: now,
+    };
+  } catch (e) {
+    console.error('[createNotification] 생성 실패:', e);
+    return null;
+  }
+}
+
+// 알림 업데이트
+export function updateNotification(
+  id: string,
+  updates: Partial<Pick<Notification, 'is_read' | 'is_dismissed' | 'read_at'>>
+): boolean {
+  if (!db) return false;
+
+  try {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.is_read !== undefined) {
+      fields.push('is_read = ?');
+      params.push(updates.is_read ? 1 : 0);
+    }
+    if (updates.is_dismissed !== undefined) {
+      fields.push('is_dismissed = ?');
+      params.push(updates.is_dismissed ? 1 : 0);
+    }
+    if (updates.read_at !== undefined) {
+      fields.push('read_at = ?');
+      params.push(updates.read_at);
+    }
+
+    if (fields.length === 0) return true;
+
+    params.push(id);
+    db.run(`UPDATE notifications SET ${fields.join(', ')} WHERE id = ?`, params);
+    saveDb();
+
+    return true;
+  } catch (e) {
+    console.error('[updateNotification] 업데이트 실패:', e);
+    return false;
+  }
+}
+
+// 알림 설정 조회 (전역)
+export function getNotificationSettings(): NotificationSettings | null {
+  if (!db) return null;
+
+  try {
+    migrateNotificationTables();
+
+    const settings = queryOne<NotificationSettings & { enabled: number; missed_reminder_enabled: number; daily_summary_enabled: number; sound_enabled: number }>(
+      db,
+      'SELECT * FROM notification_settings WHERE schedule_id IS NULL'
+    );
+
+    if (!settings) return null;
+
+    return {
+      ...settings,
+      enabled: settings.enabled === 1,
+      missed_reminder_enabled: settings.missed_reminder_enabled === 1,
+      daily_summary_enabled: settings.daily_summary_enabled === 1,
+      sound_enabled: settings.sound_enabled === 1,
+    };
+  } catch (e) {
+    console.error('[getNotificationSettings] 조회 실패:', e);
+    return null;
+  }
+}
+
+// 알림 설정 업데이트
+export function updateNotificationSettings(
+  id: string,
+  updates: Partial<NotificationSettings>
+): boolean {
+  if (!db) return false;
+
+  try {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.enabled !== undefined) {
+      fields.push('enabled = ?');
+      params.push(updates.enabled ? 1 : 0);
+    }
+    if (updates.pre_reminder_minutes !== undefined) {
+      fields.push('pre_reminder_minutes = ?');
+      params.push(updates.pre_reminder_minutes);
+    }
+    if (updates.missed_reminder_enabled !== undefined) {
+      fields.push('missed_reminder_enabled = ?');
+      params.push(updates.missed_reminder_enabled ? 1 : 0);
+    }
+    if (updates.missed_reminder_delay_minutes !== undefined) {
+      fields.push('missed_reminder_delay_minutes = ?');
+      params.push(updates.missed_reminder_delay_minutes);
+    }
+    if (updates.daily_summary_enabled !== undefined) {
+      fields.push('daily_summary_enabled = ?');
+      params.push(updates.daily_summary_enabled ? 1 : 0);
+    }
+    if (updates.daily_summary_time !== undefined) {
+      fields.push('daily_summary_time = ?');
+      params.push(updates.daily_summary_time);
+    }
+    if (updates.sound_enabled !== undefined) {
+      fields.push('sound_enabled = ?');
+      params.push(updates.sound_enabled ? 1 : 0);
+    }
+    if (updates.sound_preset !== undefined) {
+      fields.push('sound_preset = ?');
+      params.push(updates.sound_preset);
+    }
+    if (updates.do_not_disturb_start !== undefined) {
+      fields.push('do_not_disturb_start = ?');
+      params.push(updates.do_not_disturb_start);
+    }
+    if (updates.do_not_disturb_end !== undefined) {
+      fields.push('do_not_disturb_end = ?');
+      params.push(updates.do_not_disturb_end);
+    }
+
+    if (fields.length === 0) return true;
+
+    fields.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+
+    db.run(`UPDATE notification_settings SET ${fields.join(', ')} WHERE id = ?`, params);
+    saveDb();
+
+    return true;
+  } catch (e) {
+    console.error('[updateNotificationSettings] 업데이트 실패:', e);
+    return false;
+  }
+}
+
+// 일정별 알림 설정 조회
+export function getScheduleNotificationSettings(scheduleId: string): NotificationSettings | null {
+  if (!db) return null;
+
+  try {
+    migrateNotificationTables();
+
+    const settings = queryOne<NotificationSettings & { enabled: number; missed_reminder_enabled: number; daily_summary_enabled: number; sound_enabled: number }>(
+      db,
+      'SELECT * FROM notification_settings WHERE schedule_id = ?',
+      [scheduleId]
+    );
+
+    if (!settings) return null;
+
+    return {
+      ...settings,
+      enabled: settings.enabled === 1,
+      missed_reminder_enabled: settings.missed_reminder_enabled === 1,
+      daily_summary_enabled: settings.daily_summary_enabled === 1,
+      sound_enabled: settings.sound_enabled === 1,
+    };
+  } catch (e) {
+    console.error('[getScheduleNotificationSettings] 조회 실패:', e);
+    return null;
+  }
+}
+
+// 일정별 알림 설정 업데이트 (없으면 생성)
+export function updateScheduleNotificationSettings(
+  scheduleId: string,
+  updates: Partial<NotificationSettings>
+): boolean {
+  if (!db) return false;
+
+  try {
+    migrateNotificationTables();
+
+    // 기존 설정 확인
+    const existing = queryOne<{ id: string }>(
+      db,
+      'SELECT id FROM notification_settings WHERE schedule_id = ?',
+      [scheduleId]
+    );
+
+    if (existing) {
+      // 업데이트
+      return updateNotificationSettings(existing.id, updates);
+    } else {
+      // 새로 생성
+      const id = generateUUID();
+      const now = new Date().toISOString();
+
+      db.run(
+        `INSERT INTO notification_settings (id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled, missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time, sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          scheduleId,
+          updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : 1,
+          updates.pre_reminder_minutes ?? 10,
+          updates.missed_reminder_enabled !== undefined ? (updates.missed_reminder_enabled ? 1 : 0) : 1,
+          updates.missed_reminder_delay_minutes ?? 30,
+          updates.daily_summary_enabled !== undefined ? (updates.daily_summary_enabled ? 1 : 0) : 0,
+          updates.daily_summary_time ?? '21:00',
+          updates.sound_enabled !== undefined ? (updates.sound_enabled ? 1 : 0) : 1,
+          updates.sound_preset ?? 'default',
+          updates.do_not_disturb_start ?? null,
+          updates.do_not_disturb_end ?? null,
+          now,
+          now,
+        ]
+      );
+
+      saveDb();
+      return true;
+    }
+  } catch (e) {
+    console.error('[updateScheduleNotificationSettings] 업데이트 실패:', e);
+    return false;
+  }
+}
+
+// 알림 읽음 처리
+export function markNotificationRead(id: string): boolean {
+  return updateNotification(id, {
+    is_read: true,
+    read_at: new Date().toISOString(),
+  });
+}
+
+// 알림 삭제 (dismiss)
+export function dismissNotification(id: string): boolean {
+  return updateNotification(id, { is_dismissed: true });
 }

@@ -19,7 +19,9 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { useClinicStore } from '../store/clinicStore';
 import { useFeatureStore } from '../store/featureStore';
+import { useNotificationStore } from '../store/notificationStore';
 import { loadMenuOrder, saveMenuOrder, MENU_ITEMS, FIXED_MENU } from '../lib/menuConfig';
+import { NotificationBadge, NotificationCenter, ToastContainer } from './notification';
 import type { FeatureKey, MenuItemMeta } from '../types';
 
 // 아이콘 매핑
@@ -40,6 +42,13 @@ export function Sidebar() {
   const { authState, logout } = useAuthStore();
   const { settings } = useClinicStore();
   const { hasAccess, planName } = useFeatureStore();
+  const { loadNotifications, loadSettings } = useNotificationStore();
+
+  // 알림 초기화
+  useEffect(() => {
+    loadNotifications();
+    loadSettings();
+  }, [loadNotifications, loadSettings]);
 
   const [menuOrder, setMenuOrder] = useState<FeatureKey[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -122,10 +131,14 @@ export function Sidebar() {
   };
 
   return (
+    <>
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-primary-700">고시방</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-primary-700">고시방</h1>
+            <NotificationBadge />
+          </div>
           {settings?.clinic_name && (
             <p className="text-sm text-gray-600 mt-1">{settings.clinic_name}</p>
           )}
@@ -260,5 +273,10 @@ export function Sidebar() {
           </button>
         </div>
       </aside>
+
+      {/* 알림 센터 및 토스트 */}
+      <NotificationCenter />
+      <ToastContainer />
+    </>
   );
 }

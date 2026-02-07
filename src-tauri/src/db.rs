@@ -518,6 +518,47 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_staff_accounts_username ON staff_accounts(username);
 
+        -- 알림 설정
+        CREATE TABLE IF NOT EXISTS notification_settings (
+            id TEXT PRIMARY KEY,
+            schedule_id TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            pre_reminder_minutes INTEGER NOT NULL DEFAULT 5,
+            missed_reminder_enabled INTEGER NOT NULL DEFAULT 1,
+            missed_reminder_delay_minutes INTEGER NOT NULL DEFAULT 30,
+            daily_summary_enabled INTEGER NOT NULL DEFAULT 0,
+            daily_summary_time TEXT NOT NULL DEFAULT '09:00',
+            sound_enabled INTEGER NOT NULL DEFAULT 1,
+            sound_preset TEXT NOT NULL DEFAULT 'default',
+            do_not_disturb_start TEXT,
+            do_not_disturb_end TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_notification_settings_schedule ON notification_settings(schedule_id);
+
+        -- 알림 기록
+        CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            notification_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            schedule_id TEXT,
+            patient_id TEXT,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            is_dismissed INTEGER NOT NULL DEFAULT 0,
+            action_url TEXT,
+            created_at TEXT NOT NULL,
+            read_at TEXT,
+            FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id),
+            FOREIGN KEY (patient_id) REFERENCES patients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(notification_type);
+        CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);
+        CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+
         -- 인덱스 생성
         CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
         CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
@@ -2463,4 +2504,433 @@ pub fn get_medication_stats_by_patient(patient_id: &str) -> AppResult<Medication
         skipped_count,
         compliance_rate,
     })
+}
+
+// ============ 알림 설정 관리 ============
+
+use crate::models::{NotificationSettings, Notification};
+
+/// 전역 알림 설정 조회
+pub fn get_notification_settings() -> AppResult<Option<NotificationSettings>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled,
+                  missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time,
+                  sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end,
+                  created_at, updated_at
+           FROM notification_settings WHERE schedule_id IS NULL LIMIT 1"#,
+    )?;
+
+    let result = stmt.query_row([], |row| {
+        Ok(NotificationSettings {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            enabled: row.get::<_, i32>(2)? != 0,
+            pre_reminder_minutes: row.get(3)?,
+            missed_reminder_enabled: row.get::<_, i32>(4)? != 0,
+            missed_reminder_delay_minutes: row.get(5)?,
+            daily_summary_enabled: row.get::<_, i32>(6)? != 0,
+            daily_summary_time: row.get(7)?,
+            sound_enabled: row.get::<_, i32>(8)? != 0,
+            sound_preset: row.get(9)?,
+            do_not_disturb_start: row.get(10)?,
+            do_not_disturb_end: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
+        })
+    });
+
+    match result {
+        Ok(settings) => Ok(Some(settings)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 복약 일정별 알림 설정 조회
+#[allow(dead_code)]
+pub fn get_notification_settings_by_schedule(schedule_id: &str) -> AppResult<Option<NotificationSettings>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled,
+                  missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time,
+                  sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end,
+                  created_at, updated_at
+           FROM notification_settings WHERE schedule_id = ?1"#,
+    )?;
+
+    let result = stmt.query_row([schedule_id], |row| {
+        Ok(NotificationSettings {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            enabled: row.get::<_, i32>(2)? != 0,
+            pre_reminder_minutes: row.get(3)?,
+            missed_reminder_enabled: row.get::<_, i32>(4)? != 0,
+            missed_reminder_delay_minutes: row.get(5)?,
+            daily_summary_enabled: row.get::<_, i32>(6)? != 0,
+            daily_summary_time: row.get(7)?,
+            sound_enabled: row.get::<_, i32>(8)? != 0,
+            sound_preset: row.get(9)?,
+            do_not_disturb_start: row.get(10)?,
+            do_not_disturb_end: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
+        })
+    });
+
+    match result {
+        Ok(settings) => Ok(Some(settings)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 알림 설정 생성 또는 업데이트
+#[allow(dead_code)]
+pub fn upsert_notification_settings(settings: &NotificationSettings) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        r#"INSERT OR REPLACE INTO notification_settings
+           (id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled,
+            missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time,
+            sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end,
+            created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"#,
+        params![
+            settings.id,
+            settings.schedule_id,
+            if settings.enabled { 1 } else { 0 },
+            settings.pre_reminder_minutes,
+            if settings.missed_reminder_enabled { 1 } else { 0 },
+            settings.missed_reminder_delay_minutes,
+            if settings.daily_summary_enabled { 1 } else { 0 },
+            settings.daily_summary_time,
+            if settings.sound_enabled { 1 } else { 0 },
+            settings.sound_preset,
+            settings.do_not_disturb_start,
+            settings.do_not_disturb_end,
+            settings.created_at,
+            now,
+        ],
+    )?;
+
+    log::info!("알림 설정 저장됨: {}", settings.id);
+    Ok(())
+}
+
+// ============ 알림 기록 관리 ============
+
+/// 알림 목록 조회
+#[allow(dead_code)]
+pub fn list_notifications(limit: Option<i32>) -> AppResult<Vec<Notification>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let limit_val = limit.unwrap_or(100);
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, notification_type, title, body, priority, schedule_id, patient_id,
+                  is_read, is_dismissed, action_url, created_at, read_at
+           FROM notifications
+           ORDER BY created_at DESC
+           LIMIT ?"#,
+    )?;
+
+    let rows = stmt.query_map([limit_val], |row| {
+        Ok(Notification {
+            id: row.get(0)?,
+            notification_type: row.get(1)?,
+            title: row.get(2)?,
+            body: row.get(3)?,
+            priority: row.get(4)?,
+            schedule_id: row.get(5)?,
+            patient_id: row.get(6)?,
+            is_read: row.get::<_, i32>(7)? != 0,
+            is_dismissed: row.get::<_, i32>(8)? != 0,
+            action_url: row.get(9)?,
+            created_at: row.get(10)?,
+            read_at: row.get(11)?,
+        })
+    })?;
+
+    let mut notifications = Vec::new();
+    for row in rows {
+        notifications.push(row?);
+    }
+    Ok(notifications)
+}
+
+/// 읽지 않은 알림 목록 조회
+#[allow(dead_code)]
+pub fn list_unread_notifications() -> AppResult<Vec<Notification>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, notification_type, title, body, priority, schedule_id, patient_id,
+                  is_read, is_dismissed, action_url, created_at, read_at
+           FROM notifications
+           WHERE is_read = 0 AND is_dismissed = 0
+           ORDER BY created_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok(Notification {
+            id: row.get(0)?,
+            notification_type: row.get(1)?,
+            title: row.get(2)?,
+            body: row.get(3)?,
+            priority: row.get(4)?,
+            schedule_id: row.get(5)?,
+            patient_id: row.get(6)?,
+            is_read: row.get::<_, i32>(7)? != 0,
+            is_dismissed: row.get::<_, i32>(8)? != 0,
+            action_url: row.get(9)?,
+            created_at: row.get(10)?,
+            read_at: row.get(11)?,
+        })
+    })?;
+
+    let mut notifications = Vec::new();
+    for row in rows {
+        notifications.push(row?);
+    }
+    Ok(notifications)
+}
+
+/// 알림 생성
+pub fn create_notification(notification: &Notification) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        r#"INSERT INTO notifications
+           (id, notification_type, title, body, priority, schedule_id, patient_id,
+            is_read, is_dismissed, action_url, created_at, read_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
+        params![
+            notification.id,
+            notification.notification_type,
+            notification.title,
+            notification.body,
+            notification.priority,
+            notification.schedule_id,
+            notification.patient_id,
+            if notification.is_read { 1 } else { 0 },
+            if notification.is_dismissed { 1 } else { 0 },
+            notification.action_url,
+            notification.created_at,
+            notification.read_at,
+        ],
+    )?;
+
+    log::info!("알림 생성됨: {} - {}", notification.id, notification.title);
+    Ok(())
+}
+
+/// 알림 읽음 처리
+#[allow(dead_code)]
+pub fn mark_notification_read(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE notifications SET is_read = 1, read_at = ?2 WHERE id = ?1",
+        params![id, now],
+    )?;
+
+    log::info!("알림 읽음 처리: {}", id);
+    Ok(())
+}
+
+/// 모든 알림 읽음 처리
+#[allow(dead_code)]
+pub fn mark_all_notifications_read() -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    let count = conn.execute(
+        "UPDATE notifications SET is_read = 1, read_at = ?1 WHERE is_read = 0",
+        params![now],
+    )?;
+
+    log::info!("모든 알림 읽음 처리: {}개", count);
+    Ok(())
+}
+
+/// 알림 해제 처리
+#[allow(dead_code)]
+pub fn dismiss_notification(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        "UPDATE notifications SET is_dismissed = 1 WHERE id = ?1",
+        params![id],
+    )?;
+
+    log::info!("알림 해제됨: {}", id);
+    Ok(())
+}
+
+/// 읽지 않은 알림 수 조회
+pub fn get_unread_notification_count() -> AppResult<i32> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM notifications WHERE is_read = 0 AND is_dismissed = 0",
+        [],
+        |row| row.get(0),
+    )?;
+
+    Ok(count)
+}
+
+/// 알림 설정 업데이트
+pub fn update_notification_settings(settings: &NotificationSettings) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        r#"UPDATE notification_settings SET
+            enabled = ?1,
+            pre_reminder_minutes = ?2,
+            missed_reminder_enabled = ?3,
+            missed_reminder_delay_minutes = ?4,
+            daily_summary_enabled = ?5,
+            daily_summary_time = ?6,
+            sound_enabled = ?7,
+            sound_preset = ?8,
+            do_not_disturb_start = ?9,
+            do_not_disturb_end = ?10,
+            updated_at = ?11
+           WHERE id = ?12"#,
+        params![
+            settings.enabled,
+            settings.pre_reminder_minutes,
+            settings.missed_reminder_enabled,
+            settings.missed_reminder_delay_minutes,
+            settings.daily_summary_enabled,
+            settings.daily_summary_time,
+            settings.sound_enabled,
+            settings.sound_preset,
+            settings.do_not_disturb_start,
+            settings.do_not_disturb_end,
+            now,
+            settings.id,
+        ],
+    )?;
+
+    log::info!("알림 설정 업데이트: {}", settings.id);
+    Ok(())
+}
+
+/// 오래된 알림 삭제
+#[allow(dead_code)]
+pub fn delete_old_notifications(days_old: i32) -> AppResult<i32> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let cutoff_date = (Utc::now() - chrono::Duration::days(days_old as i64)).to_rfc3339();
+
+    let count = conn.execute(
+        "DELETE FROM notifications WHERE created_at < ?1",
+        params![cutoff_date],
+    )?;
+
+    log::info!("오래된 알림 삭제: {}일 이전 {}개", days_old, count);
+    Ok(count as i32)
+}
+
+/// 복약 일정에 대한 최근 알림 확인 (중복 방지용)
+pub fn has_recent_notification(schedule_id: &str, notification_type: &str, minutes: i32) -> AppResult<bool> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let cutoff = (Utc::now() - chrono::Duration::minutes(minutes as i64)).to_rfc3339();
+
+    let count: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM notifications
+           WHERE schedule_id = ?1 AND notification_type = ?2 AND created_at > ?3"#,
+        params![schedule_id, notification_type, cutoff],
+        |row| row.get(0),
+    )?;
+
+    Ok(count > 0)
+}
+
+/// 활성 복약 일정 목록 조회 (오늘 날짜 기준)
+pub fn get_active_medication_schedules_for_today() -> AppResult<Vec<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let today = Utc::now().to_rfc3339();
+
+    let mut stmt = conn.prepare(
+        r#"SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at
+           FROM medication_schedules
+           WHERE start_date <= ?1 AND end_date >= ?1
+           ORDER BY created_at DESC"#,
+    )?;
+
+    let rows = stmt.query_map([today], |row| {
+        let medication_times_json: String = row.get(6)?;
+        let medication_times: Vec<String> = serde_json::from_str(&medication_times_json).unwrap_or_default();
+        Ok(MedicationSchedule {
+            id: row.get(0)?,
+            patient_id: row.get(1)?,
+            prescription_id: row.get(2)?,
+            start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                .unwrap()
+                .with_timezone(&Utc),
+            times_per_day: row.get(5)?,
+            medication_times,
+            notes: row.get(7)?,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                .unwrap()
+                .with_timezone(&Utc),
+        })
+    })?;
+
+    let mut schedules = Vec::new();
+    for row in rows {
+        schedules.push(row?);
+    }
+    Ok(schedules)
+}
+
+/// 특정 시간대의 복약 기록 존재 여부 확인
+pub fn has_medication_log_for_time(schedule_id: &str, time_str: &str, date: &str) -> AppResult<bool> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    // date와 time_str을 결합하여 시작/종료 범위 생성 (±30분)
+    let datetime_str = format!("{}T{}:00", date, time_str);
+    let target_time = chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", datetime_str))
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+
+    let start_time = (target_time - chrono::Duration::minutes(30)).to_rfc3339();
+    let end_time = (target_time + chrono::Duration::minutes(30)).to_rfc3339();
+
+    let count: i32 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medication_logs
+           WHERE schedule_id = ?1 AND taken_at >= ?2 AND taken_at <= ?3 AND status = 'taken'"#,
+        params![schedule_id, start_time, end_time],
+        |row| row.get(0),
+    )?;
+
+    Ok(count > 0)
 }

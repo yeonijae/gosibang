@@ -4,6 +4,7 @@ mod db;
 mod encryption;
 mod error;
 mod models;
+mod notification;
 pub mod server;
 mod sync;
 pub mod web_api;
@@ -14,6 +15,7 @@ use commands::*;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
@@ -28,6 +30,12 @@ pub fn run() {
         .setup(|app| {
             // 동기화 모듈 초기화
             sync::init_sync();
+
+            // 알림 스케줄러 시작
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                notification::run_scheduler(app_handle).await;
+            });
 
             // 개발 모드에서 devtools 자동 열기
             #[cfg(debug_assertions)]
