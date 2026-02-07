@@ -19,9 +19,11 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "useHttpsScheme": true
       }
     ],
+    "withGlobalTauri": true,
     "security": {
       "csp": "default-src 'self'; connect-src 'self' https://*.supabase.co https://sql.js.org http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'"
     }

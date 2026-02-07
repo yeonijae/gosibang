@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
+import { useZoom } from './hooks/useZoom';
 import { Dashboard } from './pages/Dashboard';
 import { Patients } from './pages/Patients';
 import { Prescriptions } from './pages/Prescriptions';
@@ -29,6 +30,9 @@ function App() {
   const { authState, checkAuth } = useAuthStore();
   const { loadSettings } = useClinicStore();
   const { loadFeatures } = useFeatureStore();
+
+  // 화면 배율 조정 (Ctrl+/-, Ctrl+0, Ctrl+휠)
+  useZoom();
 
   useEffect(() => {
     const initializeApp = async () => {
