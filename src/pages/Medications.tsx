@@ -33,7 +33,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bgColor: str
 };
 
 export function Medications() {
-  const [activeTab, setActiveTab] = useState<'create' | 'list'>('list');
+  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'all'>('list');
   const [prescriptions, setPrescriptions] = useState<PrescriptionWithMedication[]>([]);
   const [medications, setMedications] = useState<MedicationManagement[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -93,6 +93,12 @@ export function Medications() {
   const handleCreateMedication = async () => {
     if (!selectedPrescription) return;
 
+    // patient_id가 없으면 생성 불가
+    if (!selectedPrescription.patient_id) {
+      alert('환자가 지정되지 않은 처방전입니다. 처방전에 환자를 먼저 지정해주세요.');
+      return;
+    }
+
     setIsCreating(true);
     try {
       const db = getDb();
@@ -127,7 +133,7 @@ export function Medications() {
         [
           id,
           selectedPrescription.id,
-          selectedPrescription.patient_id || null,
+          selectedPrescription.patient_id,
           selectedPrescription.patient_name || '미지정',
           selectedPrescription.formula || selectedPrescription.prescription_name || '처방',
           prescriptionDate.toISOString().split('T')[0],
@@ -246,8 +252,8 @@ export function Medications() {
     (m.status === 'postponed' && m.postponed_to === selectedDate)
   );
 
-  // 복약관리가 없는 처방전 목록
-  const prescriptionsWithoutMedication = prescriptions.filter(p => !p.has_medication);
+  // 복약관리가 없는 처방전 목록 (환자가 지정된 것만)
+  const prescriptionsWithoutMedication = prescriptions.filter(p => !p.has_medication && p.patient_id);
 
   // 날짜 포맷
   const formatDate = (dateStr: string) => {
@@ -278,7 +284,7 @@ export function Medications() {
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">복약관리</h1>
@@ -294,7 +300,18 @@ export function Medications() {
             }`}
           >
             <Phone className="w-4 h-4 inline-block mr-1" />
-            해피콜 목록
+            해피콜 예정
+          </button>
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'all'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Pill className="w-4 h-4 inline-block mr-1" />
+            전체 목록
           </button>
           <button
             onClick={() => setActiveTab('create')}
@@ -433,6 +450,69 @@ export function Medications() {
                 <p className="text-sm text-gray-700">완료</p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 전체 목록 탭 */}
+      {activeTab === 'all' && (
+        <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-auto">
+          <div className="card">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Pill className="w-5 h-5 text-primary-600" />
+              전체 복약관리 목록
+              {medications.length > 0 && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-primary-100 text-primary-700 rounded-full">
+                  {medications.length}
+                </span>
+              )}
+            </h2>
+
+            {medications.length > 0 ? (
+              <div className="space-y-3">
+                {medications.map((medication) => (
+                  <div
+                    key={medication.id}
+                    onClick={() => {
+                      setSelectedMedication(medication);
+                      setNotes(medication.notes || '');
+                      setShowDetailModal(true);
+                    }}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                        <User className="w-5 h-5 text-primary-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{medication.patient_name}</p>
+                        <p className="text-sm text-gray-500">{medication.prescription_name}</p>
+                        <p className="text-xs text-gray-400">
+                          복용: {formatDate(medication.start_date)} ~ {formatDate(medication.end_date)} ·
+                          해피콜: {formatDate(medication.happy_call_date)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${STATUS_LABELS[medication.status]?.bgColor} ${STATUS_LABELS[medication.status]?.color}`}>
+                        {STATUS_LABELS[medication.status]?.label}
+                      </span>
+                      {medication.postpone_count > 0 && (
+                        <span className="text-xs text-amber-600">
+                          ({medication.postpone_count}회 연기)
+                        </span>
+                      )}
+                      <ArrowRight className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Pill className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">등록된 복약관리가 없습니다</p>
+              </div>
+            )}
           </div>
         </div>
       )}

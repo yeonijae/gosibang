@@ -39,6 +39,7 @@ export function Charts() {
   const [initialChartPrescriptionIssued, setInitialChartPrescriptionIssued] = useState(false);
   const [progressEntries, setProgressEntries] = useState<ProgressEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailPatient, setDetailPatient] = useState<Patient | null>(null);
 
   // 초진차트 편집 상태
   const [isEditingChart, setIsEditingChart] = useState(false);
@@ -62,6 +63,9 @@ export function Charts() {
   const [prescriptionFormula, setPrescriptionFormula] = useState('');
   const [prescriptionSourceType, setPrescriptionSourceType] = useState<'initial_chart' | 'progress_note'>('initial_chart');
   const [prescriptionSourceId, setPrescriptionSourceId] = useState<string | null>(null);
+  const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | null>(null);
+  const [prescriptionPatientName, setPrescriptionPatientName] = useState<string | null>(null);
+  const [prescriptionChartNumber, setPrescriptionChartNumber] = useState<string | null>(null);
 
   useEffect(() => {
     loadChartRecords();
@@ -100,9 +104,9 @@ export function Charts() {
       const db = getDb();
       if (!db) return;
 
-      const initialCharts = queryToObjects<InitialChart & { patient_name: string }>(
+      const initialCharts = queryToObjects<InitialChart & { patient_name: string; chart_number?: string }>(
         db,
-        `SELECT ic.*, p.name as patient_name
+        `SELECT ic.*, p.name as patient_name, p.chart_number as chart_number
          FROM initial_charts ic
          LEFT JOIN patients p ON ic.patient_id = p.id
          WHERE ic.deleted_at IS NULL
@@ -177,8 +181,14 @@ export function Charts() {
   };
 
   // 상세 모달 열기
-  const handleRecordClick = async (record: InitialChart & { patient_name: string }) => {
+  const handleRecordClick = async (record: InitialChart & { patient_name: string; chart_number?: string }) => {
     setShowDetailModal(true);
+    // 환자 정보를 미리 저장 (DB 조회 실패 시 대비)
+    setDetailPatient({
+      id: record.patient_id,
+      name: record.patient_name,
+      chart_number: record.chart_number,
+    } as Patient);
     await loadDetailData(record.id, record.patient_id);
   };
 
@@ -238,6 +248,7 @@ export function Charts() {
   const closeDetailModal = () => {
     setShowDetailModal(false);
     setInitialChart(null);
+    setDetailPatient(null);
     setProgressEntries([]);
     setIsEditingChart(false);
     setShowAddForm(false);
@@ -625,6 +636,26 @@ export function Charts() {
     const prescriptionSection = extractSectionFromNotes(initialChart.notes || '', '처방');
     const formula = extractFormulaFromPrescription(prescriptionSection);
 
+    // 환자 정보 설정 - detailPatient에서 가져옴 (DB 조회 실패 대비)
+    if (detailPatient) {
+      setPrescriptionPatientId(detailPatient.id);
+      setPrescriptionPatientName(detailPatient.name);
+      setPrescriptionChartNumber(detailPatient.chart_number || null);
+      console.log('[처방전 발급] detailPatient 사용:', detailPatient.name);
+    } else {
+      // 폴백: DB에서 직접 조회
+      const db = getDb();
+      if (db && initialChart.patient_id) {
+        const patient = queryOne<Patient>(db, 'SELECT * FROM patients WHERE id = ?', [initialChart.patient_id]);
+        if (patient) {
+          setPrescriptionPatientId(patient.id);
+          setPrescriptionPatientName(patient.name);
+          setPrescriptionChartNumber(patient.chart_number || null);
+          console.log('[처방전 발급] DB에서 조회:', patient.name);
+        }
+      }
+    }
+
     setPrescriptionFormula(formula);
     setPrescriptionSourceType('initial_chart');
     setPrescriptionSourceId(initialChart.id);
@@ -637,6 +668,13 @@ export function Charts() {
     if (!progressEntry) return;
 
     const formula = extractFormulaFromPrescription(progressEntry.prescription || '');
+
+    // 환자 정보 설정 - detailPatient에서 가져옴 (DB 조회 실패 대비)
+    if (detailPatient) {
+      setPrescriptionPatientId(detailPatient.id);
+      setPrescriptionPatientName(detailPatient.name);
+      setPrescriptionChartNumber(detailPatient.chart_number || null);
+    }
 
     setPrescriptionFormula(formula);
     setPrescriptionSourceType('progress_note');
@@ -653,6 +691,13 @@ export function Charts() {
       const now = new Date().toISOString();
       const prescriptionId = generateUUID();
 
+      // 처방전 발급 시 저장해둔 환자 정보 사용
+      const patientId = prescriptionPatientId || initialChart?.patient_id || selectedPatient?.id;
+      const patientName = prescriptionPatientName || selectedPatient?.name;
+      const chartNumber = prescriptionChartNumber || selectedPatient?.chart_number;
+
+      console.log('[처방전 저장] patientId:', patientId, 'patientName:', patientName, 'chartNumber:', chartNumber);
+
       // prescriptions 테이블에 저장
       db.run(
         `INSERT INTO prescriptions (
@@ -664,10 +709,10 @@ export function Charts() {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           prescriptionId,
-          selectedPatient?.id || null,
-          selectedPatient?.name || null,
+          patientId || null,
+          patientName || null,
           data.formula, // prescription_name
-          selectedPatient?.chart_number || null,
+          chartNumber || null,
           prescriptionSourceType,
           prescriptionSourceId,
           data.formula,
@@ -717,6 +762,9 @@ export function Charts() {
       alert('처방전이 발급되었습니다');
       setShowPrescriptionInputModal(false);
       setPrescriptionSourceId(null);
+      setPrescriptionPatientId(null);
+      setPrescriptionPatientName(null);
+      setPrescriptionChartNumber(null);
       closeDetailModal();
       navigate('/prescriptions');
     } catch (error: any) {
@@ -909,7 +957,7 @@ export function Charts() {
   // ===== 렌더링 =====
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">차트 관리</h1>
@@ -1563,13 +1611,18 @@ export function Charts() {
                 <div>
                   <h3 className="text-xl font-bold">처방전 발급</h3>
                   <p className="text-sm text-gray-300">
-                    {selectedPatient?.name}
-                    {selectedPatient?.chart_number && ` (${selectedPatient.chart_number})`}
+                    {prescriptionPatientName || selectedPatient?.name}
+                    {(prescriptionChartNumber || selectedPatient?.chart_number) && ` (${prescriptionChartNumber || selectedPatient?.chart_number})`}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setShowPrescriptionInputModal(false)}
+                onClick={() => {
+                  setShowPrescriptionInputModal(false);
+                  setPrescriptionPatientId(null);
+                  setPrescriptionPatientName(null);
+                  setPrescriptionChartNumber(null);
+                }}
                 className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors flex items-center gap-1"
               >
                 <X className="w-4 h-4" />

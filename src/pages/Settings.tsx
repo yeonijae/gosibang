@@ -38,8 +38,8 @@ const FEATURE_LABELS: Record<string, string> = {
   dashboard: '대시보드',
   patients: '환자관리',
   prescriptions: '처방관리',
-  prescription_definitions: '처방정의',
-  prescription_definitions_edit: '처방정의변경',
+  prescription_definitions: '처방공부',
+  prescription_definitions_edit: '처방공부변경',
   charts: '차트관리',
   survey: '설문지',  // 통합 표시용 (survey_templates, survey_responses, survey_internal, survey_external)
   medication: '복약관리',
@@ -96,7 +96,7 @@ const DEFAULT_PLANS: PlanDisplay[] = [
       { text: '대시보드', included: true },
       { text: '환자관리', included: true },
       { text: '처방관리', included: true },
-      { text: '처방정의', included: true },
+      { text: '처방공부', included: true },
       { text: '차트관리', included: true },
       { text: '설문템플릿', included: false },
       { text: '설문관리', included: false },
@@ -576,7 +576,7 @@ export function Settings() {
 
       saveDb();
       loadUsageStats();
-      setMessage({ type: 'success', text: `초기화 완료: 모든 데이터 삭제, 처방정의 ${prescriptionCount}개로 복원` });
+      setMessage({ type: 'success', text: `초기화 완료: 모든 데이터 삭제, 처방공부 ${prescriptionCount}개로 복원` });
     } catch (error) {
       console.error('데이터 초기화 실패:', error);
       setMessage({ type: 'error', text: '데이터 초기화에 실패했습니다.' });
@@ -1466,7 +1466,7 @@ export function Settings() {
 
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
               <p className="text-sm text-red-800">
-                <strong>삭제되는 데이터:</strong> 환자 {usageStats.patients}명, 처방 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개, 처방정의, 설문지 등 모든 데이터
+                <strong>삭제되는 데이터:</strong> 환자 {usageStats.patients}명, 처방 {usageStats.prescriptions}개, 차트 {usageStats.initialCharts + usageStats.progressNotes}개, 처방공부, 설문지 등 모든 데이터
               </p>
             </div>
 
@@ -1800,7 +1800,7 @@ export function Settings() {
                           )}
                         </div>
                         <p className="text-xs text-gray-500">
-                          마지막 활동: {new Date(session.last_active_at).toLocaleString()}
+                          마지막 활동: {new Date(session.last_active_at).toLocaleString('ko-KR')}
                         </p>
                       </div>
                     </div>
@@ -1919,7 +1919,7 @@ export function Settings() {
                           <p className="font-medium text-gray-900">{item.name}</p>
                           <p className="text-xs text-gray-500">
                             {item.extra_info && `${item.extra_info} · `}
-                            {new Date(item.deleted_at).toLocaleString()} 삭제
+                            {new Date(item.deleted_at).toLocaleString('ko-KR')} 삭제
                           </p>
                         </div>
                       </div>

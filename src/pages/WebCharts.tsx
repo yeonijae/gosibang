@@ -1509,7 +1509,7 @@ export function WebCharts() {
                   <option value="">환자를 선택하세요</option>
                   {patients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
-                      {patient.name} ({patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'} / {patient.birth_date || '-'})
+                      {patient.name} ({patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'} / {patient.birth_date ? patient.birth_date.replace(/-/g, '/') : '-'})
                     </option>
                   ))}
                 </select>

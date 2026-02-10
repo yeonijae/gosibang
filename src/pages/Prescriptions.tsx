@@ -177,8 +177,24 @@ export function Prescriptions() {
 
   const handleDelete = async (id: string) => {
     try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      // 삭제할 처방전 정보 조회 (source_type, source_id 확인)
+      const prescription = prescriptions.find(p => p.id === id);
+
       const success = softDelete('prescriptions', id);
       if (!success) throw new Error('삭제에 실패했습니다.');
+
+      // 처방전의 source 차트가 있으면 prescription_issued 상태 초기화
+      if (prescription?.source_type && prescription?.source_id) {
+        const tableName = prescription.source_type === 'initial_chart' ? 'initial_charts' : 'progress_notes';
+        db.run(
+          `UPDATE ${tableName} SET prescription_issued = 0, prescription_issued_at = NULL WHERE id = ?`,
+          [prescription.source_id]
+        );
+        saveDb();
+      }
 
       alert('처방전이 휴지통으로 이동되었습니다.');
       setDeleteConfirm(null);
@@ -471,12 +487,12 @@ export function Prescriptions() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">처방전 관리</h1>
-          <p className="text-sm text-gray-500 mt-1">발급된 처방전 {prescriptions.length}개</p>
+          <h1 className="text-2xl font-bold text-gray-900">처방 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">발급된 처방 {prescriptions.length}개</p>
         </div>
         {viewMode === 'list' ? (
           <button

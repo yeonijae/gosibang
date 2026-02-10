@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText, ExternalLink } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import SimpleMDE from 'react-simplemde-editor';
+import 'easymde/dist/easymde.min.css';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
-import type { PrescriptionNote } from '../types';
+import type { PrescriptionNote, PrescriptionCaseStudy, Prescription } from '../types';
 
 interface PrescriptionDefinition {
   id: number;
@@ -41,6 +45,13 @@ export function PrescriptionDefinitions() {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<PrescriptionNote | null>(null);
 
+  // 치험례 관련 상태
+  const [caseStudies, setCaseStudies] = useState<PrescriptionCaseStudy[]>([]);
+  const [linkedPrescriptions, setLinkedPrescriptions] = useState<Prescription[]>([]);
+  const [isCaseStudyModalOpen, setIsCaseStudyModalOpen] = useState(false);
+  const [editingCaseStudy, setEditingCaseStudy] = useState<PrescriptionCaseStudy | null>(null);
+  const [showLinkedPrescriptions, setShowLinkedPrescriptions] = useState(false);
+
   // 처방정의 수정 권한 체크
   const { hasAccess, planName } = useFeatureStore();
   const canEdit = hasAccess('prescription_definitions_edit');
@@ -50,12 +61,16 @@ export function PrescriptionDefinitions() {
     loadCategories();
   }, []);
 
-  // 선택된 처방이 변경되면 노트 로드
+  // 선택된 처방이 변경되면 노트와 치험례 로드
   useEffect(() => {
     if (selectedDef) {
       loadNotes(selectedDef.id);
+      loadCaseStudies(selectedDef.id);
+      loadLinkedPrescriptions(selectedDef.name);
     } else {
       setNotes([]);
+      setCaseStudies([]);
+      setLinkedPrescriptions([]);
     }
   }, [selectedDef]);
 
@@ -109,6 +124,40 @@ export function PrescriptionDefinitions() {
     }
   };
 
+  // 치험례 로드
+  const loadCaseStudies = (prescriptionDefId: number) => {
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const data = queryToObjects<PrescriptionCaseStudy>(
+        db,
+        'SELECT * FROM prescription_case_studies WHERE prescription_definition_id = ? ORDER BY created_at DESC',
+        [prescriptionDefId]
+      );
+      setCaseStudies(data);
+    } catch (error) {
+      console.error('치험례 로드 실패:', error);
+    }
+  };
+
+  // 연결된 처방 기록 로드
+  const loadLinkedPrescriptions = (prescriptionName: string) => {
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      const data = queryToObjects<Prescription>(
+        db,
+        'SELECT * FROM prescriptions WHERE prescription_name = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20',
+        [prescriptionName]
+      );
+      setLinkedPrescriptions(data);
+    } catch (error) {
+      console.error('연결 처방 기록 로드 실패:', error);
+    }
+  };
+
   // 노트 저장
   const handleSaveNote = async (note: PrescriptionNote) => {
     try {
@@ -157,6 +206,58 @@ export function PrescriptionDefinitions() {
       }
     } catch (error) {
       console.error('노트 삭제 실패:', error);
+      alert('삭제에 실패했습니다.');
+    }
+  };
+
+  // 치험례 저장
+  const handleSaveCaseStudy = async (caseStudy: PrescriptionCaseStudy) => {
+    try {
+      const db = getDb();
+      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+
+      const now = new Date().toISOString();
+
+      if (caseStudy.id) {
+        // 수정
+        db.run(
+          'UPDATE prescription_case_studies SET title = ?, content = ?, updated_at = ? WHERE id = ?',
+          [caseStudy.title, caseStudy.content, now, caseStudy.id]
+        );
+      } else {
+        // 새로 추가
+        db.run(
+          'INSERT INTO prescription_case_studies (prescription_definition_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+          [caseStudy.prescription_definition_id, caseStudy.title, caseStudy.content, now, now]
+        );
+      }
+      saveDb();
+      if (selectedDef) {
+        loadCaseStudies(selectedDef.id);
+      }
+      setIsCaseStudyModalOpen(false);
+      setEditingCaseStudy(null);
+    } catch (error) {
+      console.error('치험례 저장 실패:', error);
+      alert('저장에 실패했습니다.');
+    }
+  };
+
+  // 치험례 삭제
+  const handleDeleteCaseStudy = async (caseStudyId: number) => {
+    if (!confirm('이 치험례를 삭제하시겠습니까?')) return;
+
+    try {
+      const db = getDb();
+      if (!db) return;
+
+      db.run('DELETE FROM prescription_case_studies WHERE id = ?', [caseStudyId]);
+      saveDb();
+      if (selectedDef) {
+        loadCaseStudies(selectedDef.id);
+      }
+    } catch (error) {
+      console.error('치험례 삭제 실패:', error);
       alert('삭제에 실패했습니다.');
     }
   };
@@ -295,11 +396,11 @@ export function PrescriptionDefinitions() {
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">처방 정의</h1>
+          <h1 className="text-2xl font-bold text-gray-900">처방 공부</h1>
           <p className="text-sm text-gray-500 mt-1">등록된 처방 템플릿 {definitions.length}개</p>
         </div>
         {canEdit ? (
@@ -607,6 +708,160 @@ export function PrescriptionDefinitions() {
                     </div>
                   )}
                 </div>
+
+                {/* 치험례 */}
+                <div className="border-t border-gray-200 pt-4">
+                  {/* 연결된 처방 기록 */}
+                  {linkedPrescriptions.length > 0 && (
+                    <div className="mb-4">
+                      <button
+                        onClick={() => setShowLinkedPrescriptions(!showLinkedPrescriptions)}
+                        className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-primary-600 mb-2"
+                      >
+                        <FileText className="w-4 h-4" />
+                        연결된 처방 기록 ({linkedPrescriptions.length}건)
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showLinkedPrescriptions ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showLinkedPrescriptions && (
+                        <div className="space-y-2 pl-6">
+                          {linkedPrescriptions.map((prescription) => (
+                            <div
+                              key={prescription.id}
+                              className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="font-medium text-gray-900">
+                                    {prescription.patient_name || '익명'}
+                                  </span>
+                                  {prescription.patient_age && (
+                                    <span className="text-gray-500 ml-2">
+                                      ({prescription.patient_gender === 'F' ? '여' : '남'}, {prescription.patient_age}세)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                    prescription.status === 'issued' ? 'bg-green-100 text-green-700' :
+                                    prescription.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {prescription.status === 'issued' ? '발급' : prescription.status === 'completed' ? '완료' : '초안'}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {new Date(prescription.created_at).toLocaleDateString('ko-KR')}
+                                  </span>
+                                </div>
+                              </div>
+                              {prescription.chief_complaint && (
+                                <p className="text-gray-500 mt-1 text-xs truncate">
+                                  주소증: {prescription.chief_complaint}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 나의 치험례 */}
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4" />
+                      나의 치험례
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setEditingCaseStudy({
+                          id: 0,
+                          prescription_definition_id: selectedDef.id,
+                          title: '',
+                          content: '',
+                          created_at: '',
+                          updated_at: '',
+                        });
+                        setIsCaseStudyModalOpen(true);
+                      }}
+                      className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                      치험례 추가
+                    </button>
+                  </div>
+
+                  {caseStudies.length === 0 ? (
+                    <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg">
+                      <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">아직 치험례가 없습니다.</p>
+                      <p className="text-xs mt-1">임상 경험을 마크다운으로 기록해보세요!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {caseStudies.map((caseStudy) => (
+                        <div
+                          key={caseStudy.id}
+                          className="bg-blue-50 border border-blue-200 rounded-lg p-3 group"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <h4 className="font-medium text-gray-900">{caseStudy.title}</h4>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingCaseStudy(caseStudy);
+                                  setIsCaseStudyModalOpen(true);
+                                }}
+                                className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                title="수정"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCaseStudy(caseStudy.id)}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="삭제"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="prose prose-sm max-w-none text-gray-700">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({ href, children }) => (
+                                  <a
+                                    href={href}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      if (href) {
+                                        window.open(href, '_blank', 'noopener,noreferrer');
+                                      }
+                                    }}
+                                    className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    {children}
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ),
+                              }}
+                            >
+                              {caseStudy.content}
+                            </ReactMarkdown>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2">
+                            {new Date(caseStudy.created_at).toLocaleDateString('ko-KR', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            })}
+                            {caseStudy.updated_at !== caseStudy.created_at && ' (수정됨)'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">
@@ -647,6 +902,18 @@ export function PrescriptionDefinitions() {
           onClose={() => {
             setIsNoteModalOpen(false);
             setEditingNote(null);
+          }}
+        />
+      )}
+
+      {/* 치험례 추가/수정 모달 */}
+      {isCaseStudyModalOpen && editingCaseStudy && (
+        <CaseStudyModal
+          caseStudy={editingCaseStudy}
+          onSave={handleSaveCaseStudy}
+          onClose={() => {
+            setIsCaseStudyModalOpen(false);
+            setEditingCaseStudy(null);
           }}
         />
       )}
@@ -706,6 +973,114 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
               placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
               autoFocus
             />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 btn-secondary">
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 btn-primary flex items-center justify-center gap-2"
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              저장
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// 치험례 추가/수정 모달
+interface CaseStudyModalProps {
+  caseStudy: PrescriptionCaseStudy;
+  onSave: (caseStudy: PrescriptionCaseStudy) => void;
+  onClose: () => void;
+}
+
+function CaseStudyModal({ caseStudy, onSave, onClose }: CaseStudyModalProps) {
+  const [title, setTitle] = useState(caseStudy.title);
+  const [content, setContent] = useState(caseStudy.content);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      alert('제목을 입력해주세요.');
+      return;
+    }
+    if (!content.trim()) {
+      alert('내용을 입력해주세요.');
+      return;
+    }
+
+    setIsSaving(true);
+    await onSave({
+      ...caseStudy,
+      title: title.trim(),
+      content: content.trim(),
+    });
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-blue-500" />
+            {caseStudy.id ? '치험례 수정' : '새 치험례 추가'}
+          </h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              제목 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="input-field"
+              placeholder="예: 소시호탕으로 만성 피로 개선 사례"
+              autoFocus
+            />
+          </div>
+
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              내용 <span className="text-red-500">*</span>
+            </label>
+            <div className="flex-1 overflow-auto case-study-editor">
+              <SimpleMDE
+                value={content}
+                onChange={setContent}
+                options={{
+                  placeholder: '## 환자 정보\n45세 여성, 직장인\n\n## 주소증\n- 만성 피로감\n- 식욕부진\n\n## 치료 경과\n2주간 복용 후 개선',
+                  spellChecker: false,
+                  status: false,
+                  toolbar: [
+                    'bold', 'italic', 'heading', '|',
+                    'quote', 'unordered-list', 'ordered-list', '|',
+                    'link', '|',
+                    'preview', 'side-by-side', 'fullscreen', '|',
+                    'guide'
+                  ],
+                  minHeight: '250px',
+                }}
+              />
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">

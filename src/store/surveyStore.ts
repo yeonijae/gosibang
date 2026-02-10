@@ -401,14 +401,14 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     const db = getDb();
     if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-    // 환자 이름 가져오기
-    const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [patientId]);
+    // 환자 정보 가져오기 (Tauri 백엔드에서 조회)
+    const patient = await invoke<{ id: string; name: string; chart_number?: string } | null>('get_patient', { id: patientId });
     if (!patient) throw new Error('환자를 찾을 수 없습니다.');
 
-    // 응답의 patient_id 업데이트
+    // 응답의 patient_id, patient_name, chart_number 업데이트
     db.run(
-      'UPDATE survey_responses SET patient_id = ? WHERE id = ?',
-      [patientId, responseId]
+      'UPDATE survey_responses SET patient_id = ?, patient_name = ?, chart_number = ? WHERE id = ?',
+      [patientId, patient.name, patient.chart_number || null, responseId]
     );
 
     // 관련 세션도 업데이트
@@ -444,7 +444,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
       let sql = `
         SELECT r.*,
-          COALESCE(p.name, r.respondent_name) as patient_name
+               COALESCE(r.patient_name, p.name) as patient_name,
+               COALESCE(r.chart_number, p.chart_number) as chart_number
         FROM survey_responses r
         LEFT JOIN patients p ON r.patient_id = p.id
         WHERE 1=1

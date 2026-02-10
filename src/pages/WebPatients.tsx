@@ -109,7 +109,7 @@ export function WebPatients() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -189,7 +189,7 @@ export function WebPatients() {
                       {patient.name}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {patient.birth_date || '-'}
+                      {patient.birth_date ? patient.birth_date.replace(/-/g, '/') : '-'}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'}
@@ -359,9 +359,23 @@ function PatientModal({ patient, onSave, onClose }: PatientModalProps) {
                 생년월일
               </label>
               <input
-                type="date"
-                value={formData.birth_date}
-                onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
+                type="text"
+                placeholder="YYYY/MM/DD"
+                value={formData.birth_date?.replace(/-/g, '/') || ''}
+                onChange={(e) => {
+                  let value = e.target.value.replace(/[^0-9/]/g, '');
+                  // 자동으로 / 삽입
+                  if (value.length === 4 && !value.includes('/')) {
+                    value = value + '/';
+                  } else if (value.length === 7 && value.split('/').length === 2) {
+                    value = value + '/';
+                  }
+                  // 최대 10자 (YYYY/MM/DD)
+                  if (value.length <= 10) {
+                    // 저장 시 YYYY-MM-DD 형식으로 변환
+                    setFormData({ ...formData, birth_date: value.replace(/\//g, '-') });
+                  }
+                }}
                 className="input w-full"
               />
             </div>

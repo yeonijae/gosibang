@@ -165,7 +165,7 @@ export function HomeworkAdmin() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>

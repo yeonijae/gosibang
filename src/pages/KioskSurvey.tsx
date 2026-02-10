@@ -307,7 +307,7 @@ export function KioskSurvey() {
                       <div>
                         <p className="font-medium text-gray-900">{patient.name}</p>
                         <p className="text-sm text-gray-500">
-                          {patient.birth_date && `${patient.birth_date} `}
+                          {patient.birth_date && `${patient.birth_date.replace(/-/g, '/')} `}
                           {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : ''}
                           {patient.chart_number && ` (${patient.chart_number})`}
                         </p>
@@ -339,7 +339,7 @@ export function KioskSurvey() {
                 <div>
                   <p className="font-bold text-lg text-gray-900">{selectedPatient.name}</p>
                   <p className="text-sm text-gray-600">
-                    {selectedPatient.birth_date}
+                    {selectedPatient.birth_date?.replace(/-/g, '/')}
                     {selectedPatient.phone && ` | ${selectedPatient.phone}`}
                   </p>
                 </div>

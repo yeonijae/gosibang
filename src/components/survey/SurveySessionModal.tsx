@@ -160,7 +160,7 @@ export function SurveySessionModal({ patient, onClose }: SurveySessionModalProps
               <div className="text-sm text-gray-500 space-y-1">
                 <p>• 설문: {createdSession.template_name}</p>
                 <p>• 유효기간: 24시간</p>
-                <p>• 만료: {new Date(createdSession.expires_at).toLocaleString()}</p>
+                <p>• 만료: {new Date(createdSession.expires_at).toLocaleString('ko-KR')}</p>
               </div>
 
               <div className="flex justify-end pt-4">

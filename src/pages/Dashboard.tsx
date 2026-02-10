@@ -84,7 +84,7 @@ export function Dashboard() {
                 {patients.slice(0, 5).map((patient) => (
                   <tr key={patient.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 text-sm text-gray-900">{patient.name}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{patient.birth_date || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-gray-600">{patient.birth_date ? patient.birth_date.replace(/-/g, '/') : '-'}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">{patient.phone || '-'}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {new Date(patient.created_at).toLocaleDateString('ko-KR')}

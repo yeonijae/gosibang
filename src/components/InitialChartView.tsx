@@ -379,9 +379,9 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-auto">
+      <div className="bg-white rounded-lg w-full max-w-4xl shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center rounded-t-lg">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-bold text-gray-900">초진차트 - {patientName}</h2>
             {isEditing && (
@@ -410,7 +410,7 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-4 flex-1 overflow-y-auto">
           {/* 플랜 제한 경고 */}
           {limitWarning && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">

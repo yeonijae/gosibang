@@ -50,7 +50,7 @@ export function SurveyTemplates() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">설문 템플릿 관리</h1>
@@ -82,7 +82,7 @@ export function SurveyTemplates() {
                   <p className="text-sm text-gray-400 mt-1">
                     질문 {template.questions.length}개 ·
                     {template.display_mode === 'single_page' ? ' 원페이지' : ' 한문항씩'} ·
-                    {new Date(template.created_at).toLocaleDateString()}
+                    {new Date(template.created_at).toLocaleDateString('ko-KR')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

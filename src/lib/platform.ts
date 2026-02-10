@@ -13,6 +13,11 @@ export function isWeb(): boolean {
   return !isTauri();
 }
 
+// 웹 클라이언트 환경 여부 확인 (내부 직원용 웹 인터페이스)
+export function isWebClient(): boolean {
+  return !isTauri();
+}
+
 // 현재 플랫폼 타입
 export type Platform = 'tauri' | 'web';
 

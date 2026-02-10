@@ -189,7 +189,7 @@ export function WebSurveys() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
@@ -324,7 +324,7 @@ export function WebSurveys() {
                           </span>
                         </td>
                         <td className="px-3 sm:px-4 py-3 hidden sm:table-cell text-sm text-gray-600">
-                          {new Date(response.submitted_at).toLocaleString()}
+                          {new Date(response.submitted_at).toLocaleString('ko-KR')}
                         </td>
                         <td className="px-3 sm:px-4 py-3 hidden md:table-cell">{response.answers?.length || 0}개</td>
                         <td className="px-3 sm:px-4 py-3">
@@ -393,7 +393,7 @@ export function WebSurveys() {
                     <p className="text-sm text-gray-400 mt-1">
                       질문 {template.questions?.length || 0}개 ·
                       {template.display_mode === 'single_page' ? ' 원페이지' : ' 한문항씩'} ·
-                      {template.created_at ? new Date(template.created_at).toLocaleDateString() : ''}
+                      {template.created_at ? new Date(template.created_at).toLocaleDateString('ko-KR') : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -600,7 +600,7 @@ function ResponseViewerModal({ response, template, onClose }: ResponseViewerModa
           <div>
             <h2 className="text-lg font-semibold">{template.name}</h2>
             <p className="text-sm text-gray-500">
-              {response.patient_name || response.respondent_name || '익명'} · {new Date(response.submitted_at).toLocaleString()}
+              {response.patient_name || response.respondent_name || '익명'} · {new Date(response.submitted_at).toLocaleString('ko-KR')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -789,7 +789,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
             <p className="text-sm text-gray-500">설문 응답</p>
             <p className="font-medium">{response.respondent_name || '이름 없음'}</p>
             <p className="text-sm text-gray-500">
-              {response.template_name} · {new Date(response.submitted_at).toLocaleDateString()}
+              {response.template_name} · {new Date(response.submitted_at).toLocaleDateString('ko-KR')}
             </p>
           </div>
 
@@ -825,7 +825,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{patient.name}</p>
                     <p className="text-sm text-gray-500">
-                      {patient.birth_date && `${patient.birth_date} `}
+                      {patient.birth_date && `${patient.birth_date.replace(/-/g, '/')} `}
                       {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : ''}
                       {patient.chart_number && ` (${patient.chart_number})`}
                     </p>
@@ -851,7 +851,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
               <p className="text-sm text-primary-600">선택된 환자</p>
               <p className="font-medium text-primary-900">{selectedPatient.name}</p>
               {selectedPatient.birth_date && (
-                <p className="text-sm text-primary-700">{selectedPatient.birth_date}</p>
+                <p className="text-sm text-primary-700">{selectedPatient.birth_date.replace(/-/g, '/')}</p>
               )}
             </div>
           )}

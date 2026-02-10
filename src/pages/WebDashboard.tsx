@@ -155,7 +155,7 @@ export function WebDashboard() {
                   <div>
                     <p className="font-medium text-gray-900">{patient.name}</p>
                     <p className="text-sm text-gray-500">
-                      {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'} / {patient.birth_date || '-'}
+                      {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'} / {patient.birth_date ? patient.birth_date.replace(/-/g, '/') : '-'}
                     </p>
                   </div>
                   <div className="text-sm text-gray-500">

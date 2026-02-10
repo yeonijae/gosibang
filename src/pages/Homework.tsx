@@ -84,7 +84,7 @@ export function Homework() {
   const activeHomeworks = homeworks.filter((h) => h.is_active);
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">나의숙제</h1>
