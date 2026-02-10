@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, Calendar, Pill } from 'lucide-react';
+import { Loader2, Calendar, Pill } from 'lucide-react';
 import { TimePickerGrid } from './TimePickerGrid';
 import { getDb, queryToObjects } from '../../lib/localDb';
 import type { Patient, Prescription, MedicationSchedule } from '../../types';

@@ -6,7 +6,6 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  FileText,
   ClipboardList,
   Pill,
   LogOut,
@@ -42,12 +41,6 @@ const navItems = [
     permission: 'patients_read' as const
   },
   {
-    to: '/charts',
-    icon: FileText,
-    label: '차트',
-    permission: 'charts_read' as const
-  },
-  {
     to: '/surveys',
     icon: ClipboardList,
     label: '설문',
@@ -68,7 +61,7 @@ export function WebLayout() {
   const [showPermissionBanner, setShowPermissionBanner] = useState(false);
   const { loadNotifications, unreadCount, addNotification, settings } = useNotificationStore();
   const lastUnreadCountRef = useRef(unreadCount);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 알림 권한 배너 표시 여부 확인
   useEffect(() => {

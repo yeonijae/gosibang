@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   SkipForward,
   TrendingUp,
-  Edit2,
   Trash2,
 } from 'lucide-react';
 import { useWebAuthStore, hasPermission } from '../store/webAuthStore';
@@ -27,7 +26,6 @@ import {
   getMedicationLogsBySchedule,
   getMedicationStatsByPatient,
   createMedicationLog,
-  updateMedicationLog,
   deleteMedicationSchedule,
   listPatients,
 } from '../lib/webApiClient';

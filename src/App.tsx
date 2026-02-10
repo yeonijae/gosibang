@@ -18,6 +18,7 @@ import { KioskSurvey } from './pages/KioskSurvey';
 import { SubscriptionAdmin } from './pages/SubscriptionAdmin';
 import { Homework } from './pages/Homework';
 import { HomeworkAdmin } from './pages/HomeworkAdmin';
+import { Questions } from './pages/Questions';
 
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
@@ -132,6 +133,7 @@ function App() {
           <Route path="/survey-responses" element={<SurveyResponses />} />
           <Route path="/medication" element={<Medications />} />
           <Route path="/homework" element={<Homework />} />
+          <Route path="/questions" element={<Questions />} />
           <Route path="/admin/subscriptions" element={<SubscriptionAdmin />} />
           <Route path="/admin/homework" element={<HomeworkAdmin />} />
           <Route path="/settings" element={<Settings />} />

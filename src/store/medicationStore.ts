@@ -322,7 +322,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   updateSlotStatus: (date, time, status, notes) => {
     try {
-      const { selectedSchedule, slots, logs } = get();
+      const { selectedSchedule, slots } = get();
       if (!selectedSchedule) return false;
 
       // 기존 슬롯 찾기

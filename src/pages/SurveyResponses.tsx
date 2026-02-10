@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Search, Eye, X, ChevronDown, ChevronUp, Plus, Link2, Copy, Check, Loader2, UserPlus, User, AlertCircle, Edit2, Trash2, GripVertical, EyeOff, FileText, ClipboardList, Clock } from 'lucide-react';
+import { Search, Eye, X, Plus, Link2, Copy, Check, Loader2, UserPlus, User, AlertCircle, Edit2, Trash2, GripVertical, EyeOff, FileText, ClipboardList, Clock } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSurveyStore } from '../store/surveyStore';
 import { QuestionRenderer } from '../components/survey/QuestionRenderer';
+import { ResponseViewerModal } from '../components/survey/ResponseViewerModal';
 import { useAuthStore } from '../store/authStore';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { useSurveyRealtime } from '../hooks/useSurveyRealtime';
 import { supabase } from '../lib/supabase';
-import { getDb, saveDb, generateUUID, queryToObjects } from '../lib/localDb';
+import { getDb, saveDb, generateUUID } from '../lib/localDb';
 import { generateExpiresAt, generateQuestionId } from '../lib/surveyUtils';
 import type { SurveyResponse, SurveyTemplate, SurveyAnswer, Patient, SurveyQuestion, QuestionType, ScaleConfig, SurveyDisplayMode } from '../types';
 
@@ -141,7 +143,7 @@ export function SurveyResponses() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
@@ -224,14 +226,14 @@ export function SurveyResponses() {
 
           {/* 세션 목록 */}
           <div className="flex-1 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {sessions.filter(s => s.status === 'pending').length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
                 <Clock className="w-12 h-12 mb-4" />
                 <p>대기 중인 설문이 없습니다.</p>
                 <p className="text-sm mt-1">온라인 링크를 생성하여 설문을 보내보세요.</p>
               </div>
             ) : (
-              sessions.map((session) => {
+              sessions.filter(s => s.status === 'pending').map((session) => {
                 const isExpired = session.status === 'expired' || new Date(session.expires_at) < new Date();
                 return (
                   <div
@@ -371,7 +373,9 @@ export function SurveyResponses() {
                         <td className="px-3 sm:px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="truncate max-w-[120px] sm:max-w-none">
-                              {response.patient_name || response.respondent_name || '-'}
+                              {response.patient_id
+                                ? `${response.patient_name || '-'}${response.chart_number ? ` (${response.chart_number})` : ''}`
+                                : response.respondent_name || '-'}
                             </span>
                             {!response.patient_id && (
                               <span className="px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 rounded flex-shrink-0">
@@ -386,7 +390,7 @@ export function SurveyResponses() {
                           </span>
                         </td>
                         <td className="px-3 sm:px-4 py-3 hidden sm:table-cell text-sm text-gray-600">
-                          {new Date(response.submitted_at).toLocaleString()}
+                          {new Date(response.submitted_at).toLocaleString('ko-KR')}
                         </td>
                         <td className="px-3 sm:px-4 py-3 hidden md:table-cell">{response.answers.length}개</td>
                         <td className="px-3 sm:px-4 py-3">
@@ -456,7 +460,7 @@ export function SurveyResponses() {
                     <p className="text-sm text-gray-400 mt-1">
                       질문 {template.questions.length}개 ·
                       {template.display_mode === 'single_page' ? ' 원페이지' : ' 한문항씩'} ·
-                      {new Date(template.created_at).toLocaleDateString()}
+                      {new Date(template.created_at).toLocaleDateString('ko-KR')}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -541,278 +545,7 @@ export function SurveyResponses() {
   );
 }
 
-// ===== 응답 상세 보기 모달 =====
-
-interface ResponseViewerModalProps {
-  response: SurveyResponse;
-  template: SurveyTemplate;
-  onClose: () => void;
-}
-
-function ResponseViewerModal({ response, template, onClose }: ResponseViewerModalProps) {
-  const [expandedQuestions, setExpandedQuestions] = useState<Set<string>>(
-    new Set(template.questions.map((q) => q.id))
-  );
-  const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<'full' | 'preview'>('full');
-
-  const toggleQuestion = (questionId: string) => {
-    const newExpanded = new Set(expandedQuestions);
-    if (newExpanded.has(questionId)) {
-      newExpanded.delete(questionId);
-    } else {
-      newExpanded.add(questionId);
-    }
-    setExpandedQuestions(newExpanded);
-  };
-
-  const getAnswerForQuestion = (questionId: string): SurveyAnswer | undefined => {
-    return response.answers.find((a) => a.question_id === questionId);
-  };
-
-  const formatAnswer = (answer: SurveyAnswer | undefined): string => {
-    if (!answer) return '(답변 없음)';
-    if (Array.isArray(answer.answer)) {
-      return answer.answer.join(', ') || '(선택 없음)';
-    }
-    if (typeof answer.answer === 'number') {
-      return String(answer.answer);
-    }
-    return answer.answer || '(답변 없음)';
-  };
-
-  // 설문 결과를 컴팩트 텍스트로 변환 (모든 템플릿에서 동작)
-  const formatSurveyAsText = (): string => {
-    const getAnswer = (qId: string): string => {
-      const answer = response.answers.find(a => a.question_id === qId);
-      if (!answer) return '';
-      if (Array.isArray(answer.answer)) return answer.answer.join(' / ');
-      return String(answer.answer || '');
-    };
-
-    const hasAnswer = (qId: string): boolean => {
-      const answer = response.answers.find(a => a.question_id === qId);
-      if (!answer) return false;
-      if (Array.isArray(answer.answer)) return answer.answer.length > 0;
-      return !!answer.answer;
-    };
-
-    const lines: string[] = [];
-
-    // 템플릿의 질문 순서대로 출력
-    let currentSection = '';
-
-    for (const question of template.questions) {
-      const qId = question.id;
-      const qText = question.question_text;
-
-      // 답변이 없으면 건너뛰기
-      if (!hasAnswer(qId)) continue;
-
-      const answerText = getAnswer(qId);
-
-      // 섹션 헤더 (>로 시작하는 질문)
-      if (qText.startsWith('>')) {
-        // 이전 섹션과 구분하기 위해 빈 줄 추가
-        if (lines.length > 0 && currentSection !== '') {
-          lines.push('');
-        }
-        currentSection = qText;
-        lines.push(`${qText} ${answerText}`);
-      }
-      // 하위 항목 (-로 시작하는 질문)
-      else if (qText.startsWith('-')) {
-        lines.push(`${qText} ${answerText}`);
-      }
-      // 일반 질문 (이름, 차트번호, 성별/나이, 키/몸무게 등)
-      else {
-        // 기본정보 (이름, 차트번호는 제외하고 성별/나이, 키/몸무게만)
-        if (qId === 'name' || qId === 'chart_number' || qId === 'doctor') {
-          // 기본정보는 첫 줄에 표시
-          continue;
-        }
-        // 성별/나이, 키/몸무게는 첫 줄에 표시
-        if (qId === 'gender_age' || qId === 'height_weight') {
-          // 이미 처리됨
-          continue;
-        }
-        // 그 외 일반 질문
-        lines.push(`${qText}: ${answerText}`);
-      }
-    }
-
-    // 기본정보 먼저 추가 (성별/나이, 키/몸무게)
-    const basicInfo = [getAnswer('gender_age'), getAnswer('height_weight')].filter(Boolean).join(' / ');
-
-    // 최종 결과 조합
-    const result: string[] = [];
-    if (basicInfo) {
-      result.push(basicInfo);
-    }
-
-    // [문진] 헤더와 내용
-    if (lines.length > 0) {
-      result.push('[문진]');
-      result.push(...lines);
-    } else if (response.answers.length > 0) {
-      // 구조화된 출력이 없지만 답변이 있는 경우 (구 템플릿 등)
-      result.push('[문진]');
-      for (const answer of response.answers) {
-        const question = template.questions.find(q => q.id === answer.question_id);
-        const qText = question?.question_text || answer.question_id;
-        let ansText = '';
-        if (Array.isArray(answer.answer)) {
-          ansText = answer.answer.join(' / ');
-        } else {
-          ansText = String(answer.answer || '');
-        }
-        if (ansText) {
-          result.push(`${qText}: ${ansText}`);
-        }
-      }
-    }
-
-    return result.join('\n');
-  };
-
-  // 클립보드에 복사
-  const handleCopyToClipboard = async () => {
-    const text = formatSurveyAsText();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('복사 실패:', err);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b">
-          <div>
-            <h2 className="text-lg font-semibold">{template.name}</h2>
-            <p className="text-sm text-gray-500">
-              {response.patient_name} · {new Date(response.submitted_at).toLocaleString()}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* 보기 모드 토글 */}
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('full')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  viewMode === 'full'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                전체 보기
-              </button>
-              <button
-                onClick={() => setViewMode('preview')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  viewMode === 'preview'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                답변만 보기
-              </button>
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* 답변만 보기 모드 */}
-          {viewMode === 'preview' ? (
-            <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap leading-relaxed">
-              {formatSurveyAsText()}
-            </div>
-          ) : (
-            /* 전체 보기 모드 */
-            template.questions.map((question, index) => {
-            const answer = getAnswerForQuestion(question.id);
-            const isExpanded = expandedQuestions.has(question.id);
-
-            return (
-              <div key={question.id} className="border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleQuestion(question.id)}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 text-left"
-                >
-                  <div className="flex-1">
-                    <span className="text-sm text-gray-500 mr-2">Q{index + 1}.</span>
-                    <span className="font-medium">{question.question_text}</span>
-                  </div>
-                  {isExpanded ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-
-                {isExpanded && (
-                  <div className="p-4 bg-white">
-                    <div className="text-sm text-gray-500 mb-2">
-                      {question.question_type === 'single_choice' && '단일 선택'}
-                      {question.question_type === 'multiple_choice' && '복수 선택'}
-                      {question.question_type === 'text' && '주관식'}
-                      {question.question_type === 'scale' && '척도'}
-                    </div>
-                    <div className="text-gray-900">
-                      {question.question_type === 'scale' && answer?.answer ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl font-bold text-primary-600">
-                            {answer.answer}
-                          </span>
-                          <span className="text-gray-500">
-                            / {question.scale_config?.max || 5}
-                          </span>
-                        </div>
-                      ) : (
-                        <p className={!answer ? 'text-gray-400 italic' : ''}>
-                          {formatAnswer(answer)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
-          )}
-        </div>
-
-        <div className="flex justify-between p-4 border-t bg-gray-50">
-          <button
-            onClick={handleCopyToClipboard}
-            className="btn-secondary flex items-center gap-2"
-          >
-            {copied ? (
-              <>
-                <Check className="w-4 h-4 text-green-600" />
-                <span className="text-green-600">복사됨</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4" />
-                문진 복사
-              </>
-            )}
-          </button>
-          <button onClick={onClose} className="btn-secondary">
-            닫기
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ResponseViewerModal은 src/components/survey/ResponseViewerModal.tsx로 분리됨
 
 // ===== 온라인 링크 생성 모달 =====
 
@@ -1166,7 +899,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [linking, setLinking] = useState(false);
 
-  // 검색
+  // 검색 - Tauri 백엔드 DB 사용
   const handleSearch = async () => {
     if (!searchName.trim()) {
       setSearchResults([]);
@@ -1175,17 +908,14 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
 
     setSearching(true);
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const results = queryToObjects<Patient>(
-        db,
-        `SELECT * FROM patients
-         WHERE name LIKE ?
-         ORDER BY name
-         LIMIT 10`,
-        [`%${searchName.trim()}%`]
-      );
+      // Tauri 백엔드에서 환자 목록 조회
+      const allPatients = await invoke<Patient[]>('list_patients');
+      // 이름으로 필터링
+      const searchLower = searchName.trim().toLowerCase();
+      const results = allPatients
+        .filter(p => p.name.toLowerCase().includes(searchLower))
+        .slice(0, 10);
+      console.log('[환자 검색] 검색어:', searchName.trim(), '결과:', results.length, '건');
       setSearchResults(results);
     } catch (err) {
       console.error('검색 실패:', err);
@@ -1237,7 +967,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
             <p className="text-sm text-gray-500">설문 응답</p>
             <p className="font-medium">{response.respondent_name || '이름 없음'}</p>
             <p className="text-sm text-gray-500">
-              {response.template_name} · {new Date(response.submitted_at).toLocaleDateString()}
+              {response.template_name} · {new Date(response.submitted_at).toLocaleDateString('ko-KR')}
             </p>
           </div>
 
@@ -1276,7 +1006,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{patient.name}</p>
                     <p className="text-sm text-gray-500">
-                      {patient.birth_date && `${patient.birth_date} `}
+                      {patient.birth_date && `${patient.birth_date.replace(/-/g, '/')} `}
                       {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : ''}
                       {patient.chart_number && ` (${patient.chart_number})`}
                     </p>
@@ -1302,7 +1032,7 @@ function PatientLinkModal({ response, onLink, onClose }: PatientLinkModalProps) 
               <p className="text-sm text-primary-600">선택된 환자</p>
               <p className="font-medium text-primary-900">{selectedPatient.name}</p>
               {selectedPatient.birth_date && (
-                <p className="text-sm text-primary-700">{selectedPatient.birth_date}</p>
+                <p className="text-sm text-primary-700">{selectedPatient.birth_date.replace(/-/g, '/')}</p>
               )}
             </div>
           )}

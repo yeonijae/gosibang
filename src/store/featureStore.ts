@@ -16,6 +16,7 @@ const DEFAULT_FEATURES: PlanFeatures = {
   survey_internal: false,   // 비기너: 내부 설문 불가
   survey_external: false,   // 비기너: 외부 설문 불가
   homework: false,          // 비기너: 숙제 기능 불가 (챌린저/마스터 플랜 전용)
+  questions: false,         // 비기너: 질문&답변 불가 (챌린저/마스터 플랜 전용)
   staff_accounts: false,    // 비기너: 내부계정 불가
   backup: false,
   export: false,

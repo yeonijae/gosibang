@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, ArrowLeft, Loader2, MessageSquare, AlertCircle, ExternalLink } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, Loader2, MessageSquare, AlertCircle, Eye, ArrowLeft, ExternalLink } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
+import { useSurveyStore } from '../store/surveyStore';
 import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import InitialChartView from '../components/InitialChartView';
-import { SurveySessionModal } from '../components/survey/SurveySessionModal';
+import { ResponseViewerModal } from '../components/survey/ResponseViewerModal';
 import { usePlanLimits } from '../hooks/usePlanLimits';
-import type { Patient, Prescription, InitialChart } from '../types';
+import type { Patient, Prescription, InitialChart, SurveyResponse, SurveyTemplate } from '../types';
 
 export function Patients() {
   const {
@@ -22,6 +23,7 @@ export function Patients() {
   } = usePatientStore();
 
   const { canAddPatient, canUseFeature, refreshUsage, planInfo } = usePlanLimits();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,12 +34,54 @@ export function Patients() {
   const [prescriptionPatient, setPrescriptionPatient] = useState<Patient | null>(null);
   // 차트 관리 모달
   const [chartPatient, setChartPatient] = useState<Patient | null>(null);
-  // 설문 보내기 모달
+  // 설문 목록 모달
   const [surveyPatient, setSurveyPatient] = useState<Patient | null>(null);
+
+  // 환자별 내역 개수
+  const [patientCounts, setPatientCounts] = useState<Record<string, { prescriptions: number; charts: number; surveys: number }>>({});
+
+  // 환자별 내역 개수 조회
+  const loadPatientCounts = (patientList: Patient[]) => {
+    const db = getDb();
+    if (!db) return;
+
+    const counts: Record<string, { prescriptions: number; charts: number; surveys: number }> = {};
+
+    for (const patient of patientList) {
+      const prescriptionCount = queryToObjects<{ cnt: number }>(
+        db,
+        'SELECT COUNT(*) as cnt FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL',
+        [patient.id]
+      )[0]?.cnt || 0;
+
+      const chartCount = queryToObjects<{ cnt: number }>(
+        db,
+        'SELECT COUNT(*) as cnt FROM initial_charts WHERE patient_id = ? AND deleted_at IS NULL',
+        [patient.id]
+      )[0]?.cnt || 0;
+
+      const surveyCount = queryToObjects<{ cnt: number }>(
+        db,
+        'SELECT COUNT(*) as cnt FROM survey_responses WHERE patient_id = ?',
+        [patient.id]
+      )[0]?.cnt || 0;
+
+      counts[patient.id] = { prescriptions: prescriptionCount, charts: chartCount, surveys: surveyCount };
+    }
+
+    setPatientCounts(counts);
+  };
 
   useEffect(() => {
     loadPatients();
   }, [loadPatients]);
+
+  // 환자 목록이 변경되면 개수도 다시 조회
+  useEffect(() => {
+    if (patients.length > 0) {
+      loadPatientCounts(patients);
+    }
+  }, [patients]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +121,7 @@ export function Patients() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -160,7 +204,7 @@ export function Patients() {
                       {patient.name}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {patient.birth_date || '-'}
+                      {patient.birth_date ? patient.birth_date.replace(/-/g, '/') : '-'}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {patient.gender === 'M' ? '남' : patient.gender === 'F' ? '여' : '-'}
@@ -173,41 +217,63 @@ export function Patients() {
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPrescriptionPatient(patient);
-                          }}
-                          className="px-2 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded flex items-center gap-1"
-                          title="처방 관리"
-                        >
-                          <FileText className="w-3 h-3" />
-                          처방
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setChartPatient(patient);
-                          }}
-                          className="px-2 py-1 text-xs font-medium text-white bg-slate-600 hover:bg-slate-700 rounded flex items-center gap-1"
-                          title="차트 관리"
-                        >
-                          <ClipboardList className="w-3 h-3" />
-                          차트
-                        </button>
-                        {canUseFeature('survey_internal') && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSurveyPatient(patient);
-                            }}
-                            className="px-2 py-1 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded flex items-center gap-1"
-                            title="설문 보내기"
-                          >
-                            <MessageSquare className="w-3 h-3" />
-                            설문
-                          </button>
-                        )}
+                        {(() => {
+                          const counts = patientCounts[patient.id] || { prescriptions: 0, charts: 0, surveys: 0 };
+                          return (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPrescriptionPatient(patient);
+                                }}
+                                className={`w-[58px] py-1 text-xs font-medium rounded flex items-center justify-center gap-1 ${
+                                  counts.prescriptions > 0
+                                    ? 'text-white bg-primary-600 hover:bg-primary-700'
+                                    : 'text-gray-400 bg-gray-200 hover:bg-gray-300'
+                                }`}
+                                title="처방 관리"
+                              >
+                                <FileText className="w-3 h-3 shrink-0" />
+                                <span>처방</span>
+                                {counts.prescriptions > 0 && <span>{counts.prescriptions}</span>}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setChartPatient(patient);
+                                }}
+                                className={`w-[58px] py-1 text-xs font-medium rounded flex items-center justify-center gap-1 ${
+                                  counts.charts > 0
+                                    ? 'text-white bg-slate-600 hover:bg-slate-700'
+                                    : 'text-gray-400 bg-gray-200 hover:bg-gray-300'
+                                }`}
+                                title="차트 관리"
+                              >
+                                <ClipboardList className="w-3 h-3 shrink-0" />
+                                <span>차트</span>
+                                {counts.charts > 0 && <span>{counts.charts}</span>}
+                              </button>
+                              {canUseFeature('survey_internal') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSurveyPatient(patient);
+                                  }}
+                                  className={`w-[58px] py-1 text-xs font-medium rounded flex items-center justify-center gap-1 ${
+                                    counts.surveys > 0
+                                      ? 'text-white bg-teal-600 hover:bg-teal-700'
+                                      : 'text-gray-400 bg-gray-200 hover:bg-gray-300'
+                                  }`}
+                                  title="설문 목록"
+                                >
+                                  <MessageSquare className="w-3 h-3 shrink-0" />
+                                  <span>설문</span>
+                                  {counts.surveys > 0 && <span>{counts.surveys}</span>}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -255,7 +321,10 @@ export function Patients() {
       {prescriptionPatient && (
         <PatientPrescriptionModal
           patient={prescriptionPatient}
-          onClose={() => setPrescriptionPatient(null)}
+          onClose={() => {
+            setPrescriptionPatient(null);
+            loadPatientCounts(patients);
+          }}
         />
       )}
 
@@ -263,15 +332,22 @@ export function Patients() {
       {chartPatient && (
         <PatientChartModal
           patient={chartPatient}
-          onClose={() => setChartPatient(null)}
+          onClose={() => {
+            setChartPatient(null);
+            loadPatientCounts(patients);
+          }}
+          navigate={navigate}
         />
       )}
 
-      {/* 설문 보내기 모달 */}
+      {/* 환자별 설문 목록 모달 */}
       {surveyPatient && (
-        <SurveySessionModal
+        <PatientSurveyModal
           patient={surveyPatient}
-          onClose={() => setSurveyPatient(null)}
+          onClose={() => {
+            setSurveyPatient(null);
+            loadPatientCounts(patients);
+          }}
         />
       )}
     </div>
@@ -364,9 +440,23 @@ function PatientModal({ patient, onSave, onClose }: PatientModalProps) {
                 생년월일
               </label>
               <input
-                type="date"
-                value={formData.birth_date}
-                onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
+                type="text"
+                placeholder="YYYY/MM/DD"
+                value={formData.birth_date?.replace(/-/g, '/') || ''}
+                onChange={(e) => {
+                  let value = e.target.value.replace(/[^0-9/]/g, '');
+                  // 자동으로 / 삽입
+                  if (value.length === 4 && !value.includes('/')) {
+                    value = value + '/';
+                  } else if (value.length === 7 && value.split('/').length === 2) {
+                    value = value + '/';
+                  }
+                  // 최대 10자 (YYYY/MM/DD)
+                  if (value.length <= 10) {
+                    // 저장 시 YYYY-MM-DD 형식으로 변환
+                    setFormData({ ...formData, birth_date: value.replace(/\//g, '-') });
+                  }
+                }}
                 className="input-field"
               />
             </div>
@@ -766,10 +856,10 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
 interface PatientChartModalProps {
   patient: Patient;
   onClose: () => void;
+  navigate: ReturnType<typeof useNavigate>;
 }
 
-function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
-  const navigate = useNavigate();
+function PatientChartModal({ patient, onClose, navigate }: PatientChartModalProps) {
   const [initialCharts, setInitialCharts] = useState<InitialChart[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -908,6 +998,166 @@ function PatientChartModal({ patient, onClose }: PatientChartModalProps) {
           forceNew={true}
         />
       )}
+    </div>
+  );
+}
+
+// ===== 환자별 설문 목록 모달 =====
+interface PatientSurveyModalProps {
+  patient: Patient;
+  onClose: () => void;
+}
+
+interface SurveyResponseWithTemplate extends SurveyResponse {
+  template?: SurveyTemplate;
+}
+
+function PatientSurveyModal({ patient, onClose }: PatientSurveyModalProps) {
+  const { templates, loadTemplates, getTemplate } = useSurveyStore();
+  const [surveyResponses, setSurveyResponses] = useState<SurveyResponseWithTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedResponse, setSelectedResponse] = useState<SurveyResponseWithTemplate | null>(null);
+
+  useEffect(() => {
+    // 템플릿이 없으면 먼저 로드
+    if (templates.length === 0) {
+      loadTemplates();
+    }
+  }, [templates.length, loadTemplates]);
+
+  useEffect(() => {
+    loadSurveyResponses();
+  }, [patient.id, templates]);
+
+  const loadSurveyResponses = async () => {
+    try {
+      setLoading(true);
+      const db = getDb();
+      if (!db) return;
+
+      // 응답 조회
+      const responses = queryToObjects<SurveyResponse & { template_name?: string }>(
+        db,
+        `SELECT sr.*, st.name as template_name
+         FROM survey_responses sr
+         LEFT JOIN survey_templates st ON sr.template_id = st.id
+         WHERE sr.patient_id = ?
+         ORDER BY sr.submitted_at DESC`,
+        [patient.id]
+      );
+
+      // 응답에 템플릿 정보 연결 (store에서 가져옴)
+      const parsed = responses.map(r => ({
+        ...r,
+        answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : r.answers,
+        template: getTemplate(r.template_id) || undefined,
+      }));
+
+      setSurveyResponses(parsed);
+    } catch (error) {
+      console.error('설문 응답 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 응답 상세 보기 모달이 열려있으면 ResponseViewerModal 표시
+  if (selectedResponse) {
+    // 템플릿이 없으면 기본 템플릿 생성
+    const template: SurveyTemplate = selectedResponse.template || {
+      id: selectedResponse.template_id,
+      name: '설문지',
+      description: '',
+      questions: [],
+      display_mode: 'single_page',
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    };
+
+    return (
+      <ResponseViewerModal
+        response={selectedResponse}
+        template={template}
+        onClose={() => setSelectedResponse(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* 헤더 */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {patient.name}님의 설문 응답
+            </h2>
+            <button onClick={onClose} className="btn-secondary flex items-center gap-1">
+              <X className="w-4 h-4" />
+              닫기
+            </button>
+          </div>
+        </div>
+
+        {/* 본문 */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">총 {surveyResponses.length}건</p>
+
+              {surveyResponses.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  등록된 설문 응답이 없습니다.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {surveyResponses.map((response) => (
+                    <div
+                      key={response.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 transition-colors cursor-pointer"
+                      onClick={() => setSelectedResponse(response)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-teal-600" />
+                            <p className="font-medium text-gray-900">
+                              {response.template?.name || '설문지'}
+                            </p>
+                          </div>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {response.submitted_at
+                              ? new Date(response.submitted_at).toLocaleString('ko-KR')
+                              : '-'}
+                          </p>
+                          <p className="text-sm text-gray-400 mt-1">
+                            답변 {response.answers?.length || 0}개
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedResponse(response);
+                          }}
+                          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                          title="답변 보기"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

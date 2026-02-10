@@ -11,6 +11,7 @@ import {
   BookOpen,
   ClipboardCheck,
   MessageSquare,
+  HelpCircle,
   GripVertical,
   Check,
   X,
@@ -33,6 +34,7 @@ const iconMap: Record<string, LucideIcon> = {
   ClipboardList,
   FileQuestion: ClipboardCheck,
   MessageSquare,
+  HelpCircle,
   Pill,
   Settings,
   LayoutDashboard,
@@ -132,7 +134,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <aside className="w-64 h-full bg-white border-r border-gray-200 flex flex-col">
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between">

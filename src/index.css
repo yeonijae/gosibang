@@ -68,6 +68,9 @@ body {
   @apply py-2 border border-gray-300 rounded-md shadow-sm;
   @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
   @apply disabled:bg-gray-100 disabled:cursor-not-allowed;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding-left: 0.75rem;
   padding-right: 0.75rem;
 }
@@ -165,4 +168,40 @@ textarea.input {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* SimpleMDE 에디터 스타일 오버라이드 */
+.case-study-editor .EasyMDEContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.case-study-editor .EasyMDEContainer .CodeMirror {
+  flex: 1;
+  border-radius: 0.5rem;
+  border-color: #e5e7eb;
+  font-family: 'Pretendard', system-ui, sans-serif;
+}
+
+.case-study-editor .EasyMDEContainer .CodeMirror-focused {
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.1);
+}
+
+.case-study-editor .editor-toolbar {
+  border-radius: 0.5rem 0.5rem 0 0;
+  border-color: #e5e7eb;
+}
+
+.case-study-editor .editor-toolbar button {
+  color: #6b7280;
+}
+
+.case-study-editor .editor-toolbar button:hover {
+  background-color: #f3f4f6;
+}
+
+.case-study-editor .editor-toolbar button.active {
+  background-color: #e5e7eb;
 }

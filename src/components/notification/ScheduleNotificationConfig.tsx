@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Clock, Save, Loader2, RotateCcw } from 'lucide-react';
+import { Bell, Save, Loader2, RotateCcw } from 'lucide-react';
 import { getScheduleNotificationSettings, updateScheduleNotificationSettings } from '../../lib/localDb';
 import type { NotificationSettings } from '../../types';
 

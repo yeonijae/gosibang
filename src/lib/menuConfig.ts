@@ -5,11 +5,11 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'dashboard', label: '대시보드', icon: 'LayoutDashboard', path: '/' },
   { key: 'patients', label: '환자관리', icon: 'Users', path: '/patients' },
   { key: 'prescriptions', label: '처방관리', icon: 'FileText', path: '/prescriptions' },
-  { key: 'prescription_definitions', label: '처방정의', icon: 'Book', path: '/prescription-definitions' },
-  { key: 'charts', label: '차트관리', icon: 'ClipboardList', path: '/charts' },
   { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
   { key: 'medication', label: '복약관리', icon: 'Pill', path: '/medication' },
+  { key: 'prescription_definitions', label: '처방공부', icon: 'Book', path: '/prescription-definitions' },
   { key: 'homework', label: '나의숙제', icon: 'BookOpen', path: '/homework' },
+  { key: 'questions', label: '질문&답변', icon: 'HelpCircle', path: '/questions' },
 ];
 
 // 고정 메뉴 (순서 변경 불가)
@@ -25,11 +25,11 @@ export const DEFAULT_MENU_ORDER: FeatureKey[] = [
   'dashboard',
   'patients',
   'prescriptions',
-  'prescription_definitions',
-  'charts',
   'survey_responses',
   'medication',
+  'prescription_definitions',
   'homework',
+  'questions',
 ];
 
 // localStorage 키

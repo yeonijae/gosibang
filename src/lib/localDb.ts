@@ -4,6 +4,19 @@ import { PRESCRIPTION_DEFINITIONS } from './prescriptionData';
 import { SURVEY_TEMPLATES } from './surveyData';
 import type { MedicationSchedule, MedicationLog, MedicationStats, MedicationStatus, Notification, NotificationSettings } from '../types';
 
+// SQLite에서 boolean이 number(0/1)로 저장되므로 Raw 타입 정의
+type NotificationRaw = Omit<Notification, 'is_read' | 'is_dismissed'> & {
+  is_read: number;
+  is_dismissed: number;
+};
+
+type NotificationSettingsRaw = Omit<NotificationSettings, 'enabled' | 'missed_reminder_enabled' | 'daily_summary_enabled' | 'sound_enabled'> & {
+  enabled: number;
+  missed_reminder_enabled: number;
+  daily_summary_enabled: number;
+  sound_enabled: number;
+};
+
 let db: Database | null = null;
 let currentDbKey: string = 'gosibang_db'; // 사용자별 키
 
@@ -201,6 +214,19 @@ function migrateDatabase(database: Database) {
     database.run('ALTER TABLE prescriptions ADD COLUMN final_total_amount REAL DEFAULT 0');
   } catch (e) { /* 이미 존재하면 무시 */ }
 
+  // 기존 처방전의 patient_name이 비어있으면 patients 테이블에서 채움
+  try {
+    database.run(`
+      UPDATE prescriptions
+      SET patient_name = (
+        SELECT p.name FROM patients p WHERE p.id = prescriptions.patient_id
+      )
+      WHERE patient_name IS NULL AND patient_id IS NOT NULL
+    `);
+  } catch (e) {
+    console.error('처방전 환자명 마이그레이션 실패:', e);
+  }
+
   // initial_charts 테이블 생성 (없으면)
   database.run(`
     CREATE TABLE IF NOT EXISTS initial_charts (
@@ -362,6 +388,19 @@ function migrateDatabase(database: Database) {
     CREATE TABLE IF NOT EXISTS prescription_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       prescription_definition_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+    )
+  `);
+
+  // prescription_case_studies 테이블 생성 (치험례)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS prescription_case_studies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prescription_definition_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
       content TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
@@ -593,6 +632,16 @@ function createTables(database: Database) {
     CREATE TABLE IF NOT EXISTS prescription_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       prescription_definition_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS prescription_case_studies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prescription_definition_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
       content TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
@@ -1474,7 +1523,7 @@ export function getNotifications(limit: number = 100): Notification[] {
     // 테이블 존재 확인 및 생성
     migrateNotificationTables();
 
-    const notifications = queryToObjects<Notification & { is_read: number; is_dismissed: number }>(
+    const notifications = queryToObjects<NotificationRaw>(
       db,
       `SELECT * FROM notifications
        WHERE is_dismissed = 0
@@ -1501,7 +1550,7 @@ export function getUnreadNotifications(): Notification[] {
   try {
     migrateNotificationTables();
 
-    const notifications = queryToObjects<Notification & { is_read: number; is_dismissed: number }>(
+    const notifications = queryToObjects<NotificationRaw>(
       db,
       `SELECT * FROM notifications
        WHERE is_read = 0 AND is_dismissed = 0
@@ -1624,7 +1673,7 @@ export function getNotificationSettings(): NotificationSettings | null {
   try {
     migrateNotificationTables();
 
-    const settings = queryOne<NotificationSettings & { enabled: number; missed_reminder_enabled: number; daily_summary_enabled: number; sound_enabled: number }>(
+    const settings = queryOne<NotificationSettingsRaw>(
       db,
       'SELECT * FROM notification_settings WHERE schedule_id IS NULL'
     );
@@ -1719,7 +1768,7 @@ export function getScheduleNotificationSettings(scheduleId: string): Notificatio
   try {
     migrateNotificationTables();
 
-    const settings = queryOne<NotificationSettings & { enabled: number; missed_reminder_enabled: number; daily_summary_enabled: number; sound_enabled: number }>(
+    const settings = queryOne<NotificationSettingsRaw>(
       db,
       'SELECT * FROM notification_settings WHERE schedule_id = ?',
       [scheduleId]

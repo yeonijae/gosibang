@@ -39,7 +39,7 @@ interface NotificationStore {
 }
 
 // 토스트 자동 숨김 타이머 맵
-const toastTimers = new Map<string, NodeJS.Timeout>();
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const useNotificationStore = create<NotificationStore>((set, get) => ({
   notifications: [],

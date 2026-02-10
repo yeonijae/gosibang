@@ -43,6 +43,8 @@ const ROLE_PRESETS: Record<StaffRole, StaffPermissions> = {
     survey_read: true,
     survey_write: true,
     settings_read: true,
+    medications_read: true,
+    medications_write: true,
   },
   staff: {
     patients_read: true,
@@ -54,6 +56,8 @@ const ROLE_PRESETS: Record<StaffRole, StaffPermissions> = {
     survey_read: true,
     survey_write: true,
     settings_read: false,
+    medications_read: true,
+    medications_write: true,
   },
   viewer: {
     patients_read: true,
@@ -65,6 +69,8 @@ const ROLE_PRESETS: Record<StaffRole, StaffPermissions> = {
     survey_read: true,
     survey_write: false,
     settings_read: false,
+    medications_read: true,
+    medications_write: false,
   },
 };
 

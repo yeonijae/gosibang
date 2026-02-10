@@ -64,6 +64,16 @@ export interface PrescriptionNote {
   updated_at: string;
 }
 
+// 치험례 (Case Study) - 마크다운 기반
+export interface PrescriptionCaseStudy {
+  id: number;
+  prescription_definition_id: number;
+  title: string;
+  content: string;  // 마크다운 형식
+  created_at: string;
+  updated_at: string;
+}
+
 // 최종 약재 (조정 후)
 export interface FinalHerb {
   herb_id: number;
@@ -239,6 +249,7 @@ export interface SurveyResponse {
   submitted_at: string;
   // 조인 데이터
   patient_name?: string;
+  chart_number?: string;
   template_name?: string;
 }
 
@@ -339,6 +350,7 @@ export type FeatureKey =
   | 'survey_responses'
   | 'medication'
   | 'homework'
+  | 'questions'
   | 'staff_accounts';
 
 // 플랜별 기능 권한
@@ -355,6 +367,7 @@ export interface PlanFeatures {
   survey_internal: boolean;   // 내부 설문 (태블릿/인트라넷)
   survey_external: boolean;   // 외부 설문 (온라인 링크)
   homework: boolean;          // 숙제 기능 (챌린저 플랜)
+  questions: boolean;         // 질문&답변 기능 (챌린저 플랜)
   staff_accounts: boolean;    // 내부계정 (웹 클라이언트용 직원 계정 관리)
   backup?: boolean;
   export?: boolean;
@@ -490,6 +503,31 @@ export interface HomeworkSubmission {
   updated_at: string;
   // 조인 데이터
   homework_title?: string;
+}
+
+// ===== 질문&답변 타입 =====
+
+// 질문 카테고리
+export type QuestionCategory = 'general' | 'prescription' | 'treatment' | 'study' | 'other';
+
+// 질문 상태
+export type QuestionStatus = 'pending' | 'answered';
+
+// 질문
+export interface Question {
+  id: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  title: string;
+  content: string;
+  category?: QuestionCategory;
+  status: QuestionStatus;
+  answer?: string;
+  answered_by?: string;
+  answered_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // ===== 내부계정 타입 =====
