@@ -1,10 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText, ExternalLink } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import SimpleMDE from 'react-simplemde-editor';
-import 'easymde/dist/easymde.min.css';
-import 'font-awesome/css/font-awesome.min.css';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText } from 'lucide-react';
+import { RichTextEditor } from '../components/RichTextEditor';
+import { RichContentDisplay } from '../components/RichContentDisplay';
+import { fileToBase64 } from '../lib/contentUtils';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
@@ -674,11 +672,7 @@ export function PrescriptionDefinitions() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <div className="prose prose-sm max-w-none text-gray-700">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                  {note.content}
-                                </ReactMarkdown>
-                              </div>
+                              <RichContentDisplay content={note.content} className="text-gray-700" />
                               <p className="text-xs text-gray-400 mt-2">
                                 {new Date(note.created_at).toLocaleDateString('ko-KR', {
                                   year: 'numeric',
@@ -830,30 +824,7 @@ export function PrescriptionDefinitions() {
                               </button>
                             </div>
                           </div>
-                          <div className="prose prose-sm max-w-none text-gray-700">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                a: ({ href, children }) => (
-                                  <a
-                                    href={href}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      if (href) {
-                                        window.open(href, '_blank', 'noopener,noreferrer');
-                                      }
-                                    }}
-                                    className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {children}
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ),
-                              }}
-                            >
-                              {caseStudy.content}
-                            </ReactMarkdown>
-                          </div>
+                          <RichContentDisplay content={caseStudy.content} className="text-gray-700" />
                           <p className="text-xs text-gray-400 mt-2">
                             {new Date(caseStudy.created_at).toLocaleDateString('ko-KR', {
                               year: 'numeric',
@@ -937,24 +908,6 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
   const [content, setContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleContentChange = useCallback((value: string) => {
-    setContent(value);
-  }, []);
-
-  const editorOptions = useMemo(() => ({
-    spellChecker: false,
-    placeholder: '공부한 내용, 메모, 팁 등을 마크다운으로 기록하세요...',
-    status: false,
-    toolbar: [
-      'bold', 'italic', 'heading', '|',
-      'quote', 'unordered-list', 'ordered-list', '|',
-      'link', '|',
-      'preview', 'side-by-side', 'fullscreen', '|',
-      'guide'
-    ] as const,
-    minHeight: '200px',
-  }), []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) {
@@ -988,11 +941,13 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               내용
             </label>
-            <div className="flex-1 overflow-auto case-study-editor">
-              <SimpleMDE
-                value={content}
-                onChange={handleContentChange}
-                options={editorOptions}
+            <div className="flex-1 overflow-auto">
+              <RichTextEditor
+                content={content}
+                onChange={setContent}
+                onImageUpload={fileToBase64}
+                placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
+                minHeight="200px"
               />
             </div>
           </div>
@@ -1084,23 +1039,13 @@ function CaseStudyModal({ caseStudy, onSave, onClose }: CaseStudyModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               내용 <span className="text-red-500">*</span>
             </label>
-            <div className="flex-1 overflow-auto case-study-editor">
-              <SimpleMDE
-                value={content}
+            <div className="flex-1 overflow-auto">
+              <RichTextEditor
+                content={content}
                 onChange={setContent}
-                options={{
-                  placeholder: '## 환자 정보\n45세 여성, 직장인\n\n## 주소증\n- 만성 피로감\n- 식욕부진\n\n## 치료 경과\n2주간 복용 후 개선',
-                  spellChecker: false,
-                  status: false,
-                  toolbar: [
-                    'bold', 'italic', 'heading', '|',
-                    'quote', 'unordered-list', 'ordered-list', '|',
-                    'link', '|',
-                    'preview', 'side-by-side', 'fullscreen', '|',
-                    'guide'
-                  ],
-                  minHeight: '250px',
-                }}
+                onImageUpload={fileToBase64}
+                placeholder="환자 정보, 주소증, 치료 경과 등을 기록하세요..."
+                minHeight="250px"
               />
             </div>
           </div>

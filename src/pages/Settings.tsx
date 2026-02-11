@@ -25,6 +25,47 @@ import { usePlanLimits } from '../hooks/usePlanLimits';
 import { StaffAccountsTab } from '../components/StaffAccountsTab';
 import { NotificationSettings } from '../components/notification';
 
+// 내보내기 항목 레이블
+const EXPORT_LABELS: Record<string, string> = {
+  patients: '환자',
+  prescriptions: '처방전',
+  initial_charts: '초진차트',
+  progress_notes: '경과기록',
+  prescription_definitions: '처방정의',
+  prescription_notes: '처방노트',
+  prescription_case_studies: '치험례',
+  prescription_categories: '처방카테고리',
+  survey_templates: '설문템플릿',
+  survey_responses: '설문응답',
+  medication_schedules: '복약스케줄',
+  medication_logs: '복약기록',
+  clinic_settings: '한의원설정',
+};
+
+// 내보내기 항목 그룹
+const EXPORT_GROUPS = [
+  {
+    label: '환자 · 진료',
+    keys: ['patients', 'prescriptions', 'initial_charts', 'progress_notes'],
+  },
+  {
+    label: '처방 공부',
+    keys: ['prescription_definitions', 'prescription_notes', 'prescription_case_studies', 'prescription_categories'],
+  },
+  {
+    label: '설문',
+    keys: ['survey_templates', 'survey_responses'],
+  },
+  {
+    label: '복약 관리',
+    keys: ['medication_schedules', 'medication_logs'],
+  },
+  {
+    label: '설정',
+    keys: ['clinic_settings'],
+  },
+];
+
 // 기본 표시 설정
 const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
   show_price: false,
@@ -145,6 +186,22 @@ export function Settings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  // 내보내기 체크박스 상태
+  const [exportSelections, setExportSelections] = useState<Record<string, boolean>>({
+    patients: true,
+    prescriptions: true,
+    initial_charts: true,
+    progress_notes: true,
+    prescription_definitions: true,
+    prescription_notes: true,
+    prescription_case_studies: true,
+    prescription_categories: true,
+    survey_templates: true,
+    survey_responses: true,
+    medication_schedules: true,
+    medication_logs: true,
+    clinic_settings: true,
+  });
   // 휴지통 관련 상태
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
   const [trashCount, setTrashCount] = useState({ total: 0, patients: 0, prescriptions: 0, charts: 0 });
@@ -595,48 +652,68 @@ export function Settings() {
     URL.revokeObjectURL(url);
   };
 
-  // 전체 데이터 내보내기 (JSON)
-  const handleExportAll = () => {
+  // 선택 데이터 내보내기 (JSON)
+  const handleExportSelected = () => {
     try {
       const db = getDb();
       if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      const patients = queryToObjects(db, 'SELECT * FROM patients');
-      const prescriptions = queryToObjects(db, 'SELECT * FROM prescriptions');
-      const initialCharts = queryToObjects(db, 'SELECT * FROM initial_charts');
-      const progressNotes = queryToObjects(db, 'SELECT * FROM progress_notes');
-      const prescriptionDefinitions = queryToObjects(db, 'SELECT * FROM prescription_definitions');
-      const surveyTemplates = queryToObjects(db, 'SELECT * FROM survey_templates');
-      const surveyResponses = queryToObjects(db, 'SELECT * FROM survey_responses');
-      const clinicSettings = queryToObjects(db, 'SELECT * FROM clinic_settings');
+      const selectedCount = Object.values(exportSelections).filter(Boolean).length;
+      if (selectedCount === 0) {
+        setMessage({ type: 'error', text: '내보낼 항목을 하나 이상 선택해주세요.' });
+        return;
+      }
+
+      const tableMap: Record<string, string> = {
+        patients: 'SELECT * FROM patients',
+        prescriptions: 'SELECT * FROM prescriptions',
+        initial_charts: 'SELECT * FROM initial_charts',
+        progress_notes: 'SELECT * FROM progress_notes',
+        prescription_definitions: 'SELECT * FROM prescription_definitions',
+        prescription_notes: 'SELECT * FROM prescription_notes',
+        prescription_case_studies: 'SELECT * FROM prescription_case_studies',
+        prescription_categories: 'SELECT * FROM prescription_categories',
+        survey_templates: 'SELECT * FROM survey_templates',
+        survey_responses: 'SELECT * FROM survey_responses',
+        medication_schedules: 'SELECT * FROM medication_schedules',
+        medication_logs: 'SELECT * FROM medication_logs',
+        clinic_settings: 'SELECT * FROM clinic_settings',
+      };
+
+      const data: Record<string, unknown[]> = {};
+      const counts: Record<string, number> = {};
+
+      for (const [key, query] of Object.entries(tableMap)) {
+        if (exportSelections[key]) {
+          try {
+            const rows = queryToObjects(db, query);
+            data[key] = rows;
+            counts[key] = rows.length;
+          } catch {
+            // 테이블이 없을 수 있음
+            data[key] = [];
+            counts[key] = 0;
+          }
+        }
+      }
 
       const exportData = {
         version: '1.0',
         exported_at: new Date().toISOString(),
-        data: {
-          patients,
-          prescriptions,
-          initial_charts: initialCharts,
-          progress_notes: progressNotes,
-          prescription_definitions: prescriptionDefinitions,
-          survey_templates: surveyTemplates,
-          survey_responses: surveyResponses,
-          clinic_settings: clinicSettings,
-        },
-        counts: {
-          patients: patients.length,
-          prescriptions: prescriptions.length,
-          initial_charts: initialCharts.length,
-          progress_notes: progressNotes.length,
-          prescription_definitions: prescriptionDefinitions.length,
-        }
+        data,
+        counts,
       };
 
-      downloadJSON(exportData, 'gosibang_full_export');
-      setMessage({ type: 'success', text: '전체 데이터를 내보냈습니다.' });
+      downloadJSON(exportData, 'gosibang_export');
+
+      const summary = Object.entries(counts)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${EXPORT_LABELS[k] || k} ${v}개`)
+        .join(', ');
+      setMessage({ type: 'success', text: `내보내기 완료: ${summary}` });
     } catch (error) {
-      console.error('Export all error:', error);
-      setMessage({ type: 'error', text: '전체 데이터 내보내기에 실패했습니다.' });
+      console.error('Export error:', error);
+      setMessage({ type: 'error', text: '데이터 내보내기에 실패했습니다.' });
     }
   };
 
@@ -1389,25 +1466,79 @@ export function Settings() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">내보내기</h2>
-                <p className="text-sm text-gray-500">전체 데이터를 JSON 파일로 내보냅니다</p>
+                <p className="text-sm text-gray-500">선택한 데이터를 JSON 파일로 내보냅니다</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">전체 데이터</p>
-                <p className="text-sm text-gray-500">
-                  환자 {usageStats.patients}명 · 처방 {usageStats.prescriptions}개 · 차트 {usageStats.initialCharts + usageStats.progressNotes}개
-                </p>
-              </div>
-              <button
-                onClick={handleExportAll}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                내보내기
-              </button>
+            {/* 전체 선택 / 해제 */}
+            <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Object.values(exportSelections).every(Boolean)}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setExportSelections(prev => {
+                      const next = { ...prev };
+                      for (const key in next) next[key] = val;
+                      return next;
+                    });
+                  }}
+                  className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                />
+                <span className="text-sm font-medium text-gray-900">전체 선택</span>
+              </label>
+              <span className="text-xs text-gray-500">
+                {Object.values(exportSelections).filter(Boolean).length}/{Object.keys(exportSelections).length}개 선택
+              </span>
             </div>
+
+            {/* 그룹별 체크박스 */}
+            <div className="space-y-4 mb-4">
+              {EXPORT_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={group.keys.every(k => exportSelections[k])}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setExportSelections(prev => {
+                          const next = { ...prev };
+                          group.keys.forEach(k => { next[k] = val; });
+                          return next;
+                        });
+                      }}
+                      className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                    />
+                    <span className="text-sm font-semibold text-gray-700">{group.label}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 pl-6">
+                    {group.keys.map((key) => (
+                      <label key={key} className="flex items-center gap-2 py-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={exportSelections[key] || false}
+                          onChange={(e) => setExportSelections(prev => ({ ...prev, [key]: e.target.checked }))}
+                          className="w-3.5 h-3.5 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                        />
+                        <span className="text-sm text-gray-600">{EXPORT_LABELS[key]}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 내보내기 버튼 */}
+            <button
+              onClick={handleExportSelected}
+              disabled={Object.values(exportSelections).every(v => !v)}
+              className="w-full btn-primary flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              선택 항목 내보내기
+            </button>
           </div>
 
           {/* 휴지통 */}

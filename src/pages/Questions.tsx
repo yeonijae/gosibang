@@ -1,10 +1,8 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { HelpCircle, Plus, Clock, CheckCircle, MessageSquare, Loader2, X, Edit2, Trash2, ExternalLink } from 'lucide-react';
-import SimpleMDE from 'react-simplemde-editor';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import 'easymde/dist/easymde.min.css';
-import 'font-awesome/css/font-awesome.min.css';
+import { useEffect, useState, useCallback } from 'react';
+import { HelpCircle, Plus, Clock, CheckCircle, MessageSquare, Loader2, X, Edit2, Trash2 } from 'lucide-react';
+import { RichTextEditor } from '../components/RichTextEditor';
+import { RichContentDisplay } from '../components/RichContentDisplay';
+import { stripHtml } from '../lib/contentUtils';
 import { useQuestionStore } from '../store/questionStore';
 import { supabase } from '../lib/supabase';
 import type { Question, QuestionCategory } from '../types';
@@ -65,7 +63,6 @@ export function Questions() {
     category: 'general' as QuestionCategory,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     loadMyQuestions();
@@ -73,78 +70,9 @@ export function Questions() {
     return unsubscribe;
   }, [loadMyQuestions, subscribeToQuestions]);
 
-  // SimpleMDE 옵션
-  const editorOptions = useMemo(() => ({
-    spellChecker: false,
-    placeholder: '질문 내용을 자세히 작성해주세요.\n\n이미지는 클립보드에서 붙여넣기(Ctrl+V)하거나 드래그앤드롭으로 추가할 수 있습니다.',
-    status: false,
-    toolbar: [
-      'bold', 'italic', 'heading', '|',
-      'quote', 'unordered-list', 'ordered-list', '|',
-      'link', 'image', '|',
-      'preview', 'side-by-side', 'fullscreen', '|',
-      'guide'
-    ] as const,
-    minHeight: '250px',
-  }), []);
-
   // 에디터 내용 변경 핸들러
   const handleContentChange = useCallback((value: string) => {
     setFormData(prev => ({ ...prev, content: value }));
-  }, []);
-
-  // 이미지 붙여넣기 핸들러 (div onPaste용)
-  const handleImagePaste = useCallback(async (event: React.ClipboardEvent) => {
-    const items = event.clipboardData?.items;
-    if (!items) return;
-
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        event.preventDefault();
-        const file = item.getAsFile();
-        if (!file) continue;
-
-        setIsUploading(true);
-        const imageUrl = await uploadImage(file);
-        setIsUploading(false);
-
-        if (imageUrl) {
-          const markdownImage = `\n![image](${imageUrl})\n`;
-          setFormData(prev => ({
-            ...prev,
-            content: prev.content + markdownImage,
-          }));
-        } else {
-          alert('이미지 업로드에 실패했습니다.');
-        }
-        break;
-      }
-    }
-  }, []);
-
-  // 이미지 드롭 핸들러
-  const handleImageDrop = useCallback(async (event: React.DragEvent) => {
-    const files = event.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-
-    const imageFile = Array.from(files).find(file => file.type.startsWith('image/'));
-    if (!imageFile) return;
-
-    event.preventDefault();
-    setIsUploading(true);
-
-    const imageUrl = await uploadImage(imageFile);
-    setIsUploading(false);
-
-    if (imageUrl) {
-      const markdownImage = `\n![image](${imageUrl})\n`;
-      setFormData(prev => ({
-        ...prev,
-        content: prev.content + markdownImage,
-      }));
-    } else {
-      alert('이미지 업로드에 실패했습니다.');
-    }
   }, []);
 
   // 질문 제출
@@ -268,7 +196,7 @@ export function Questions() {
                     </h3>
 
                     <p className="text-gray-600 text-sm mb-3 whitespace-pre-wrap line-clamp-2">
-                      {question.content.replace(/!\[.*?\]\(.*?\)/g, '[이미지]')}
+                      {stripHtml(question.content)}
                     </p>
 
                     <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -370,24 +298,16 @@ export function Questions() {
                 </div>
               </div>
 
-              <div
-                className="question-editor"
-                onPaste={handleImagePaste}
-                onDrop={handleImageDrop}
-                onDragOver={(e) => e.preventDefault()}
-              >
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   내용 <span className="text-red-500">*</span>
-                  {isUploading && (
-                    <span className="ml-2 text-primary-600">
-                      <Loader2 className="w-4 h-4 inline animate-spin" /> 이미지 업로드 중...
-                    </span>
-                  )}
                 </label>
-                <SimpleMDE
-                  value={formData.content}
+                <RichTextEditor
+                  content={formData.content}
                   onChange={handleContentChange}
-                  options={editorOptions}
+                  onImageUpload={uploadImage}
+                  placeholder="질문 내용을 자세히 작성해주세요. 이미지는 붙여넣기(Ctrl+V) 또는 드래그앤드롭으로 추가할 수 있습니다."
+                  minHeight="250px"
                 />
               </div>
             </div>
@@ -398,7 +318,7 @@ export function Questions() {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!formData.title.trim() || !formData.content.trim() || isSubmitting || isUploading}
+                disabled={!formData.title.trim() || !formData.content.trim() || isSubmitting}
                 className="btn-primary flex items-center gap-2"
               >
                 {isSubmitting ? (
@@ -435,36 +355,8 @@ export function Questions() {
             <div className="flex-1 overflow-auto p-4">
               <div className="mb-4">
                 <h3 className="text-sm font-medium text-gray-500 mb-2">내 질문</h3>
-                <div className="p-3 bg-gray-50 rounded-lg prose prose-sm max-w-none">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (href) {
-                              window.open(href, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
-                          className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          {children}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ),
-                      img: ({ src, alt }) => (
-                        <img
-                          src={src}
-                          alt={alt}
-                          className="max-w-full rounded-lg border border-gray-200"
-                        />
-                      ),
-                    }}
-                  >
-                    {viewingAnswer.content}
-                  </ReactMarkdown>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <RichContentDisplay content={viewingAnswer.content} />
                 </div>
               </div>
 
@@ -477,36 +369,8 @@ export function Questions() {
                     </span>
                   )}
                 </h3>
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg prose prose-sm max-w-none">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (href) {
-                              window.open(href, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
-                          className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          {children}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ),
-                      img: ({ src, alt }) => (
-                        <img
-                          src={src}
-                          alt={alt}
-                          className="max-w-full rounded-lg border border-gray-200"
-                        />
-                      ),
-                    }}
-                  >
-                    {viewingAnswer.answer || '답변이 없습니다.'}
-                  </ReactMarkdown>
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <RichContentDisplay content={viewingAnswer.answer || '답변이 없습니다.'} />
                 </div>
               </div>
             </div>
