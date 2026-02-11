@@ -4,6 +4,7 @@ import SimpleMDE from 'react-simplemde-editor';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import 'easymde/dist/easymde.min.css';
+import 'font-awesome/css/font-awesome.min.css';
 import { useQuestionStore } from '../store/questionStore';
 import { supabase } from '../lib/supabase';
 import type { Question, QuestionCategory } from '../types';

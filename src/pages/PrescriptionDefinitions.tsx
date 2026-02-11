@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
+import 'font-awesome/css/font-awesome.min.css';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
@@ -673,7 +674,11 @@ export function PrescriptionDefinitions() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                              <div className="prose prose-sm max-w-none text-gray-700">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {note.content}
+                                </ReactMarkdown>
+                              </div>
                               <p className="text-xs text-gray-400 mt-2">
                                 {new Date(note.created_at).toLocaleDateString('ko-KR', {
                                   year: 'numeric',
@@ -932,6 +937,24 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
   const [content, setContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
 
+  const handleContentChange = useCallback((value: string) => {
+    setContent(value);
+  }, []);
+
+  const editorOptions = useMemo(() => ({
+    spellChecker: false,
+    placeholder: '공부한 내용, 메모, 팁 등을 마크다운으로 기록하세요...',
+    status: false,
+    toolbar: [
+      'bold', 'italic', 'heading', '|',
+      'quote', 'unordered-list', 'ordered-list', '|',
+      'link', '|',
+      'preview', 'side-by-side', 'fullscreen', '|',
+      'guide'
+    ] as const,
+    minHeight: '200px',
+  }), []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) {
@@ -949,7 +972,7 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <StickyNote className="w-5 h-5 text-yellow-500" />
@@ -960,19 +983,18 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               내용
             </label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="input-field"
-              rows={6}
-              placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
-              autoFocus
-            />
+            <div className="flex-1 overflow-auto case-study-editor">
+              <SimpleMDE
+                value={content}
+                onChange={handleContentChange}
+                options={editorOptions}
+              />
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
