@@ -883,6 +883,7 @@ export function PrescriptionDefinitions() {
           note={editingNote}
           onSave={handleSaveNote}
           onImageUpload={handleImageUpload}
+          userId={authState?.user?.id}
           onClose={() => {
             setIsNoteModalOpen(false);
             setEditingNote(null);
@@ -896,6 +897,7 @@ export function PrescriptionDefinitions() {
           caseStudy={editingCaseStudy}
           onSave={handleSaveCaseStudy}
           onImageUpload={handleImageUpload}
+          userId={authState?.user?.id}
           onClose={() => {
             setIsCaseStudyModalOpen(false);
             setEditingCaseStudy(null);
@@ -911,10 +913,11 @@ interface NoteModalProps {
   note: PrescriptionNote;
   onSave: (note: PrescriptionNote) => void;
   onImageUpload: (file: File) => Promise<string | null>;
+  userId?: string;
   onClose: () => void;
 }
 
-function NoteModal({ note, onSave, onImageUpload, onClose }: NoteModalProps) {
+function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalProps) {
   const [content, setContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -956,6 +959,7 @@ function NoteModal({ note, onSave, onImageUpload, onClose }: NoteModalProps) {
                 content={content}
                 onChange={setContent}
                 onImageUpload={onImageUpload}
+                userId={userId}
                 placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
                 minHeight="200px"
               />
@@ -990,10 +994,11 @@ interface CaseStudyModalProps {
   caseStudy: PrescriptionCaseStudy;
   onSave: (caseStudy: PrescriptionCaseStudy) => void;
   onImageUpload: (file: File) => Promise<string | null>;
+  userId?: string;
   onClose: () => void;
 }
 
-function CaseStudyModal({ caseStudy, onSave, onImageUpload, onClose }: CaseStudyModalProps) {
+function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: CaseStudyModalProps) {
   const [title, setTitle] = useState(caseStudy.title);
   const [content, setContent] = useState(caseStudy.content);
   const [isSaving, setIsSaving] = useState(false);
@@ -1055,6 +1060,7 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, onClose }: CaseStudy
                 content={content}
                 onChange={setContent}
                 onImageUpload={onImageUpload}
+                userId={userId}
                 placeholder="환자 정보, 주소증, 치료 경과 등을 기록하세요..."
                 minHeight="250px"
               />
