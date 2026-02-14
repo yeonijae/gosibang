@@ -24,8 +24,8 @@ function getImageDir(userId?: string): string {
 }
 
 /**
- * 이미지 파일을 로컬에 저장하고 커스텀 URI 반환
- * Tauri: appdata/images/{userId}/{uuid}.ext 저장 → gosibang-image://{uuid}.ext
+ * 이미지 파일을 로컬에 저장하고 표시 가능한 URL 반환
+ * Tauri: appdata/images/{userId}/{uuid}.ext 저장 → https://asset.localhost/... URL
  * 브라우저: base64 data URL 반환 (fallback)
  */
 export async function saveImageToFile(file: File, userId?: string): Promise<string | null> {
@@ -41,6 +41,8 @@ export async function saveImageToFile(file: File, userId?: string): Promise<stri
 
   try {
     const { mkdir, writeFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+    const { convertFileSrc } = await import('@tauri-apps/api/core');
+    const { appDataDir } = await import('@tauri-apps/api/path');
     const ext = getExtFromMime(file.type);
     const uuid = crypto.randomUUID();
     const filename = `${uuid}.${ext}`;
@@ -56,7 +58,10 @@ export async function saveImageToFile(file: File, userId?: string): Promise<stri
     // 파일 저장
     await writeFile(`${dir}/${filename}`, data, { baseDir: BaseDirectory.AppData });
 
-    return `${CUSTOM_SCHEME}${filename}`;
+    // 바로 표시 가능한 asset URL 반환
+    const appData = await appDataDir();
+    const filePath = `${appData}${dir}/${filename}`;
+    return convertFileSrc(filePath);
   } catch (e) {
     console.error('이미지 파일 저장 실패:', e);
     return null;

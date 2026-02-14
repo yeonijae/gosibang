@@ -62,20 +62,11 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
     if (!onImageUpload) return;
     const url = await onImageUpload(file);
     if (url) {
-      // gosibang-image:// URI인 경우 에디터 표시용 URL로 변환
-      let displayUrl = url;
-      if (url.startsWith('gosibang-image://')) {
-        try {
-          const resolved = await resolveImageUrls(`<img src="${url}">`, userId);
-          const match = resolved.match(/src="([^"]+)"/);
-          if (match) displayUrl = match[1];
-        } catch { /* fallback to original url */ }
-      }
-      editorInstance.chain().focus().setImage({ src: displayUrl }).run();
+      editorInstance.chain().focus().setImage({ src: url }).run();
     } else {
       alert('이미지 업로드에 실패했습니다.');
     }
-  }, [onImageUpload, userId]);
+  }, [onImageUpload]);
 
   const editor = useEditor({
     extensions: [
