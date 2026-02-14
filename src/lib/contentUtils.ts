@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import { saveImageToFile } from './imageStorage';
 
 marked.setOptions({
   gfm: true,
@@ -41,4 +42,13 @@ export async function fileToBase64(file: File): Promise<string | null> {
     reader.onerror = () => resolve(null);
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * 이미지 업로드 래퍼
+ * Tauri: 로컬 파일 저장 → gosibang-image:// URI
+ * 브라우저: base64 fallback
+ */
+export async function uploadImageToStorage(file: File, userId?: string): Promise<string | null> {
+  return saveImageToFile(file, userId);
 }

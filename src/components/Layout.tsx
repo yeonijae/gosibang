@@ -36,7 +36,7 @@ export function Layout() {
   }, [verifySession, updateSessionActivity, logout]);
 
   return (
-    <div className="flex h-screen bg-gray-100" onClick={handleUserActivity}>
+    <div className="flex h-full bg-gray-100" onClick={handleUserActivity}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         <AnnouncementBanner />

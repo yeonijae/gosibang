@@ -11,8 +11,9 @@ import {
   Quote, List, ListOrdered, Link as LinkIcon, Unlink,
   ImagePlus, Undo2, Redo2, Highlighter, Palette, Type,
 } from 'lucide-react';
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { ensureHtml } from '../lib/contentUtils';
+import { resolveImageUrls, unresolveImageUrls } from '../lib/imageStorage';
 import { FontSize } from '../lib/tiptapFontSize';
 import type { Editor } from '@tiptap/react';
 
@@ -50,10 +51,12 @@ interface RichTextEditorProps {
   onImageUpload?: (file: File) => Promise<string | null>;
   placeholder?: string;
   minHeight?: string;
+  userId?: string;
 }
 
-export function RichTextEditor({ content, onChange, onImageUpload, placeholder, minHeight }: RichTextEditorProps) {
+export function RichTextEditor({ content, onChange, onImageUpload, placeholder, minHeight, userId }: RichTextEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isResolvingRef = useRef(false);
 
   const handleImageFile = useCallback(async (file: File, editorInstance: Editor) => {
     if (!onImageUpload) return;
@@ -80,7 +83,9 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
     ],
     content: ensureHtml(content),
     onUpdate: ({ editor: ed }) => {
-      onChange(ed.getHTML());
+      if (isResolvingRef.current) return;
+      const html = ed.getHTML();
+      onChange(unresolveImageUrls(html));
     },
     editorProps: {
       handlePaste(view, event) {
@@ -116,6 +121,19 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
       },
     },
   });
+
+  // 에디터 로드 시 gosibang-image:// URL 변환
+  useEffect(() => {
+    if (!editor) return;
+    const html = ensureHtml(content);
+    if (html.includes('gosibang-image://')) {
+      isResolvingRef.current = true;
+      resolveImageUrls(html, userId).then(resolved => {
+        editor.commands.setContent(resolved, { emitUpdate: false });
+        isResolvingRef.current = false;
+      });
+    }
+  }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleImageButtonClick = () => {
     fileInputRef.current?.click();

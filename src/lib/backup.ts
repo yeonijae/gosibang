@@ -2,6 +2,7 @@
 // File System Access API를 사용하여 로컬 폴더에 백업
 
 import { getDb, saveDb } from './localDb';
+import { listImageFiles, readImageFile, writeImageFile } from './imageStorage';
 
 const DB_KEY = 'gosibang_db';
 const BACKUP_SETTINGS_KEY = 'gosibang_backup_settings';
@@ -386,6 +387,133 @@ export function cleanupBackupHistory(): {
       deletedCount: 0,
       keptCount: 0,
     };
+  }
+}
+
+// ZIP 백업 파일 이름 생성
+export function generateZipBackupFilename(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+  return `gosibang_backup_${dateStr}_${timeStr}.zip`;
+}
+
+// ZIP 내보내기 (DB + 이미지)
+export async function exportToZip(userId?: string): Promise<{ success: boolean; filename?: string; error?: string }> {
+  try {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+
+    // 1. DB 내보내기
+    const dbBytes = exportDbToBytes();
+    if (!dbBytes) {
+      return { success: false, error: '데이터베이스를 내보내는데 실패했습니다.' };
+    }
+    zip.file('gosibang.db', dbBytes);
+
+    // 2. 이미지 파일 추가
+    const imageFiles = await listImageFiles(userId);
+    let imageCount = 0;
+    for (const filename of imageFiles) {
+      const data = await readImageFile(filename, userId);
+      if (data) {
+        zip.file(`images/${filename}`, data);
+        imageCount++;
+      }
+    }
+
+    // 3. 메타데이터 추가
+    const metadata = {
+      version: 1,
+      imageCount,
+      exportedAt: new Date().toISOString(),
+      userId: userId || null,
+    };
+    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+    // 4. ZIP 생성 및 다운로드
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const filename = generateZipBackupFilename();
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // 설정 업데이트
+    const settings = loadBackupSettings();
+    settings.lastBackupAt = new Date().toISOString();
+    saveBackupSettings(settings);
+
+    // 히스토리 추가
+    addBackupToHistory({
+      filename,
+      createdAt: new Date().toISOString(),
+      size: blob.size,
+      type: 'manual',
+    });
+
+    return { success: true, filename };
+  } catch (e: any) {
+    console.error('ZIP 내보내기 실패:', e);
+    return { success: false, error: `ZIP 내보내기 실패: ${e.message}` };
+  }
+}
+
+// ZIP에서 복원 (DB + 이미지)
+export async function restoreFromZip(file: File, userId?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(file);
+
+    // 1. gosibang.db 확인 및 복원
+    const dbFile = zip.file('gosibang.db');
+    if (!dbFile) {
+      return { success: false, error: 'ZIP에 gosibang.db 파일이 없습니다.' };
+    }
+
+    const dbData = await dbFile.async('uint8array');
+
+    // SQLite 헤더 검증
+    const header = new TextDecoder().decode(dbData.slice(0, 16));
+    if (!header.startsWith('SQLite format 3')) {
+      return { success: false, error: 'ZIP의 DB 파일이 유효한 SQLite 파일이 아닙니다.' };
+    }
+
+    // DB → localStorage 저장
+    const CHUNK_SIZE = 0x8000;
+    let binary = '';
+    for (let i = 0; i < dbData.length; i += CHUNK_SIZE) {
+      const chunk = dbData.subarray(i, i + CHUNK_SIZE);
+      binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+    }
+    const base64 = btoa(binary);
+    localStorage.setItem(DB_KEY, base64);
+
+    // 2. 이미지 파일 복원
+    const imageFolder = zip.folder('images');
+    if (imageFolder) {
+      const imageEntries: { name: string; file: { async(type: 'uint8array'): Promise<Uint8Array> } }[] = [];
+      imageFolder.forEach((relativePath, zipEntry) => {
+        if (!zipEntry.dir) {
+          imageEntries.push({ name: relativePath, file: zipEntry });
+        }
+      });
+
+      for (const entry of imageEntries) {
+        const data = await entry.file.async('uint8array');
+        await writeImageFile(entry.name, data, userId);
+      }
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    console.error('ZIP 복원 실패:', e);
+    return { success: false, error: `ZIP 복원 실패: ${e.message}` };
   }
 }
 

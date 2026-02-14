@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText } from 'lucide-react';
 import { RichTextEditor } from '../components/RichTextEditor';
 import { RichContentDisplay } from '../components/RichContentDisplay';
-import { fileToBase64 } from '../lib/contentUtils';
+import { uploadImageToStorage } from '../lib/contentUtils';
 import { getDb, saveDb, queryToObjects } from '../lib/localDb';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
+import { useAuthStore } from '../store/authStore';
 import type { PrescriptionNote, PrescriptionCaseStudy, Prescription } from '../types';
 
 interface PrescriptionDefinition {
@@ -54,6 +55,12 @@ export function PrescriptionDefinitions() {
   // 처방정의 수정 권한 체크
   const { hasAccess, planName } = useFeatureStore();
   const canEdit = hasAccess('prescription_definitions_edit');
+
+  // 이미지 업로드 핸들러
+  const { authState } = useAuthStore();
+  const handleImageUpload = useCallback(async (file: File) => {
+    return uploadImageToStorage(file, authState?.user?.id);
+  }, [authState?.user?.id]);
 
   useEffect(() => {
     loadDefinitions();
@@ -875,6 +882,7 @@ export function PrescriptionDefinitions() {
         <NoteModal
           note={editingNote}
           onSave={handleSaveNote}
+          onImageUpload={handleImageUpload}
           onClose={() => {
             setIsNoteModalOpen(false);
             setEditingNote(null);
@@ -887,6 +895,7 @@ export function PrescriptionDefinitions() {
         <CaseStudyModal
           caseStudy={editingCaseStudy}
           onSave={handleSaveCaseStudy}
+          onImageUpload={handleImageUpload}
           onClose={() => {
             setIsCaseStudyModalOpen(false);
             setEditingCaseStudy(null);
@@ -901,10 +910,11 @@ export function PrescriptionDefinitions() {
 interface NoteModalProps {
   note: PrescriptionNote;
   onSave: (note: PrescriptionNote) => void;
+  onImageUpload: (file: File) => Promise<string | null>;
   onClose: () => void;
 }
 
-function NoteModal({ note, onSave, onClose }: NoteModalProps) {
+function NoteModal({ note, onSave, onImageUpload, onClose }: NoteModalProps) {
   const [content, setContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -945,7 +955,7 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
               <RichTextEditor
                 content={content}
                 onChange={setContent}
-                onImageUpload={fileToBase64}
+                onImageUpload={onImageUpload}
                 placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
                 minHeight="200px"
               />
@@ -979,10 +989,11 @@ function NoteModal({ note, onSave, onClose }: NoteModalProps) {
 interface CaseStudyModalProps {
   caseStudy: PrescriptionCaseStudy;
   onSave: (caseStudy: PrescriptionCaseStudy) => void;
+  onImageUpload: (file: File) => Promise<string | null>;
   onClose: () => void;
 }
 
-function CaseStudyModal({ caseStudy, onSave, onClose }: CaseStudyModalProps) {
+function CaseStudyModal({ caseStudy, onSave, onImageUpload, onClose }: CaseStudyModalProps) {
   const [title, setTitle] = useState(caseStudy.title);
   const [content, setContent] = useState(caseStudy.content);
   const [isSaving, setIsSaving] = useState(false);
@@ -1043,7 +1054,7 @@ function CaseStudyModal({ caseStudy, onSave, onClose }: CaseStudyModalProps) {
               <RichTextEditor
                 content={content}
                 onChange={setContent}
-                onImageUpload={fileToBase64}
+                onImageUpload={onImageUpload}
                 placeholder="환자 정보, 주소증, 치료 경과 등을 기록하세요..."
                 minHeight="250px"
               />

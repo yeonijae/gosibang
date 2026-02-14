@@ -9,8 +9,9 @@ import {
   saveBackupSettings,
   loadBackupHistory,
   selectFolderAndBackup,
-  downloadBackup,
   restoreFromBackup,
+  exportToZip,
+  restoreFromZip,
   isFileSystemAccessSupported,
   formatFileSize,
   formatRelativeTime,
@@ -875,12 +876,13 @@ export function Settings() {
     setIsBackingUp(false);
   };
 
-  // 다운로드 백업
-  const handleDownloadBackup = () => {
+  // 다운로드 백업 (ZIP 형식: DB + 이미지)
+  const handleDownloadBackup = async () => {
     setIsBackingUp(true);
     setMessage(null);
 
-    const result = downloadBackup();
+    const userId = authState?.user?.id;
+    const result = await exportToZip(userId);
 
     if (result.success) {
       setMessage({ type: 'success', text: `백업 파일 다운로드 완료: ${result.filename}` });
@@ -893,7 +895,7 @@ export function Settings() {
     setIsBackingUp(false);
   };
 
-  // 백업에서 복원
+  // 백업에서 복원 (.db 또는 .zip)
   const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -908,7 +910,11 @@ export function Settings() {
     setIsRestoring(true);
     setMessage(null);
 
-    const result = await restoreFromBackup(file);
+    const isZip = file.name.toLowerCase().endsWith('.zip');
+    const userId = authState?.user?.id;
+    const result = isZip
+      ? await restoreFromZip(file, userId)
+      : await restoreFromBackup(file);
 
     if (result.success) {
       setMessage({ type: 'success', text: '복원 완료. 페이지를 새로고침합니다...' });
@@ -1781,7 +1787,7 @@ export function Settings() {
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div>
                 <p className="font-medium text-gray-900">백업 파일에서 복원</p>
-                <p className="text-sm text-gray-500">.db 파일을 선택하여 복원</p>
+                <p className="text-sm text-gray-500">.zip 또는 .db 파일을 선택하여 복원</p>
               </div>
               <label className="btn-secondary flex items-center gap-2 cursor-pointer">
                 {isRestoring ? (
@@ -1793,7 +1799,7 @@ export function Settings() {
                 <input
                   ref={backupFileInputRef}
                   type="file"
-                  accept=".db"
+                  accept=".db,.zip"
                   onChange={handleRestoreBackup}
                   className="hidden"
                   disabled={isRestoring}
