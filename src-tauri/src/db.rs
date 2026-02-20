@@ -1373,12 +1373,14 @@ pub fn set_server_autostart(enabled: bool) -> AppResult<()> {
 
 /// 설문 응답 목록 조회
 pub fn list_survey_responses(limit: Option<i32>) -> AppResult<Vec<SurveyResponseWithTemplate>> {
+    ensure_db_initialized()?;
     let conn = get_conn()?;
     let limit_val = limit.unwrap_or(100);
 
     let mut stmt = conn.prepare(
         r#"SELECT r.id, r.session_id, r.patient_id, r.template_id, r.respondent_name,
-                  r.answers, r.submitted_at, t.name as template_name, p.name as patient_name
+                  r.answers, r.submitted_at, t.name as template_name, p.name as patient_name,
+                  p.chart_number
            FROM survey_responses r
            LEFT JOIN survey_templates t ON r.template_id = t.id
            LEFT JOIN patients p ON r.patient_id = p.id
@@ -1399,6 +1401,7 @@ pub fn list_survey_responses(limit: Option<i32>) -> AppResult<Vec<SurveyResponse
             submitted_at: row.get(6)?,
             template_name: row.get(7)?,
             patient_name: row.get(8)?,
+            chart_number: row.get(9)?,
         })
     })?;
 
@@ -1421,6 +1424,7 @@ pub struct SurveyResponseWithTemplate {
     pub submitted_at: String,
     pub template_name: Option<String>,
     pub patient_name: Option<String>,
+    pub chart_number: Option<String>,
 }
 
 /// 모든 설문 템플릿 목록 조회
@@ -1497,6 +1501,86 @@ pub fn restore_default_templates() -> AppResult<()> {
     ensure_default_templates()?;
     log::info!("기본 설문 템플릿이 복원되었습니다.");
     Ok(())
+}
+
+// ============ 설문 응답 관리 (Tauri 명령어용) ============
+
+/// 설문 응답 제출 (프론트엔드에서 직접 호출)
+/// 세션은 sql.js에만 존재하므로 FK 체크를 일시 비활성화
+pub fn submit_survey_response(
+    session_id: Option<&str>,
+    template_id: &str,
+    patient_id: Option<&str>,
+    respondent_name: Option<&str>,
+    answers: &[SurveyAnswer],
+) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let answers_json = serde_json::to_string(answers)?;
+    let now = Utc::now().to_rfc3339();
+
+    // 세션은 sql.js에만 있고 clinic.db에는 없으므로 FK 체크 일시 비활성화
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+
+    let result = conn.execute(
+        r#"INSERT INTO survey_responses (id, session_id, template_id, patient_id, respondent_name, answers, submitted_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+        params![id, session_id, template_id, patient_id, respondent_name, answers_json, now],
+    );
+
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    result?;
+
+    log::info!("설문 응답 제출됨: {} (template: {})", id, template_id);
+    Ok(())
+}
+
+/// 동기화된 설문 응답 저장 (Supabase에서 수신, session_id로 중복 체크)
+/// 이미 존재하면 false 반환, 새로 저장하면 true 반환
+/// 세션은 sql.js에만 존재하므로 FK 체크를 일시 비활성화
+pub fn save_survey_response_from_sync(
+    session_id: &str,
+    template_id: &str,
+    patient_id: Option<&str>,
+    respondent_name: Option<&str>,
+    answers: &[SurveyAnswer],
+    submitted_at: &str,
+) -> AppResult<bool> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    // session_id로 중복 체크
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT id FROM survey_responses WHERE session_id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if existing.is_some() {
+        log::info!("설문 응답 이미 존재 (session: {})", session_id);
+        return Ok(false);
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let answers_json = serde_json::to_string(answers)?;
+
+    // 세션은 sql.js에만 있고 clinic.db에는 없으므로 FK 체크 일시 비활성화
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+
+    let result = conn.execute(
+        r#"INSERT INTO survey_responses (id, session_id, template_id, patient_id, respondent_name, answers, submitted_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+        params![id, session_id, template_id, patient_id, respondent_name, answers_json, submitted_at],
+    );
+
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    result?;
+
+    log::info!("동기화 설문 응답 저장됨: {} (session: {})", id, session_id);
+    Ok(true)
 }
 
 // ============ 내부 직원 계정 관리 ============

@@ -55,6 +55,12 @@ export function Login() {
         setPendingType('login');
         setShowPendingMessage(true);
         clearError();
+      } else if (errorMessage.startsWith('VERSION_TOO_OLD:')) {
+        const [, minVersion, currentVersion] = errorMessage.split(':');
+        clearError();
+        alert(
+          `앱 업데이트가 필요합니다.\n\n현재 버전: ${currentVersion}\n최소 요구 버전: ${minVersion}\n\n최신 버전을 설치해주세요.`
+        );
       } else if (errorMessage.startsWith('SESSION_LIMIT_CONFIRM:')) {
         // 동시접속 한도 - 사용자 확인 필요
         const [, maxSessions] = errorMessage.split(':');

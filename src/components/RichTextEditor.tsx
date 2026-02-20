@@ -12,8 +12,8 @@ import {
   ImagePlus, Undo2, Redo2, Highlighter, Palette, Type,
 } from 'lucide-react';
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { ensureHtml } from '../lib/contentUtils';
-import { resolveImageUrls, unresolveImageUrls } from '../lib/imageStorage';
+import { ensureHtml, fileToBase64 } from '../lib/contentUtils';
+import { resolveImageUrls, unresolveImageUrls, getDisplayUrl, registerResolvedImage } from '../lib/imageStorage';
 import { FontSize } from '../lib/tiptapFontSize';
 import type { Editor } from '@tiptap/react';
 
@@ -58,16 +58,6 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isResolvingRef = useRef(false);
 
-  const handleImageFile = useCallback(async (file: File, editorInstance: Editor) => {
-    if (!onImageUpload) return;
-    const url = await onImageUpload(file);
-    if (url) {
-      editorInstance.chain().focus().setImage({ src: url }).run();
-    } else {
-      alert('이미지 업로드에 실패했습니다.');
-    }
-  }, [onImageUpload]);
-
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -87,40 +77,104 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
       const html = ed.getHTML();
       onChange(unresolveImageUrls(html));
     },
-    editorProps: {
-      handlePaste(view, event) {
-        const items = event.clipboardData?.items;
-        if (!items || !onImageUpload) return false;
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            event.preventDefault();
-            const file = item.getAsFile();
-            if (file) {
-              const ed = (view as unknown as { editor?: Editor }).editor;
-              if (!ed) {
-                handleImageFile(file, editor!);
-              } else {
-                handleImageFile(file, ed);
+  });
+
+  // DOM 이벤트 리스너로 이미지 붙여넣기/드롭 처리 (stale closure 방지)
+  useEffect(() => {
+    if (!editor || !onImageUpload) return;
+
+    const insertImage = async (file: File) => {
+      try {
+        const url = await onImageUpload(file);
+        if (url) {
+          if (url.startsWith('gosibang-image://')) {
+            // gosibang-image:// URI → 캐시에서 표시용 base64 URL 조회
+            let displayUrl = getDisplayUrl(url);
+            if (!displayUrl) {
+              // 캐시 미스: 파일에서 직접 base64 변환
+              displayUrl = await fileToBase64(file) ?? undefined;
+              if (displayUrl) {
+                registerResolvedImage(url, displayUrl);
               }
             }
-            return true;
+            if (displayUrl) {
+              editor.chain().focus().setImage({ src: displayUrl }).run();
+              return;
+            }
+          } else {
+            editor.chain().focus().setImage({ src: url }).run();
+            return;
           }
         }
-        return false;
-      },
-      handleDrop(_view, event) {
-        const files = event.dataTransfer?.files;
-        if (!files || !onImageUpload) return false;
-        const imageFile = Array.from(files).find(f => f.type.startsWith('image/'));
-        if (imageFile) {
-          event.preventDefault();
-          handleImageFile(imageFile, editor!);
-          return true;
+      } catch (e) {
+        console.error('이미지 업로드 실패, base64 fallback:', e);
+      }
+      // fallback: base64로 직접 삽입
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          if (base64) {
+            editor.chain().focus().setImage({ src: base64 }).run();
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (e2) {
+        console.error('base64 변환도 실패:', e2);
+        alert('이미지 업로드에 실패했습니다.');
+      }
+    };
+
+    const findImageFile = (dataTransfer: DataTransfer | null): File | null => {
+      if (!dataTransfer) return null;
+      // clipboardData.items 확인
+      if (dataTransfer.items) {
+        for (const item of Array.from(dataTransfer.items)) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) return file;
+          }
         }
-        return false;
-      },
-    },
-  });
+      }
+      // clipboardData.files fallback (WebView2 호환)
+      if (dataTransfer.files) {
+        for (const file of Array.from(dataTransfer.files)) {
+          if (file.type.startsWith('image/')) {
+            return file;
+          }
+        }
+      }
+      return null;
+    };
+
+    const handlePaste = (e: Event) => {
+      const event = e as ClipboardEvent;
+      const file = findImageFile(event.clipboardData);
+      if (file) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertImage(file);
+      }
+    };
+
+    const handleDrop = (e: Event) => {
+      const event = e as DragEvent;
+      const file = findImageFile(event.dataTransfer);
+      if (file) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertImage(file);
+      }
+    };
+
+    const dom = editor.view.dom;
+    dom.addEventListener('paste', handlePaste, { capture: true });
+    dom.addEventListener('drop', handleDrop, { capture: true });
+    return () => {
+      dom.removeEventListener('paste', handlePaste, { capture: true });
+      dom.removeEventListener('drop', handleDrop, { capture: true });
+    };
+  }, [editor, onImageUpload]);
 
   // 에디터 로드 시 gosibang-image:// URL 변환
   useEffect(() => {
@@ -141,8 +195,33 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && editor) {
-      await handleImageFile(file, editor);
+    if (file && editor && onImageUpload) {
+      try {
+        const url = await onImageUpload(file);
+        if (url) {
+          if (url.startsWith('gosibang-image://')) {
+            let displayUrl = getDisplayUrl(url);
+            if (!displayUrl) {
+              displayUrl = await fileToBase64(file) ?? undefined;
+              if (displayUrl) {
+                registerResolvedImage(url, displayUrl);
+              }
+            }
+            if (displayUrl) {
+              editor.chain().focus().setImage({ src: displayUrl }).run();
+            } else {
+              alert('이미지 업로드에 실패했습니다.');
+            }
+          } else {
+            editor.chain().focus().setImage({ src: url }).run();
+          }
+        } else {
+          alert('이미지 업로드에 실패했습니다.');
+        }
+      } catch (err) {
+        console.error('이미지 업로드 실패:', err);
+        alert('이미지 업로드에 실패했습니다.');
+      }
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';

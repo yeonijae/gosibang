@@ -16,6 +16,20 @@ interface TauriSurveyTemplate {
   is_active: boolean;
 }
 
+// Tauri에서 반환하는 응답 구조 (clinic.db)
+interface TauriSurveyResponse {
+  id: string;
+  session_id: string | null;
+  patient_id: string | null;
+  template_id: string;
+  respondent_name: string | null;
+  answers: SurveyAnswer[];
+  submitted_at: string;
+  template_name: string | null;
+  patient_name: string | null;
+  chart_number: string | null;
+}
+
 interface SurveyStore {
   // 상태
   templates: SurveyTemplate[];
@@ -398,29 +412,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
   // 응답-환자 연결
   linkResponseToPatient: async (responseId, patientId) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    // 환자 정보 가져오기 (Tauri 백엔드에서 조회)
-    const patient = await invoke<{ id: string; name: string; chart_number?: string } | null>('get_patient', { id: patientId });
-    if (!patient) throw new Error('환자를 찾을 수 없습니다.');
-
-    // 응답의 patient_id, patient_name, chart_number 업데이트
-    db.run(
-      'UPDATE survey_responses SET patient_id = ?, patient_name = ?, chart_number = ? WHERE id = ?',
-      [patientId, patient.name, patient.chart_number || null, responseId]
-    );
-
-    // 관련 세션도 업데이트
-    const response = queryOne<{ session_id: string | null }>(db, 'SELECT session_id FROM survey_responses WHERE id = ?', [responseId]);
-    if (response?.session_id) {
-      db.run(
-        'UPDATE survey_sessions SET patient_id = ? WHERE id = ?',
-        [patientId, response.session_id]
-      );
-    }
-
-    saveDb();
+    // clinic.db에서 응답-환자 연결
+    await invoke('link_survey_response_to_patient', { responseId, patientId });
 
     // 응답 목록 새로고침
     await get().loadResponses();
@@ -431,43 +424,30 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   loadResponses: async (filters) => {
     try {
       set({ isLoading: true, error: null });
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-      // 템플릿 목록이 비어있으면 먼저 로드
-      let templates = get().templates;
-      if (templates.length === 0) {
-        await get().loadTemplates();
-        templates = get().templates;
-      }
-      const templateMap = new Map(templates.map(t => [t.id, t.name]));
+      // clinic.db에서 응답 조회 (Tauri 명령어)
+      const tauriResponses = await invoke<TauriSurveyResponse[]>('list_survey_responses', { limit: null });
 
-      let sql = `
-        SELECT r.*,
-               COALESCE(r.patient_name, p.name) as patient_name,
-               COALESCE(r.chart_number, p.chart_number) as chart_number
-        FROM survey_responses r
-        LEFT JOIN patients p ON r.patient_id = p.id
-        WHERE 1=1
-      `;
-      const params: unknown[] = [];
+      let responses: SurveyResponse[] = tauriResponses.map(r => ({
+        id: r.id,
+        session_id: r.session_id || undefined,
+        patient_id: r.patient_id || undefined,
+        template_id: r.template_id,
+        respondent_name: r.respondent_name || undefined,
+        answers: r.answers,
+        submitted_at: r.submitted_at,
+        template_name: r.template_name || '알 수 없는 템플릿',
+        patient_name: r.patient_name || undefined,
+        chart_number: r.chart_number || undefined,
+      }));
 
+      // 클라이언트 사이드 필터링
       if (filters?.patient_id) {
-        sql += ' AND r.patient_id = ?';
-        params.push(filters.patient_id);
+        responses = responses.filter(r => r.patient_id === filters.patient_id);
       }
       if (filters?.template_id) {
-        sql += ' AND r.template_id = ?';
-        params.push(filters.template_id);
+        responses = responses.filter(r => r.template_id === filters.template_id);
       }
-
-      sql += ' ORDER BY r.submitted_at DESC';
-
-      const responses = queryToObjects<SurveyResponse & { answers: string }>(db, sql, params).map(r => ({
-        ...r,
-        answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : r.answers,
-        template_name: templateMap.get(r.template_id) || '알 수 없는 템플릿',
-      }));
 
       set({ responses, isLoading: false });
     } catch (error) {
@@ -479,7 +459,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     const db = getDb();
     if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
-    // 세션 정보 가져오기
+    // 세션 정보 가져오기 (세션은 아직 sql.js에 있음)
     const session = queryOne<SurveySession>(
       db,
       'SELECT * FROM survey_sessions WHERE id = ?',
@@ -489,64 +469,56 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
     if (!session) throw new Error('세션을 찾을 수 없습니다.');
     if (session.status !== 'pending') throw new Error('이미 완료되었거나 만료된 세션입니다.');
 
-    const id = generateUUID();
+    // clinic.db에 응답 저장 (Tauri 명령어)
+    await invoke('submit_survey_response', {
+      sessionId,
+      templateId: session.template_id,
+      patientId: session.patient_id || null,
+      respondentName: session.respondent_name || null,
+      answers,
+    });
+
+    // 세션 완료 처리 (세션은 아직 sql.js)
     const now = new Date().toISOString();
-
-    // 응답 저장
-    db.run(
-      `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, sessionId, session.patient_id, session.template_id, JSON.stringify(answers), now]
-    );
-
-    // 세션 완료 처리
     db.run(
       'UPDATE survey_sessions SET status = ?, completed_at = ? WHERE id = ?',
       ['completed', now, sessionId]
     );
-
     saveDb();
   },
 
   getResponsesByPatient: async (patientId) => {
-    const db = getDb();
-    if (!db) return [];
+    // clinic.db에서 전체 응답 조회 후 환자별 필터링
+    const tauriResponses = await invoke<TauriSurveyResponse[]>('list_survey_responses', { limit: null });
 
-    // 템플릿 목록을 먼저 로드 (Rust DB에서)
-    const templates = get().templates;
-    const templateMap = new Map(templates.map(t => [t.id, t.name]));
-
-    const responses = queryToObjects<SurveyResponse & { answers: string }>(
-      db,
-      `SELECT r.*
-       FROM survey_responses r
-       WHERE r.patient_id = ?
-       ORDER BY r.submitted_at DESC`,
-      [patientId]
-    ).map(r => ({
-      ...r,
-      answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : r.answers,
-      template_name: templateMap.get(r.template_id) || '알 수 없는 템플릿',
-    }));
+    const responses: SurveyResponse[] = tauriResponses
+      .filter(r => r.patient_id === patientId)
+      .map(r => ({
+        id: r.id,
+        session_id: r.session_id || undefined,
+        patient_id: r.patient_id || undefined,
+        template_id: r.template_id,
+        respondent_name: r.respondent_name || undefined,
+        answers: r.answers,
+        submitted_at: r.submitted_at,
+        template_name: r.template_name || '알 수 없는 템플릿',
+        patient_name: r.patient_name || undefined,
+        chart_number: r.chart_number || undefined,
+      }));
 
     return responses;
   },
 
   // 환자 등록 없이 직접 응답 생성
   createDirectResponse: async (templateId, answers, respondentName) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    const id = generateUUID();
-    const now = new Date().toISOString();
-
-    // 응답 저장 (patient_id는 null, respondent_name 컬럼 활용)
-    db.run(
-      `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, respondent_name, submitted_at)
-       VALUES (?, NULL, NULL, ?, ?, ?, ?)`,
-      [id, templateId, JSON.stringify(answers), respondentName || null, now]
-    );
-    saveDb();
+    // clinic.db에 응답 저장 (Tauri 명령어, session_id는 null)
+    await invoke('submit_survey_response', {
+      sessionId: null,
+      templateId,
+      patientId: null,
+      respondentName: respondentName || null,
+      answers,
+    });
 
     // 응답 목록 새로고침
     await get().loadResponses();
@@ -554,11 +526,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
   // 응답 삭제
   deleteResponse: async (id) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    db.run('DELETE FROM survey_responses WHERE id = ?', [id]);
-    saveDb();
+    // clinic.db에서 삭제 (Tauri 명령어)
+    await invoke('delete_survey_response', { id });
 
     // 응답 목록에서 제거
     set({ responses: get().responses.filter(r => r.id !== id) });

@@ -679,7 +679,7 @@ export function PrescriptionDefinitions() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <RichContentDisplay content={note.content} className="text-gray-700" />
+                              <RichContentDisplay content={note.content} className="text-gray-700" userId={authState?.user?.id} />
                               <p className="text-xs text-gray-400 mt-2">
                                 {new Date(note.created_at).toLocaleDateString('ko-KR', {
                                   year: 'numeric',
@@ -831,7 +831,7 @@ export function PrescriptionDefinitions() {
                               </button>
                             </div>
                           </div>
-                          <RichContentDisplay content={caseStudy.content} className="text-gray-700" />
+                          <RichContentDisplay content={caseStudy.content} className="text-gray-700" userId={authState?.user?.id} />
                           <p className="text-xs text-gray-400 mt-2">
                             {new Date(caseStudy.created_at).toLocaleDateString('ko-KR', {
                               year: 'numeric',

@@ -1,11 +1,29 @@
 // 이미지 파일 저장/읽기/URL 변환 모듈
-// Tauri: appdata/images/{userId}/{uuid}.ext 로컬 파일 저장
+// Tauri: appdata/images/{userId}/{uuid}.ext 로컬 파일 저장 + base64 표시
 // 브라우저: base64 fallback
 
 import { isTauri } from './tauri';
 
 const IMAGE_DIR = 'images';
 const CUSTOM_SCHEME = 'gosibang-image://';
+
+// 모듈 레벨 캐시: gosibang-image://filename → data:mime;base64,...
+// 에디터에서 표시용 base64와 저장용 URI 간 변환에 사용
+const resolvedImageCache = new Map<string, string>();
+
+/**
+ * 해석된 이미지 매핑 등록 (에디터에서 base64 → gosibang-image:// 역변환용)
+ */
+export function registerResolvedImage(storageUri: string, displayUrl: string) {
+  resolvedImageCache.set(storageUri, displayUrl);
+}
+
+/**
+ * gosibang-image:// URI에 대응하는 표시용 URL(base64) 조회
+ */
+export function getDisplayUrl(storageUri: string): string | undefined {
+  return resolvedImageCache.get(storageUri);
+}
 
 function getExtFromMime(mimeType: string): string {
   const map: Record<string, string> = {
@@ -19,30 +37,50 @@ function getExtFromMime(mimeType: string): string {
   return map[mimeType] || 'png';
 }
 
+function getMimeFromExt(ext: string): string {
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+  };
+  return map[ext] || 'image/png';
+}
+
 function getImageDir(userId?: string): string {
   return userId ? `${IMAGE_DIR}/${userId}` : IMAGE_DIR;
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 /**
- * 이미지 파일을 로컬에 저장하고 표시 가능한 URL 반환
- * Tauri: appdata/images/{userId}/{uuid}.ext 저장 → https://asset.localhost/... URL
- * 브라우저: base64 data URL 반환 (fallback)
+ * 이미지 파일을 로컬에 저장하고 base64 data URL 반환
+ * Tauri: appdata/images/{userId}/{uuid}.ext 저장 → base64 data URL 반환
+ * 브라우저: base64 data URL 반환
  */
 export async function saveImageToFile(file: File, userId?: string): Promise<string | null> {
+  // base64 변환 (표시용)
+  const toBase64 = (buf: ArrayBuffer, mime: string): string => {
+    const bytes = new Uint8Array(buf);
+    return `data:${mime};base64,${uint8ArrayToBase64(bytes)}`;
+  };
+
   if (!isTauri()) {
-    // 브라우저 fallback: base64
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
+    const arrayBuffer = await file.arrayBuffer();
+    return toBase64(arrayBuffer, file.type);
   }
 
   try {
     const { mkdir, writeFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
-    const { convertFileSrc } = await import('@tauri-apps/api/core');
-    const { appDataDir } = await import('@tauri-apps/api/path');
     const ext = getExtFromMime(file.type);
     const uuid = crypto.randomUUID();
     const filename = `${uuid}.${ext}`;
@@ -55,13 +93,14 @@ export async function saveImageToFile(file: File, userId?: string): Promise<stri
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
-    // 파일 저장
+    // 파일 저장 (export/backup용)
     await writeFile(`${dir}/${filename}`, data, { baseDir: BaseDirectory.AppData });
 
-    // 바로 표시 가능한 asset URL 반환
-    const appData = await appDataDir();
-    const filePath = `${appData}${dir}/${filename}`;
-    return convertFileSrc(filePath);
+    // gosibang-image:// URI 반환 (저장용) + 캐시에 표시용 URL 등록
+    const storageUri = `${CUSTOM_SCHEME}${filename}`;
+    const displayUrl = toBase64(arrayBuffer, file.type);
+    resolvedImageCache.set(storageUri, displayUrl);
+    return storageUri;
   } catch (e) {
     console.error('이미지 파일 저장 실패:', e);
     return null;
@@ -69,9 +108,8 @@ export async function saveImageToFile(file: File, userId?: string): Promise<stri
 }
 
 /**
- * HTML content에서 gosibang-image:// URI를 실제 표시 가능한 URL로 변환
- * Tauri: convertFileSrc()로 https://asset.localhost/... 변환
- * 브라우저: 변환 없이 그대로 반환 (gosibang-image:// 는 브라우저에서 사용 안됨)
+ * HTML content에서 gosibang-image:// URI를 base64 data URL로 변환
+ * 파일을 읽어서 base64로 변환하여 표시
  */
 export async function resolveImageUrls(html: string, userId?: string): Promise<string> {
   if (!html || !html.includes(CUSTOM_SCHEME)) return html;
@@ -79,18 +117,28 @@ export async function resolveImageUrls(html: string, userId?: string): Promise<s
   if (!isTauri()) return html;
 
   try {
-    const { convertFileSrc } = await import('@tauri-apps/api/core');
-    const { appDataDir } = await import('@tauri-apps/api/path');
-    const appData = await appDataDir();
+    const { readFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
     const dir = getImageDir(userId);
 
-    return html.replace(
-      /gosibang-image:\/\/([^"'\s)]+)/g,
-      (_match, filename) => {
-        const filePath = `${appData}${dir}/${filename}`;
-        return convertFileSrc(filePath);
+    const matches = [...html.matchAll(/gosibang-image:\/\/([^"'\s)]+)/g)];
+    let result = html;
+
+    for (const match of matches) {
+      const filename = match[1];
+      try {
+        const data = await readFile(`${dir}/${filename}`, { baseDir: BaseDirectory.AppData });
+        const ext = filename.split('.').pop() || 'png';
+        const mime = getMimeFromExt(ext);
+        const base64 = uint8ArrayToBase64(data);
+        const dataUrl = `data:${mime};base64,${base64}`;
+        resolvedImageCache.set(match[0], dataUrl);
+        result = result.replaceAll(match[0], dataUrl);
+      } catch (e) {
+        console.error(`이미지 파일 읽기 실패: ${filename}`, e);
       }
-    );
+    }
+
+    return result;
   } catch (e) {
     console.error('이미지 URL 변환 실패:', e);
     return html;
@@ -98,17 +146,28 @@ export async function resolveImageUrls(html: string, userId?: string): Promise<s
 }
 
 /**
- * 에디터 저장 시: asset.localhost URL을 gosibang-image:// URI로 역변환
+ * 에디터 저장 시: asset.localhost URL 또는 base64 data URL을 gosibang-image:// URI로 역변환
+ * 주의: base64는 파일명 정보가 없으므로 그대로 유지 (DB에 저장됨)
  */
 export function unresolveImageUrls(html: string): string {
   if (!html) return html;
 
-  // https://asset.localhost/... 패턴을 gosibang-image:// 로 역변환
-  // Tauri asset 프로토콜 URL 패턴: https://asset.localhost/.../{IMAGE_DIR}/{userId?}/{uuid}.ext
-  return html.replace(
+  // https://asset.localhost/... 패턴을 gosibang-image:// 로 역변환 (기존 데이터 호환)
+  let result = html.replace(
     /https:\/\/asset\.localhost\/[^"'\s)]*\/images\/(?:[^/]+\/)?([^"'\s/)]+)/g,
     (_match, filename) => `${CUSTOM_SCHEME}${filename}`
   );
+
+  // 캐시된 base64 data URL을 gosibang-image:// 로 역변환
+  for (const [uri, dataUrl] of resolvedImageCache.entries()) {
+    // 성능 최적화: data URL 접두사로 빠른 존재 여부 확인
+    const prefix = dataUrl.substring(0, 60);
+    if (result.includes(prefix)) {
+      result = result.replaceAll(dataUrl, uri);
+    }
+  }
+
+  return result;
 }
 
 /**

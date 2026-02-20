@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { supabase } from '../lib/supabase';
-import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
+import { getDb, saveDb } from '../lib/localDb';
 import { useSurveyStore } from '../store/surveyStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -27,53 +28,36 @@ export function useSurveyRealtime(userId: string | null) {
   const isSubscribedRef = useRef(false);
   const { loadResponses, loadSessions } = useSurveyStore();
 
-  // 응답을 로컬 DB에 저장
+  // 응답을 clinic.db에 저장 (Tauri 명령어 사용)
   const saveResponseToLocal = useCallback(async (response: SurveyResponseTemp) => {
-    const db = getDb();
-    if (!db) {
-      console.error('Local DB not initialized');
-      return false;
-    }
-
     try {
-      // 이미 저장된 응답인지 확인
-      const existing = queryOne(db, 'SELECT id FROM survey_responses WHERE session_id = ?', [response.session_id]);
-      if (existing) {
+      // clinic.db에 저장 (session_id로 중복 체크 포함)
+      const saved = await invoke<boolean>('save_survey_response_sync', {
+        sessionId: response.session_id,
+        templateId: response.template_id,
+        patientId: response.patient_id || null,
+        respondentName: response.respondent_name || null,
+        answers: response.answers,
+        submittedAt: response.created_at,
+      });
+
+      if (!saved) {
         console.log('Response already exists for session:', response.session_id);
         return true;
       }
 
-      const id = generateUUID();
-      const now = new Date().toISOString();
+      console.log('[Survey Realtime] clinic.db에 응답 저장 완료 (session:', response.session_id, ')');
 
-      // 응답 저장 (환자 정보 포함)
-      db.run(
-        `INSERT INTO survey_responses (id, session_id, patient_id, template_id, answers, respondent_name, patient_name, chart_number, doctor_name, gender, age, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          response.session_id,
-          response.patient_id,
-          response.template_id,
-          JSON.stringify(response.answers),
-          response.respondent_name,
-          response.patient_name,
-          response.chart_number,
-          response.doctor_name,
-          response.gender,
-          response.age,
-          response.created_at,
-        ]
-      );
-
-      // 세션 상태를 completed로 업데이트
-      db.run(
-        'UPDATE survey_sessions SET status = ?, completed_at = ? WHERE id = ?',
-        ['completed', now, response.session_id]
-      );
-
-      saveDb();
-      console.log('[Survey Realtime] 응답 저장 완료:', id);
+      // 세션 상태를 completed로 업데이트 (세션은 아직 sql.js)
+      const db = getDb();
+      if (db) {
+        const now = new Date().toISOString();
+        db.run(
+          'UPDATE survey_sessions SET status = ?, completed_at = ? WHERE id = ?',
+          ['completed', now, response.session_id]
+        );
+        saveDb();
+      }
 
       // Supabase에서 해당 응답 삭제 (로컬에 저장 완료되었으므로)
       const { error: deleteError } = await supabase

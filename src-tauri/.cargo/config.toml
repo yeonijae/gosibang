@@ -1,0 +1,5 @@
+[env]
+# Use Strawberry Perl for OpenSSL source build (openssl-src crate).
+# Git's MSYS2 Perl is missing Locale::Maketext::Simple which is required
+# to configure and compile OpenSSL from source on Windows.
+OPENSSL_SRC_PERL = "C:\\Strawberry\\perl\\bin\\perl.exe"

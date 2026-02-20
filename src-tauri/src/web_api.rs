@@ -970,7 +970,7 @@ async fn list_survey_responses_api(
         Ok(responses) => Json(ApiResponse::ok(responses)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse::<Vec<db::SurveyResponseDb>>::err(e.to_string())),
+            Json(ApiResponse::<Vec<db::SurveyResponseWithTemplate>>::err(e.to_string())),
         )
             .into_response(),
     }

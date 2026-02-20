@@ -644,3 +644,63 @@ pub fn delete_staff_account(id: String) -> Result<(), String> {
     db::delete_staff_account(&id).map_err(|e| e.to_string())
 }
 
+// ============ 설문 응답 관리 명령어 ============
+
+/// 설문 응답 목록 조회
+#[tauri::command]
+pub fn list_survey_responses(limit: Option<i32>) -> Result<Vec<db::SurveyResponseWithTemplate>, String> {
+    db::list_survey_responses(limit).map_err(|e| e.to_string())
+}
+
+/// 설문 응답 삭제
+#[tauri::command]
+pub fn delete_survey_response(id: String) -> Result<(), String> {
+    db::delete_survey_response(&id).map_err(|e| e.to_string())
+}
+
+/// 설문 응답에 환자 연결
+#[tauri::command]
+pub fn link_survey_response_to_patient(response_id: String, patient_id: String) -> Result<(), String> {
+    db::link_survey_response_to_patient(&response_id, &patient_id).map_err(|e| e.to_string())
+}
+
+/// 설문 응답 제출
+#[tauri::command]
+pub fn submit_survey_response(
+    session_id: Option<String>,
+    template_id: String,
+    patient_id: Option<String>,
+    respondent_name: Option<String>,
+    answers: Vec<SurveyAnswer>,
+) -> Result<(), String> {
+    db::submit_survey_response(
+        session_id.as_deref(),
+        &template_id,
+        patient_id.as_deref(),
+        respondent_name.as_deref(),
+        &answers,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 동기화된 설문 응답 저장 (Supabase에서 수신, 중복 시 false 반환)
+#[tauri::command]
+pub fn save_survey_response_sync(
+    session_id: String,
+    template_id: String,
+    patient_id: Option<String>,
+    respondent_name: Option<String>,
+    answers: Vec<SurveyAnswer>,
+    submitted_at: String,
+) -> Result<bool, String> {
+    db::save_survey_response_from_sync(
+        &session_id,
+        &template_id,
+        patient_id.as_deref(),
+        respondent_name.as_deref(),
+        &answers,
+        &submitted_at,
+    )
+    .map_err(|e| e.to_string())
+}
+

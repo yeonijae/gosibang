@@ -107,6 +107,12 @@ pub fn run() {
             save_survey_template,
             delete_survey_template,
             restore_default_survey_templates,
+            // 설문 응답 관리
+            list_survey_responses,
+            delete_survey_response,
+            link_survey_response_to_patient,
+            submit_survey_response,
+            save_survey_response_sync,
             // QR 코드 생성
             generate_survey_qr,
             // 내부 직원 계정 관리

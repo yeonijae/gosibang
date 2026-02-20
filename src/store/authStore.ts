@@ -3,6 +3,43 @@ import { invoke } from '@tauri-apps/api/core';
 import { supabase } from '../lib/supabase';
 import type { AuthState, UserSession } from '../types';
 
+// 현재 앱 버전 (package.json과 동기화)
+const APP_VERSION = '0.2.43';
+
+// 버전 비교: a < b이면 true
+function isVersionOlderThan(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na < nb) return true;
+    if (na > nb) return false;
+  }
+  return false;
+}
+
+// 최소 버전 체크 (Supabase gosibang_app_settings 테이블)
+async function checkMinimumVersion(): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('gosibang_app_settings')
+      .select('value')
+      .eq('key', 'minimum_version')
+      .single();
+
+    if (data?.value && isVersionOlderThan(APP_VERSION, data.value)) {
+      throw new Error(`VERSION_TOO_OLD:${data.value}:${APP_VERSION}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('VERSION_TOO_OLD')) {
+      throw error;
+    }
+    // 테이블이 없거나 네트워크 오류 시 무시 (로그인 허용)
+    console.log('[Version] 버전 체크 스킵:', error);
+  }
+}
+
 // 회원가입 추가 정보
 interface SignupMetadata {
   name: string;
@@ -65,6 +102,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   login: async (email: string, password: string, forceLogoutOthers?: boolean) => {
     set({ isLoading: true, error: null });
     try {
+      // 최소 버전 체크 (구버전 로그인 차단)
+      await checkMinimumVersion();
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -257,6 +297,17 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   checkAuth: async () => {
     set({ isLoading: true });
     try {
+      // 최소 버전 체크 (구버전이면 로그인 차단)
+      try {
+        await checkMinimumVersion();
+      } catch (versionError) {
+        if (versionError instanceof Error && versionError.message.startsWith('VERSION_TOO_OLD')) {
+          await supabase.auth.signOut({ scope: 'local' });
+          set({ authState: null, isLoading: false, error: versionError.message });
+          return null;
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
