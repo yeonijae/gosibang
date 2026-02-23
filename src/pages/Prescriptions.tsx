@@ -206,12 +206,6 @@ export function Prescriptions() {
   };
 
   const handlePrint = (prescription: Prescription, layoutType: PrintLayoutType) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('팝업이 차단되었습니다. 팝업을 허용해주세요.');
-      return;
-    }
-
     const packVol = prescription.pack_volume || 120;
     const waterAmt = prescription.water_amount ||
       Math.round(prescription.final_total_amount * 1.2 + packVol * (prescription.total_packs + 1) + 300);
@@ -272,7 +266,6 @@ export function Prescriptions() {
             <span class="water-label">탕전 물양:</span>
             <span class="water-amount">${waterAmt.toLocaleString()}ml</span>
           </div>
-          <script>window.onload = function() { window.print(); }</script>
         </body>
         </html>
       `;
@@ -320,7 +313,6 @@ export function Prescriptions() {
             <span class="water-label">탕전 물양:</span>
             <span class="water-amount">${waterAmt.toLocaleString()}ml</span>
           </div>
-          <script>window.onload = function() { window.print(); }</script>
         </body>
         </html>
       `;
@@ -388,14 +380,39 @@ export function Prescriptions() {
             </table>
             ` : ''}
           </div>
-          <script>window.onload = function() { window.print(); }</script>
         </body>
         </html>
       `;
     }
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    // iframe 방식으로 인쇄 (팝업 차단 우회)
+    let printFrame = document.getElementById('print-frame') as HTMLIFrameElement | null;
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'print-frame';
+      printFrame.style.position = 'fixed';
+      printFrame.style.left = '-9999px';
+      printFrame.style.top = '-9999px';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      document.body.appendChild(printFrame);
+    }
+
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (!frameDoc) {
+      alert('인쇄 기능을 사용할 수 없습니다.');
+      return;
+    }
+
+    frameDoc.open();
+    frameDoc.write(htmlContent);
+    frameDoc.close();
+
+    // iframe 로드 후 인쇄
+    printFrame.onload = () => {
+      printFrame!.contentWindow?.print();
+    };
+
     setPrintLayoutModal(null);
   };
 
