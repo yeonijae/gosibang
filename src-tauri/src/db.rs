@@ -3498,12 +3498,12 @@ pub fn list_medication_schedules_cmd(patient_id: Option<&str>) -> AppResult<Vec<
                 id: row.get(0)?,
                 patient_id: row.get(1)?,
                 prescription_id: row.get(2)?,
-                start_date: row.get(3)?,
-                end_date: row.get(4)?,
+                start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?).unwrap().with_timezone(&Utc),
+                end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?).unwrap().with_timezone(&Utc),
                 times_per_day: row.get(5)?,
                 medication_times,
                 notes: row.get(7)?,
-                created_at: row.get(8)?,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?).unwrap().with_timezone(&Utc),
             })
         })?;
         for row in rows {
@@ -3520,12 +3520,12 @@ pub fn list_medication_schedules_cmd(patient_id: Option<&str>) -> AppResult<Vec<
                 id: row.get(0)?,
                 patient_id: row.get(1)?,
                 prescription_id: row.get(2)?,
-                start_date: row.get(3)?,
-                end_date: row.get(4)?,
+                start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?).unwrap().with_timezone(&Utc),
+                end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?).unwrap().with_timezone(&Utc),
                 times_per_day: row.get(5)?,
                 medication_times,
                 notes: row.get(7)?,
-                created_at: row.get(8)?,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?).unwrap().with_timezone(&Utc),
             })
         })?;
         for row in rows {
@@ -3548,12 +3548,12 @@ pub fn get_medication_schedule_cmd(id: &str) -> AppResult<Option<MedicationSched
                 id: row.get(0)?,
                 patient_id: row.get(1)?,
                 prescription_id: row.get(2)?,
-                start_date: row.get(3)?,
-                end_date: row.get(4)?,
+                start_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?).unwrap().with_timezone(&Utc),
+                end_date: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?).unwrap().with_timezone(&Utc),
                 times_per_day: row.get(5)?,
                 medication_times,
                 notes: row.get(7)?,
-                created_at: row.get(8)?,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?).unwrap().with_timezone(&Utc),
             })
         },
     );
@@ -3623,7 +3623,7 @@ pub fn list_medication_logs_cmd(schedule_id: &str) -> AppResult<Vec<MedicationLo
         Ok(MedicationLog {
             id: row.get(0)?,
             schedule_id: row.get(1)?,
-            taken_at: row.get(2)?,
+            taken_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?).unwrap().with_timezone(&Utc),
             status,
             notes: row.get(4)?,
         })
