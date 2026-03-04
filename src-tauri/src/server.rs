@@ -1,7 +1,6 @@
 //! HTTP 서버 모듈 (axum 기반)
 //!
 //! 환자 설문 페이지와 직원 대시보드를 인트라넷에서 제공합니다.
-//! 웹 클라이언트용 전체 앱 기능도 제공합니다.
 
 use axum::{
     extract::{Path, State},
@@ -19,17 +18,11 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::db;
 use crate::error::AppResult;
-use crate::web_api;
 
 /// 내장 정적 파일 (기존 설문 시스템용)
 #[derive(Embed)]
 #[folder = "static/"]
 struct StaticAssets;
-
-/// React 빌드 결과물 (웹 클라이언트용)
-#[derive(Embed)]
-#[folder = "../dist/"]
-struct WebAppAssets;
 
 /// 서버 상태
 #[derive(Clone)]
@@ -69,9 +62,6 @@ impl AppState {
 
 /// 라우터 생성
 pub fn create_router(state: AppState) -> Router {
-    // 웹 API 상태 생성
-    let web_api_state = web_api::WebApiState::new();
-
     Router::new()
         .route("/health", get(health_handler))
         // 환자 설문 페이지 (기존 기능)
@@ -95,14 +85,6 @@ pub fn create_router(state: AppState) -> Router {
         // 정적 파일 (기존 설문 시스템용)
         .route("/static/{*path}", get(static_handler))
         .with_state(state)
-        // 웹 클라이언트용 REST API (/api/web/*)
-        .nest("/api/web", web_api::create_web_api_router(web_api_state))
-        // 웹 앱 정적 파일 (React 빌드 결과물)
-        .route("/app", get(webapp_index_handler))
-        .route("/app/", get(webapp_index_handler))
-        .route("/app/{*path}", get(webapp_static_handler))
-        // 웹 앱 assets (index.html에서 /assets/ 경로로 참조)
-        .route("/assets/{*path}", get(webapp_assets_handler))
         // 메인 인덱스 (안내 페이지)
         .route("/", get(index_handler))
 }
@@ -1869,87 +1851,3 @@ fn render_patient_kiosk_page(clinic_name: &str) -> String {
 </html>"#, clinic_name, clinic_name)
 }
 
-// ============ 웹 앱 (React) 정적 파일 핸들러 ============
-
-/// 웹 앱 index.html 제공
-async fn webapp_index_handler() -> impl IntoResponse {
-    match WebAppAssets::get("index.html") {
-        Some(content) => {
-            (
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                content.data.into_owned(),
-            )
-                .into_response()
-        }
-        None => {
-            // 빌드되지 않은 경우 안내 메시지
-            Html(r#"<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>웹 앱 빌드 필요</title>
-    <style>
-        body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
-        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 500px; }
-        h1 { color: #333; margin-bottom: 1rem; }
-        p { color: #666; line-height: 1.6; }
-        code { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.9rem; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>⚠️ 웹 앱 빌드가 필요합니다</h1>
-        <p>웹 클라이언트를 사용하려면 먼저 React 앱을 빌드해야 합니다.</p>
-        <p>프로젝트 루트에서 다음 명령을 실행하세요:</p>
-        <p><code>npm run build</code></p>
-        <p>빌드 후 서버를 재시작하세요.</p>
-    </div>
-</body>
-</html>"#).into_response()
-        }
-    }
-}
-
-/// 웹 앱 정적 파일 제공 (SPA fallback 포함)
-async fn webapp_static_handler(Path(path): Path<String>) -> impl IntoResponse {
-    // 먼저 해당 경로의 파일을 찾아봄
-    if let Some(content) = WebAppAssets::get(&path) {
-        let mime = mime_guess::from_path(&path).first_or_octet_stream();
-        return (
-            [(header::CONTENT_TYPE, mime.as_ref())],
-            content.data.into_owned(),
-        )
-            .into_response();
-    }
-
-    // 파일이 없으면 SPA fallback (index.html 반환)
-    // React Router가 클라이언트 사이드에서 라우팅 처리
-    match WebAppAssets::get("index.html") {
-        Some(content) => {
-            (
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                content.data.into_owned(),
-            )
-                .into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
-    }
-}
-
-/// 웹 앱 assets 제공 (/assets/ 경로용)
-/// index.html에서 /assets/... 경로로 참조하는 파일들
-async fn webapp_assets_handler(Path(path): Path<String>) -> impl IntoResponse {
-    // assets/ 폴더 내의 파일을 찾음
-    let asset_path = format!("assets/{}", path);
-    if let Some(content) = WebAppAssets::get(&asset_path) {
-        let mime = mime_guess::from_path(&path).first_or_octet_stream();
-        return (
-            [(header::CONTENT_TYPE, mime.as_ref())],
-            content.data.into_owned(),
-        )
-            .into_response();
-    }
-
-    (StatusCode::NOT_FOUND, "Asset Not Found").into_response()
-}

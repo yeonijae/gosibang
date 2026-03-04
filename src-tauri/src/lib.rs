@@ -7,7 +7,6 @@ mod models;
 mod notification;
 pub mod server;
 mod sync;
-pub mod web_api;
 
 use commands::*;
 
