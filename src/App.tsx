@@ -20,6 +20,7 @@ import { Homework } from './pages/Homework';
 import { HomeworkAdmin } from './pages/HomeworkAdmin';
 import { Questions } from './pages/Questions';
 
+import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
 import { useFeatureStore } from './store/featureStore';
@@ -54,6 +55,21 @@ function App() {
 
         // 설정 로드 (로컬 DB)
         await loadSettings();
+
+        // 원내 서버 자동 시작
+        try {
+          const status = await invoke<{ running: boolean }>('get_server_status');
+          if (!status.running) {
+            await invoke<string>('start_http_server', {
+              port: 8787,
+              planType: planType,
+              surveyExternal: true,
+            });
+            console.log('[App] 원내 서버 자동 시작 완료');
+          }
+        } catch (serverErr) {
+          console.warn('[App] 원내 서버 자동 시작 실패:', serverErr);
+        }
       } catch (error) {
         console.error('Initialization error:', error);
         setInitError(String(error));

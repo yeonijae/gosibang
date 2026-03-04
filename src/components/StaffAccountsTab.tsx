@@ -456,17 +456,6 @@ export function StaffAccountsTab() {
           <div className="mt-4 pt-4 border-t border-gray-200">
             <p className="text-sm font-medium text-gray-900 mb-3">접속 주소</p>
             <div className="space-y-2">
-              {/* 웹 앱 */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 w-12">웹앱</span>
-                <code className="flex-1 text-sm bg-gray-100 px-2 py-1 rounded">{serverStatus.url}/app</code>
-                <button onClick={() => copyToClipboard(`${serverStatus.url}/app`)} className="p-1 hover:bg-gray-100 rounded">
-                  <Copy className="w-4 h-4 text-gray-500" />
-                </button>
-                <a href={`${serverStatus.url}/app`} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded">
-                  <ExternalLink className="w-4 h-4 text-gray-500" />
-                </a>
-              </div>
               {/* 직원용 */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-12">직원용</span>
