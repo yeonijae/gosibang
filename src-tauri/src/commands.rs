@@ -890,45 +890,6 @@ pub fn delete_medication_log(id: String) -> Result<(), String> {
     db::delete_medication_log_cmd(&id).map_err(|e| e.to_string())
 }
 
-// ============ 알림 설정 명령어 ============
-
-#[tauri::command]
-pub fn get_notification_settings() -> Result<Option<crate::models::NotificationSettings>, String> {
-    db::get_notification_settings_cmd().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn save_notification_settings(settings: crate::models::NotificationSettings) -> Result<(), String> {
-    db::save_notification_settings_cmd(&settings).map_err(|e| e.to_string())
-}
-
-// ============ 알림 기록 명령어 ============
-
-#[tauri::command]
-pub fn list_notifications(limit: Option<i32>) -> Result<Vec<crate::models::Notification>, String> {
-    db::list_notifications_cmd(limit.unwrap_or(100)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn get_unread_notification_count() -> Result<i32, String> {
-    db::get_unread_notification_count_cmd().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn create_notification(notification: crate::models::Notification) -> Result<(), String> {
-    db::create_notification_cmd(&notification).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn update_notification(id: String, is_read: Option<bool>, is_dismissed: Option<bool>, read_at: Option<String>) -> Result<(), String> {
-    db::update_notification_cmd(&id, is_read, is_dismissed, read_at.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_notification(id: String) -> Result<(), String> {
-    db::delete_notification_cmd(&id).map_err(|e| e.to_string())
-}
-
 // ============ 사용량 카운트 명령어 ============
 
 #[tauri::command]
