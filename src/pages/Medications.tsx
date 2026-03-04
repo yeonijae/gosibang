@@ -16,7 +16,7 @@ import {
   User,
   AlertCircle,
 } from 'lucide-react';
-import { getDb, saveDb, queryToObjects, generateUUID } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { MedicationManagement, Prescription } from '../types';
 
 // 처방전 + 복약관리 여부
@@ -59,30 +59,16 @@ export function Medications() {
     loadData();
   }, []);
 
-  const loadData = () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const db = getDb();
-      if (!db) return;
-
-      // 처방전 목록 (복약관리 여부 포함)
-      const prescriptionsData = queryToObjects<Prescription>(
-        db,
-        `SELECT p.*,
-          CASE WHEN mm.id IS NOT NULL THEN 1 ELSE 0 END as has_medication
-         FROM prescriptions p
-         LEFT JOIN medication_management mm ON p.id = mm.prescription_id
-         WHERE p.status = 'issued'
-         ORDER BY p.issued_at DESC`
-      ) as PrescriptionWithMedication[];
-      setPrescriptions(prescriptionsData);
-
       // 복약관리 목록
-      const medicationsData = queryToObjects<MedicationManagement>(
-        db,
-        `SELECT * FROM medication_management ORDER BY happy_call_date ASC`
-      );
+      const medicationsData = await invoke<MedicationManagement[]>('list_medication_management');
       setMedications(medicationsData);
+
+      // 처방전 목록은 현재 Rust 백엔드 스키마가 다르므로 빈 배열로 설정
+      // TODO: prescriptions 테이블 스키마 통합 후 연동
+      setPrescriptions([]);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -101,9 +87,6 @@ export function Medications() {
 
     setIsCreating(true);
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB not initialized');
-
       const now = new Date();
       const prescriptionDate = selectedPrescription.issued_at
         ? new Date(selectedPrescription.issued_at)
@@ -122,30 +105,32 @@ export function Medications() {
       const happyCallDate = new Date(endDate);
       happyCallDate.setDate(happyCallDate.getDate() - 3);
 
-      const id = generateUUID();
+      const id = crypto.randomUUID();
+      const nowStr = now.toISOString();
 
-      db.run(
-        `INSERT INTO medication_management (
-          id, prescription_id, patient_id, patient_name, prescription_name,
-          prescription_date, days, delivery_days, start_date, end_date,
-          happy_call_date, status, postpone_count, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'), datetime('now'))`,
-        [
+      await invoke('create_medication_management', {
+        medication: {
           id,
-          selectedPrescription.id,
-          selectedPrescription.patient_id,
-          selectedPrescription.patient_name || '미지정',
-          selectedPrescription.formula || selectedPrescription.prescription_name || '처방',
-          prescriptionDate.toISOString().split('T')[0],
+          prescription_id: selectedPrescription.id,
+          patient_id: selectedPrescription.patient_id,
+          patient_name: selectedPrescription.patient_name || '미지정',
+          prescription_name: selectedPrescription.formula || selectedPrescription.prescription_name || '처방',
+          prescription_date: prescriptionDate.toISOString().split('T')[0],
           days,
-          deliveryDays,
-          startDate.toISOString().split('T')[0],
-          endDate.toISOString().split('T')[0],
-          happyCallDate.toISOString().split('T')[0],
-        ]
-      );
+          delivery_days: deliveryDays,
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          happy_call_date: happyCallDate.toISOString().split('T')[0],
+          status: 'pending',
+          notes: null,
+          postpone_count: 0,
+          postponed_to: null,
+          contacted_at: null,
+          created_at: nowStr,
+          updated_at: nowStr,
+        },
+      });
 
-      saveDb();
       loadData();
       setShowCreateModal(false);
       setSelectedPrescription(null);
@@ -162,17 +147,17 @@ export function Medications() {
 
     setIsSaving(true);
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB not initialized');
+      const now = new Date().toISOString();
+      await invoke('update_medication_management', {
+        medication: {
+          ...selectedMedication,
+          status,
+          notes,
+          contacted_at: now,
+          updated_at: now,
+        },
+      });
 
-      db.run(
-        `UPDATE medication_management
-         SET status = ?, notes = ?, contacted_at = datetime('now'), updated_at = datetime('now')
-         WHERE id = ?`,
-        [status, notes, selectedMedication.id]
-      );
-
-      saveDb();
       loadData();
       setShowDetailModal(false);
       setSelectedMedication(null);
@@ -190,22 +175,22 @@ export function Medications() {
 
     setIsSaving(true);
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB not initialized');
-
       const currentDate = new Date(selectedMedication.happy_call_date);
       currentDate.setDate(currentDate.getDate() + postponeDays);
       const newDate = currentDate.toISOString().split('T')[0];
 
-      db.run(
-        `UPDATE medication_management
-         SET status = 'postponed', happy_call_date = ?, postponed_to = ?,
-             postpone_count = postpone_count + 1, notes = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-        [newDate, newDate, notes, selectedMedication.id]
-      );
+      await invoke('update_medication_management', {
+        medication: {
+          ...selectedMedication,
+          status: 'postponed',
+          happy_call_date: newDate,
+          postponed_to: newDate,
+          postpone_count: (selectedMedication.postpone_count || 0) + 1,
+          notes,
+          updated_at: new Date().toISOString(),
+        },
+      });
 
-      saveDb();
       loadData();
       setShowPostponeModal(false);
       setShowDetailModal(false);
@@ -225,11 +210,7 @@ export function Medications() {
     if (!confirm('복약관리를 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB not initialized');
-
-      db.run('DELETE FROM medication_management WHERE id = ?', [selectedMedication.id]);
-      saveDb();
+      await invoke('delete_medication_management', { id: selectedMedication.id });
       loadData();
       setShowDetailModal(false);
       setSelectedMedication(null);

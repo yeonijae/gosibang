@@ -559,6 +559,89 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);
         CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 
+        -- 처방 카테고리
+        CREATE TABLE IF NOT EXISTS prescription_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#6B7280',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        -- 약재
+        CREATE TABLE IF NOT EXISTS herbs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            default_dosage REAL,
+            unit TEXT,
+            description TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        -- 처방 정의
+        CREATE TABLE IF NOT EXISTS prescription_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            alias TEXT,
+            category TEXT,
+            source TEXT,
+            composition TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_prescription_definitions_name ON prescription_definitions(name);
+
+        -- 처방 노트
+        CREATE TABLE IF NOT EXISTS prescription_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prescription_definition_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_prescription_notes_def ON prescription_notes(prescription_definition_id);
+
+        -- 처방 치험례
+        CREATE TABLE IF NOT EXISTS prescription_case_studies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prescription_definition_id INTEGER NOT NULL,
+            title TEXT,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (prescription_definition_id) REFERENCES prescription_definitions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_prescription_case_studies_def ON prescription_case_studies(prescription_definition_id);
+
+        -- 복약 관리 (해피콜)
+        CREATE TABLE IF NOT EXISTS medication_management (
+            id TEXT PRIMARY KEY,
+            prescription_id TEXT NOT NULL,
+            patient_id TEXT NOT NULL,
+            patient_name TEXT,
+            prescription_name TEXT,
+            prescription_date TEXT,
+            days INTEGER,
+            delivery_days INTEGER,
+            start_date TEXT,
+            end_date TEXT,
+            happy_call_date TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            notes TEXT,
+            postpone_count INTEGER NOT NULL DEFAULT 0,
+            postponed_to TEXT,
+            contacted_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (patient_id) REFERENCES patients(id),
+            FOREIGN KEY (prescription_id) REFERENCES prescriptions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_medication_management_patient ON medication_management(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_medication_management_status ON medication_management(status);
+        CREATE INDEX IF NOT EXISTS idx_medication_management_happy_call ON medication_management(happy_call_date);
+
         -- 인덱스 생성
         CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
         CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
@@ -576,6 +659,19 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         "ALTER TABLE patients ADD COLUMN chart_number TEXT",
         [],
     );
+
+    // 처방 정의 기본 데이터 삽입 (비어있을 때만)
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescription_definitions",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if count == 0 {
+        log::info!("[DB] 처방 정의 기본 데이터 삽입 중...");
+        seed_prescription_definitions(conn)?;
+        log::info!("[DB] 처방 정의 기본 데이터 삽입 완료");
+    }
 
     Ok(())
 }
@@ -3017,4 +3113,1028 @@ pub fn has_medication_log_for_time(schedule_id: &str, time_str: &str, date: &str
     )?;
 
     Ok(count > 0)
+}
+
+// ============ 처방 카테고리 ============
+
+pub fn list_prescription_categories() -> AppResult<Vec<PrescriptionCategory>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, color, sort_order, created_at FROM prescription_categories ORDER BY sort_order, name"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(PrescriptionCategory {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            color: row.get(2)?,
+            sort_order: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_prescription_category(cat: &PrescriptionCategory) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "INSERT INTO prescription_categories (name, color, sort_order, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![cat.name, cat.color, cat.sort_order, cat.created_at],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_prescription_category(cat: &PrescriptionCategory) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE prescription_categories SET name = ?1, color = ?2, sort_order = ?3 WHERE id = ?4",
+        params![cat.name, cat.color, cat.sort_order, cat.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_prescription_category(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM prescription_categories WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 약재 ============
+
+pub fn list_herbs() -> AppResult<Vec<Herb>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, default_dosage, unit, description, created_at FROM herbs ORDER BY name"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Herb {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            default_dosage: row.get(2)?,
+            unit: row.get(3)?,
+            description: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_herb(herb: &Herb) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "INSERT INTO herbs (name, default_dosage, unit, description, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![herb.name, herb.default_dosage, herb.unit, herb.description, herb.created_at],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_herb(herb: &Herb) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE herbs SET name = ?1, default_dosage = ?2, unit = ?3, description = ?4 WHERE id = ?5",
+        params![herb.name, herb.default_dosage, herb.unit, herb.description, herb.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_herb(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM herbs WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 처방 정의 ============
+
+pub fn list_prescription_definitions() -> AppResult<Vec<PrescriptionDefinition>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, alias, category, source, composition, description, created_at, updated_at FROM prescription_definitions ORDER BY name"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(PrescriptionDefinition {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            alias: row.get(2)?,
+            category: row.get(3)?,
+            source: row.get(4)?,
+            composition: row.get(5)?,
+            description: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn get_prescription_definition(id: i64) -> AppResult<Option<PrescriptionDefinition>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let result = conn.query_row(
+        "SELECT id, name, alias, category, source, composition, description, created_at, updated_at FROM prescription_definitions WHERE id = ?1",
+        params![id],
+        |row| {
+            Ok(PrescriptionDefinition {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                alias: row.get(2)?,
+                category: row.get(3)?,
+                source: row.get(4)?,
+                composition: row.get(5)?,
+                description: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        },
+    );
+    match result {
+        Ok(def) => Ok(Some(def)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn create_prescription_definition(def: &PrescriptionDefinition) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO prescription_definitions (name, alias, category, source, composition, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![def.name, def.alias, def.category, def.source, def.composition, def.description, now, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_prescription_definition(def: &PrescriptionDefinition) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE prescription_definitions SET name = ?1, alias = ?2, category = ?3, source = ?4, composition = ?5, description = ?6, updated_at = ?7 WHERE id = ?8",
+        params![def.name, def.alias, def.category, def.source, def.composition, def.description, now, def.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_prescription_definition(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM prescription_definitions WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 처방 노트 ============
+
+pub fn list_prescription_notes(prescription_definition_id: i64) -> AppResult<Vec<PrescriptionNote>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, prescription_definition_id, content, created_at, updated_at FROM prescription_notes WHERE prescription_definition_id = ?1 ORDER BY created_at DESC"
+    )?;
+    let rows = stmt.query_map(params![prescription_definition_id], |row| {
+        Ok(PrescriptionNote {
+            id: row.get(0)?,
+            prescription_definition_id: row.get(1)?,
+            content: row.get(2)?,
+            created_at: row.get(3)?,
+            updated_at: row.get(4)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_prescription_note(note: &PrescriptionNote) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO prescription_notes (prescription_definition_id, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        params![note.prescription_definition_id, note.content, now, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_prescription_note(note: &PrescriptionNote) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE prescription_notes SET content = ?1, updated_at = ?2 WHERE id = ?3",
+        params![note.content, now, note.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_prescription_note(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM prescription_notes WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 처방 치험례 ============
+
+pub fn list_prescription_case_studies(prescription_definition_id: i64) -> AppResult<Vec<PrescriptionCaseStudy>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, prescription_definition_id, title, content, created_at, updated_at FROM prescription_case_studies WHERE prescription_definition_id = ?1 ORDER BY created_at DESC"
+    )?;
+    let rows = stmt.query_map(params![prescription_definition_id], |row| {
+        Ok(PrescriptionCaseStudy {
+            id: row.get(0)?,
+            prescription_definition_id: row.get(1)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_prescription_case_study(cs: &PrescriptionCaseStudy) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO prescription_case_studies (prescription_definition_id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![cs.prescription_definition_id, cs.title, cs.content, now, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_prescription_case_study(cs: &PrescriptionCaseStudy) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE prescription_case_studies SET title = ?1, content = ?2, updated_at = ?3 WHERE id = ?4",
+        params![cs.title, cs.content, now, cs.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_prescription_case_study(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM prescription_case_studies WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 복약 관리 (해피콜) ============
+
+pub fn list_medication_management() -> AppResult<Vec<MedicationManagement>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, prescription_id, patient_id, patient_name, prescription_name, prescription_date, days, delivery_days, start_date, end_date, happy_call_date, status, notes, postpone_count, postponed_to, contacted_at, created_at, updated_at FROM medication_management ORDER BY happy_call_date ASC"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(MedicationManagement {
+            id: row.get(0)?,
+            prescription_id: row.get(1)?,
+            patient_id: row.get(2)?,
+            patient_name: row.get(3)?,
+            prescription_name: row.get(4)?,
+            prescription_date: row.get(5)?,
+            days: row.get(6)?,
+            delivery_days: row.get(7)?,
+            start_date: row.get(8)?,
+            end_date: row.get(9)?,
+            happy_call_date: row.get(10)?,
+            status: row.get(11)?,
+            notes: row.get(12)?,
+            postpone_count: row.get(13)?,
+            postponed_to: row.get(14)?,
+            contacted_at: row.get(15)?,
+            created_at: row.get(16)?,
+            updated_at: row.get(17)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_medication_management(mm: &MedicationManagement) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO medication_management (id, prescription_id, patient_id, patient_name, prescription_name, prescription_date, days, delivery_days, start_date, end_date, happy_call_date, status, notes, postpone_count, postponed_to, contacted_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+        params![
+            mm.id, mm.prescription_id, mm.patient_id, mm.patient_name, mm.prescription_name,
+            mm.prescription_date, mm.days, mm.delivery_days, mm.start_date, mm.end_date,
+            mm.happy_call_date, mm.status, mm.notes, mm.postpone_count, mm.postponed_to,
+            mm.contacted_at, now, now
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_medication_management(mm: &MedicationManagement) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE medication_management SET status = ?1, notes = ?2, postpone_count = ?3, postponed_to = ?4, happy_call_date = ?5, contacted_at = ?6, updated_at = ?7 WHERE id = ?8",
+        params![mm.status, mm.notes, mm.postpone_count, mm.postponed_to, mm.happy_call_date, mm.contacted_at, now, mm.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_medication_management(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM medication_management WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 복약 스케줄 (커맨드용) ============
+
+pub fn list_medication_schedules_cmd(patient_id: Option<&str>) -> AppResult<Vec<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut result = Vec::new();
+
+    if let Some(pid) = patient_id {
+        let mut stmt = conn.prepare(
+            "SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at FROM medication_schedules WHERE patient_id = ?1 ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map(params![pid], |row| {
+            let times_json: String = row.get(6)?;
+            let medication_times: Vec<String> = serde_json::from_str(&times_json).unwrap_or_default();
+            Ok(MedicationSchedule {
+                id: row.get(0)?,
+                patient_id: row.get(1)?,
+                prescription_id: row.get(2)?,
+                start_date: row.get(3)?,
+                end_date: row.get(4)?,
+                times_per_day: row.get(5)?,
+                medication_times,
+                notes: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        for row in rows {
+            result.push(row?);
+        }
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at FROM medication_schedules ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let times_json: String = row.get(6)?;
+            let medication_times: Vec<String> = serde_json::from_str(&times_json).unwrap_or_default();
+            Ok(MedicationSchedule {
+                id: row.get(0)?,
+                patient_id: row.get(1)?,
+                prescription_id: row.get(2)?,
+                start_date: row.get(3)?,
+                end_date: row.get(4)?,
+                times_per_day: row.get(5)?,
+                medication_times,
+                notes: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        for row in rows {
+            result.push(row?);
+        }
+    }
+    Ok(result)
+}
+
+pub fn get_medication_schedule_cmd(id: &str) -> AppResult<Option<MedicationSchedule>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let result = conn.query_row(
+        "SELECT id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at FROM medication_schedules WHERE id = ?1",
+        params![id],
+        |row| {
+            let times_json: String = row.get(6)?;
+            let medication_times: Vec<String> = serde_json::from_str(&times_json).unwrap_or_default();
+            Ok(MedicationSchedule {
+                id: row.get(0)?,
+                patient_id: row.get(1)?,
+                prescription_id: row.get(2)?,
+                start_date: row.get(3)?,
+                end_date: row.get(4)?,
+                times_per_day: row.get(5)?,
+                medication_times,
+                notes: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        },
+    );
+    match result {
+        Ok(s) => Ok(Some(s)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn create_medication_schedule_cmd(schedule: &MedicationSchedule) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let times_json = serde_json::to_string(&schedule.medication_times)?;
+    conn.execute(
+        "INSERT INTO medication_schedules (id, patient_id, prescription_id, start_date, end_date, times_per_day, medication_times, notes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            schedule.id, schedule.patient_id, schedule.prescription_id,
+            schedule.start_date.to_rfc3339(), schedule.end_date.to_rfc3339(),
+            schedule.times_per_day, times_json, schedule.notes,
+            schedule.created_at.to_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_medication_schedule_cmd(schedule: &MedicationSchedule) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let times_json = serde_json::to_string(&schedule.medication_times)?;
+    conn.execute(
+        "UPDATE medication_schedules SET patient_id = ?1, prescription_id = ?2, start_date = ?3, end_date = ?4, times_per_day = ?5, medication_times = ?6, notes = ?7 WHERE id = ?8",
+        params![
+            schedule.patient_id, schedule.prescription_id,
+            schedule.start_date.to_rfc3339(), schedule.end_date.to_rfc3339(),
+            schedule.times_per_day, times_json, schedule.notes,
+            schedule.id
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_medication_schedule_cmd(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM medication_logs WHERE schedule_id = ?1", params![id])?;
+    conn.execute("DELETE FROM medication_schedules WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 복약 기록 (커맨드용) ============
+
+pub fn list_medication_logs_cmd(schedule_id: &str) -> AppResult<Vec<MedicationLog>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, schedule_id, taken_at, status, notes FROM medication_logs WHERE schedule_id = ?1 ORDER BY taken_at DESC"
+    )?;
+    let rows = stmt.query_map(params![schedule_id], |row| {
+        let status_str: String = row.get(3)?;
+        let status = match status_str.as_str() {
+            "taken" => MedicationStatus::Taken,
+            "missed" => MedicationStatus::Missed,
+            "skipped" => MedicationStatus::Skipped,
+            _ => MedicationStatus::Taken,
+        };
+        Ok(MedicationLog {
+            id: row.get(0)?,
+            schedule_id: row.get(1)?,
+            taken_at: row.get(2)?,
+            status,
+            notes: row.get(4)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn create_medication_log_cmd(log: &MedicationLog) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let status_str = match log.status {
+        MedicationStatus::Taken => "taken",
+        MedicationStatus::Missed => "missed",
+        MedicationStatus::Skipped => "skipped",
+    };
+    conn.execute(
+        "INSERT INTO medication_logs (id, schedule_id, taken_at, status, notes) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![log.id, log.schedule_id, log.taken_at.to_rfc3339(), status_str, log.notes],
+    )?;
+    Ok(())
+}
+
+pub fn update_medication_log_cmd(id: &str, status: &str, notes: Option<&str>) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE medication_logs SET status = ?1, notes = ?2 WHERE id = ?3",
+        params![status, notes, id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_medication_log_cmd(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM medication_logs WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 알림 설정 (커맨드용) ============
+
+pub fn get_notification_settings_cmd() -> AppResult<Option<NotificationSettings>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let result = conn.query_row(
+        "SELECT id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled, missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time, sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end, created_at, updated_at FROM notification_settings WHERE schedule_id IS NULL LIMIT 1",
+        [],
+        |row| {
+            Ok(NotificationSettings {
+                id: row.get(0)?,
+                schedule_id: row.get(1)?,
+                enabled: row.get::<_, i32>(2)? != 0,
+                pre_reminder_minutes: row.get(3)?,
+                missed_reminder_enabled: row.get::<_, i32>(4)? != 0,
+                missed_reminder_delay_minutes: row.get(5)?,
+                daily_summary_enabled: row.get::<_, i32>(6)? != 0,
+                daily_summary_time: row.get(7)?,
+                sound_enabled: row.get::<_, i32>(8)? != 0,
+                sound_preset: row.get(9)?,
+                do_not_disturb_start: row.get(10)?,
+                do_not_disturb_end: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        },
+    );
+    match result {
+        Ok(s) => Ok(Some(s)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn save_notification_settings_cmd(settings: &NotificationSettings) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM notification_settings WHERE id = ?1",
+        params![settings.id],
+        |row| row.get(0),
+    )?;
+
+    if count > 0 {
+        conn.execute(
+            "UPDATE notification_settings SET enabled = ?1, pre_reminder_minutes = ?2, missed_reminder_enabled = ?3, missed_reminder_delay_minutes = ?4, daily_summary_enabled = ?5, daily_summary_time = ?6, sound_enabled = ?7, sound_preset = ?8, do_not_disturb_start = ?9, do_not_disturb_end = ?10, updated_at = ?11 WHERE id = ?12",
+            params![
+                settings.enabled as i32, settings.pre_reminder_minutes,
+                settings.missed_reminder_enabled as i32, settings.missed_reminder_delay_minutes,
+                settings.daily_summary_enabled as i32, settings.daily_summary_time,
+                settings.sound_enabled as i32, settings.sound_preset,
+                settings.do_not_disturb_start, settings.do_not_disturb_end,
+                now, settings.id
+            ],
+        )?;
+    } else {
+        conn.execute(
+            "INSERT INTO notification_settings (id, schedule_id, enabled, pre_reminder_minutes, missed_reminder_enabled, missed_reminder_delay_minutes, daily_summary_enabled, daily_summary_time, sound_enabled, sound_preset, do_not_disturb_start, do_not_disturb_end, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                settings.id, settings.schedule_id,
+                settings.enabled as i32, settings.pre_reminder_minutes,
+                settings.missed_reminder_enabled as i32, settings.missed_reminder_delay_minutes,
+                settings.daily_summary_enabled as i32, settings.daily_summary_time,
+                settings.sound_enabled as i32, settings.sound_preset,
+                settings.do_not_disturb_start, settings.do_not_disturb_end,
+                now, now
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+// ============ 알림 기록 (커맨드용) ============
+
+pub fn list_notifications_cmd(limit: i32) -> AppResult<Vec<Notification>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, notification_type, title, body, priority, schedule_id, patient_id, is_read, is_dismissed, action_url, created_at, read_at FROM notifications WHERE is_dismissed = 0 ORDER BY created_at DESC LIMIT ?1"
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok(Notification {
+            id: row.get(0)?,
+            notification_type: row.get(1)?,
+            title: row.get(2)?,
+            body: row.get(3)?,
+            priority: row.get(4)?,
+            schedule_id: row.get(5)?,
+            patient_id: row.get(6)?,
+            is_read: row.get::<_, i32>(7)? != 0,
+            is_dismissed: row.get::<_, i32>(8)? != 0,
+            action_url: row.get(9)?,
+            created_at: row.get(10)?,
+            read_at: row.get(11)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn get_unread_notification_count_cmd() -> AppResult<i32> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM notifications WHERE is_read = 0 AND is_dismissed = 0",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(count)
+}
+
+pub fn create_notification_cmd(notif: &Notification) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "INSERT INTO notifications (id, notification_type, title, body, priority, schedule_id, patient_id, is_read, is_dismissed, action_url, created_at, read_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            notif.id, notif.notification_type, notif.title, notif.body,
+            notif.priority, notif.schedule_id, notif.patient_id,
+            notif.is_read as i32, notif.is_dismissed as i32,
+            notif.action_url, notif.created_at, notif.read_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_notification_cmd(id: &str, is_read: Option<bool>, is_dismissed: Option<bool>, read_at: Option<&str>) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    if let Some(read) = is_read {
+        conn.execute(
+            "UPDATE notifications SET is_read = ?1, read_at = ?2 WHERE id = ?3",
+            params![read as i32, read_at, id],
+        )?;
+    }
+    if let Some(dismissed) = is_dismissed {
+        conn.execute(
+            "UPDATE notifications SET is_dismissed = ?1 WHERE id = ?2",
+            params![dismissed as i32, id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_notification_cmd(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM notifications WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ============ 사용량 카운트 (플랜 제한용) ============
+
+pub fn get_usage_counts() -> AppResult<(i32, i32, i32)> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let patient_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM patients",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let now = Utc::now();
+    let first_day_of_month = format!("{}-{:02}-01", now.format("%Y"), now.format("%m"));
+
+    let prescription_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescriptions WHERE created_at >= ?1",
+        params![first_day_of_month],
+        |row| row.get(0),
+    )?;
+
+    let chart_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM initial_charts WHERE created_at >= ?1",
+        params![first_day_of_month],
+        |row| row.get(0),
+    )?;
+
+    Ok((patient_count, prescription_count, chart_count))
+}
+
+// ============ 처방 정의 기본 데이터 시드 ============
+
+fn seed_prescription_definitions(conn: &Connection) -> AppResult<()> {
+    let definitions = vec![
+        ("갈근가반하탕", "", "마황제", "상한금궤", "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6/반하:16"),
+        ("갈근탕", "", "마황제", "상한금궤", "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6"),
+        ("갈근탕가천궁신이", "갈근가천신", "", "후세방", "마황:6/계지:4/자감초:4/갈근:8/작약:4/대추:6/생강:6/천궁:4/신이:4"),
+        ("갈근황금황련탕", "갈금련", "금련제", "상한금궤", "갈근:16/황련:6/황금:6/자감초:6"),
+        ("감맥대조탕", "", "감초제", "상한금궤", "생감초:6/대추:5/부소맥:28"),
+        ("감수반하탕", "", "함흉제", "상한금궤", "감수:0.6/반하:2/작약:2/자감초:1.4"),
+        ("감초건강탕", "", "건강제", "상한금궤", "자감초:8/건강:6"),
+        ("감초부자탕", "", "계지제", "상한금궤", "계지:8/자감초:4/부자:2/백출:4"),
+        ("감초사심탕", "감사", "금련제", "상한금궤", "황련:2/황금:6/인삼:6/반하:16/자감초:8/대추:6/건강:6"),
+        ("감초탕", "", "감초제", "상한금궤", "생감초:4"),
+        ("강삼조이", "", "기능성약물", "후세방", "생강:6/대추:6"),
+        ("건강부자탕", "", "부자제", "상한금궤", "건강:2/부자:2"),
+        ("건강황금황련인삼탕", "강금련인", "금련제", "상한금궤", "건강:6/황금:6/황련:6/인삼:6"),
+        ("계강조초황신부탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/마황:4/세신:4/부자:1"),
+        ("계마각반탕", "", "마황제", "상한금궤", "마황:2/계지:3/자감초:2/행인:7/작약:2/대추:2/생강:2"),
+        ("계작지모탕", "", "계지제", "상한금궤", "계지:8/작약:6/자감초:4/생강:10/지모:8/방풍:8/마황:4/백출:10/부자:2"),
+        ("계지가갈근탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/생강:6/갈근:8"),
+        ("계지가계탕", "", "계지제", "상한금궤", "계지:10/작약:6/자감초:4/대추:6/생강:6"),
+        ("계지가대황탕", "", "계지제", "상한금궤", "계지:6/작약:12/자감초:4/대추:6/생강:6/대황:4"),
+        ("계지가부자탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:6/대추:6/생강:6/부자:1"),
+        ("계지가용골모려탕", "계용모", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/생강:6/용골:6/모려:6"),
+        ("계지가작약생강인삼신가탕", "신가탕", "계지제", "상한금궤", "계지:6/작약:8/자감초:4/대추:6/생강:8/인삼:6"),
+        ("계지가작약탕", "", "계지제", "상한금궤", "계지:6/작약:12/자감초:4/대추:6/생강:6"),
+        ("계지가황기탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/생강:6/황기:4"),
+        ("계지가후박행자탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/생강:6/후박:4/행인:15"),
+        ("계지거계가복령백출탕", "거계가영출탕", "계지제", "상한금궤", "작약:6/자감초:4/대추:6/생강:6/백출:6/복령:6"),
+        ("계지거작약가부자탕", "", "계지제", "상한금궤", "계지:6/자감초:4/생강:6/대추:6/부자:1"),
+        ("계지거작약탕", "", "계지제", "상한금궤", "계지:6/자감초:4/대추:6/생강:6"),
+        ("계지복령환", "계령", "도인제", "상한금궤", "계지:6/복령:8/도인:6/목단피:6/작약:6"),
+        ("계지부자탕", "", "계지제", "상한금궤", "계지:8/자감초:4/대추:6/생강:6/부자:3"),
+        ("계지생강지실탕", "계생지", "계지제", "상한금궤", "계지:6/생강:6/지실:10"),
+        ("계지인삼탕", "", "건강제", "상한금궤", "인삼:6/백출:6/자감초:8/건강:6/계지:8"),
+        ("계지탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:6/생강:6"),
+        ("과루계지탕", "", "계지제", "상한금궤", "괄루근:4/계지:6/작약:6/자감초:4/생강:6/대추:6"),
+        ("과루해백반하탕", "", "해백제", "상한금궤", "해백:6/과루인:16/반하:16"),
+        ("과루해백백주탕", "", "해백제", "상한금궤", "해백:16/과루인:16"),
+        ("곽향정기산", "곽정", "", "후세방", "곽향:7.5/자소엽:5/백지:2.5/대복피:2.5/복령:2.5/후박:2.5/백출:2.5/귤피:2.5/반하:2.5/길경:2.5/자감초:2.5/생강:3/대추:3"),
+        ("교애사물탕", "", "", "후세방", "당귀:6/작약:8/천궁:4/아교주:4/자감초:4/애엽:6/숙지황:8"),
+        ("구미강활탕", "", "", "후세방", "강활:7.5/방풍:7.5/천궁:6/백지:6/백출:6/황금:6/건지황:6/세신:2.5/자감초:2.5"),
+        ("궁귀교애탕", "", "당귀제", "상한금궤", "당귀:6/작약:8/천궁:4/아교주:4/자감초:4/애엽:6/건지황:8"),
+        ("귀비온담탕", "", "", "후세방", "귀비탕+온담탕"),
+        ("귀비탕", "", "", "후세방", "당귀:5/용안육:5/산조인:5/원지:5/인삼:5/황기:5/백출:5/복령:5/목향:2.5/자감초:1.5/생강:3/대추:3"),
+        ("귀비탕2", "", "", "후세방", "당귀:5/용안육:5/길초근:2/원지:5/인삼:5/황기:5/백출:5/복령:5/목향:2.5/자감초:1.5/생강:3/대추:3"),
+        ("귀출파징탕", "", "", "후세방", "향부자:7.5/삼릉:5/봉출:5/작약:5/당귀미:5/청피:5/오약:3.5/홍화:2.5/소목:2.5/육계:2.5"),
+        ("귤피대황박초탕", "", "귤피제", "상한금궤", "귤피:3/대황:6/망초:6"),
+        ("귤피죽여탕", "귤죽", "귤피제", "상한금궤", "귤피:16/죽여:4/대추:15/생강:16/자감초:10/인삼:2"),
+        ("귤피지실생강탕", "귤지생", "귤피제", "상한금궤", "귤피:32/지실:6/생강:16"),
+        ("귤피탕", "", "귤피제", "상한금궤", "귤피:8/생강:16"),
+        ("금은화연교", "", "기능성약물", "후세방", "금은화:16/연교:8"),
+        ("길경탕", "", "감초제", "상한금궤", "생감초:4/길경:2"),
+        ("녹용쌍금탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3/뉴분골:2"),
+        ("녹용쌍패탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/복령:5/자감초:5/생강:3/대추:3/박하:3/뉴분골:2"),
+        ("녹용쌍화탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/계지:3.5/자감초:3.5/작약:12.5/생강:3/대추:3/뉴분골:2.5"),
+        ("당귀건중탕", "", "계지제", "상한금궤", "계지:6/작약:12/자감초:4/대추:6/생강:6/당귀:8"),
+        ("당귀사역가오수유생강탕", "당사오", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:12/생강:16/당귀:6/목통:4/세신:6/오수유:4"),
+        ("당귀사역탕", "", "계지제", "상한금궤", "계지:6/작약:6/자감초:4/대추:12/당귀:6/목통:4/세신:6"),
+        ("당귀수산", "", "", "후세방", "당귀미:7.5/적작약:5/오약:5/향부자:5/소목:5/홍화:4/도인:3.5/육계:3/자감초:2.5"),
+        ("당귀작약산", "당작", "당귀제", "상한금궤", "당귀:6/작약:12/천궁:12/복령:8/백출:8/택사:12"),
+        ("대건중탕", "", "건강제", "상한금궤", "인삼:4/건강:8/교이:20/촉초:2"),
+        ("대승기탕", "", "대황제", "상한금궤", "대황:8/망초:7/후박:16/지실:10"),
+        ("대시함", "", "", "고시방", "대시호탕+소함흉탕"),
+        ("대시함마", "", "", "고시방", "대시호탕+소함흉탕+마행의감"),
+        ("대시함박", "", "", "고시방", "대시호탕+소함흉탕+반하후박탕"),
+        ("대시호가망초탕", "", "시호제", "상한금궤", "시호:16/반하:16/황금:6/지실:8/작약:6/대황:4/생강:10/대추:6/망초:4"),
+        ("대시호탕", "", "시호제", "상한금궤", "시호:16/반하:16/황금:6/지실:8/작약:6/대황:4/생강:10/대추:6"),
+        ("대영전", "", "", "후세방", "숙지황:15/당귀:10/구기자:10/두충:10/우슬:7.5/육계:5/자감초:5"),
+        ("대청룡탕", "", "마황제", "상한금궤", "마황:12/계지:4/자감초:4/행인:12/석고:24/대추:5/생강:6"),
+        ("대탕포방기", "대포", "", "고시방", "대함흉탕+목방기탕+방기황기탕+방기복령탕+방기지황탕"),
+        ("대함흉탕", "", "함흉제", "상한금궤", "대황:12/망초:24/감수:2"),
+        ("대함흉환", "", "함흉제", "상한금궤", "대황:16/정력자:16/망초:12/행인:10/감수:2"),
+        ("대함흉환급탕", "대함환급탕", "", "고시방", "대함흉탕+대함흉환"),
+        ("대황감수탕", "", "대황제", "상한금궤", "대황:8/감수:4/아교주:4"),
+        ("대황망초탕", "", "대황제", "상한금궤", "대황:8/황백:8/망초:8/치자:3"),
+        ("대황목단피탕", "", "도인제", "상한금궤", "도인:8/망초:8/대황:8/목단피:6/동과자:12"),
+        ("대황부자탕", "", "대황제", "상한금궤", "대황:6/부자:3/세신:4"),
+        ("대황황련사심탕", "", "금련제", "상한금궤", "황련:2/황금:2/대황:4"),
+        ("도핵승기탕", "", "도인제", "상한금궤", "도인:6/계지:4/망초:4/대황:8/자감초:4"),
+        ("도화탕", "", "기타고방", "상한금궤", "적석지:32/건강:2/갱미:30"),
+        ("독활기생탕", "", "", "후세방", "독활:7/당귀:7/작약:7/상기생:7/숙지황:5/천궁:5/인삼:5/복령:5/우슬:5/두충:5/진교:5/세신:5/방풍:5/육계:5/자감초:3/생강:3"),
+        ("독활지황탕", "", "", "사상방", "숙지황:16/산수유:8/복령:6/택사:6/목단피:4/방풍:4/독활:4"),
+        ("두충우슬", "", "기능성약물", "후세방", "두충:6/우슬:6"),
+        ("마자인환", "", "대황제", "상한금궤", "마자인:32/작약:16/지실:16/대황:32/후박:20/행인:20"),
+        ("마행감석탕", "", "마황제", "상한금궤", "마황:8/행인:15/자감초:4/석고:16"),
+        ("마행의감2", "", "마황제", "상한금궤", "마황:8/행인:4/의이인:24/자감초:4"),
+        ("마행의감3", "", "마황제", "상한금궤", "마황:8/행인:4/의이인:36/자감초:4"),
+        ("마행의감탕", "", "마황제", "상한금궤", "마황:8/행인:4/의이인:12/자감초:4"),
+        ("마황가출탕", "", "마황제", "상한금궤", "마황:6/계지:4/자감초:2/행인:21/백출:8"),
+        ("마황부자감초탕", "", "마황제", "상한금궤", "마황:4/자감초:4/부자:1"),
+        ("마황부자세신탕", "마부신/마신부", "마황제", "상한금궤", "마황:4/부자:1/세신:4"),
+        ("마황연교적소두탕", "마연적", "마황제", "상한금궤", "마황:4/연교:4/행인:4/적소두:28/대추:6/상백피:20/생강:4/자감초:4"),
+        ("마황탕", "", "마황제", "상한금궤", "마황:6/계지:4/자감초:2/행인:21"),
+        ("맥문동탕", "", "반하제", "상한금궤", "반하:32/인삼:6/대추:6/자감초:4/갱미:9/맥문동:15"),
+        ("맥문후박탕", "", "", "고시방", "맥문동탕+반하후박탕"),
+        ("목방기탕", "", "방기제", "상한금궤", "방기:6/계지:4/석고:24/인삼:8"),
+        ("목방기탕거석고가복령망초탕", "거석복망/복망탕/복망", "방기제", "상한금궤", "방기:4/계지:4/인삼:8/망초:8/복령:8"),
+        ("반하백출천마탕", "반백천", "", "후세방", "반하:7/귤피:7/맥아:7/백출:5/신곡:5/인삼:2.5/황기:2.5/천마:2.5/복령:2.5/택사:2.5/건강:1.5/황백:1/생강:3"),
+        ("반하백출천마탕2", "반백천2", "", "후세방", "반하:7/귤피:7/맥아:7/백출:5/신곡:5/인삼:2.5/황기:2.5/천마:2.5/복령:2.5/택사:2.5/건강:1.5/황금:2/생강:3"),
+        ("반하사심탕", "반사", "금련제", "상한금궤", "황련:2/황금:6/인삼:6/반하:16/자감초:6/대추:6/건강:6"),
+        ("반하후박탕", "", "반하제", "상한금궤", "반하:32/생강:10/복령:8/후박:6/자소엽:4"),
+        ("방기복령탕", "방복", "방기제", "상한금궤", "방기:6/계지:6/황기:6/자감초:4/복령:12"),
+        ("방기지황탕", "방지", "방기제", "상한금궤", "방기:6/계지:6/자감초:2/건지황:8/방풍:6"),
+        ("방기황기탕", "방황", "방기제", "상한금궤", "방기:8/황기:9/백출:6/자감초:4"),
+        ("배농산", "", "감초제", "상한금궤", "길경:2/작약:6/지실:10"),
+        ("배농산급탕", "", "감초제", "상한금궤", "생감초:4/길경:6/대추:5/생강:2/작약:6/지실:10"),
+        ("배농탕", "", "감초제", "상한금궤", "생감초:4/길경:6/대추:5/생강:2"),
+        ("백대갈", "", "", "고시방", "백호탕+대시호탕+갈금련"),
+        ("백엽탕", "", "기타고방", "상한금궤", "측백엽:9/건강:9/애엽:9"),
+        ("백인2", "", "석고제", "상한금궤", "석고:64/지모:24/갱미:18/자감초:4/인삼:6"),
+        ("백인3", "", "석고제", "상한금궤", "석고:96/지모:36/갱미:18/자감초:4/인삼:6"),
+        ("백자팔", "", "", "고시방", "백인+자감+팔미"),
+        ("백출부자탕", "", "계지제", "상한금궤", "자감초:4/대추:6/생강:6/부자:3/백출:8"),
+        ("백호2", "", "석고제", "상한금궤", "석고:64/지모:24/갱미:18/자감초:4"),
+        ("백호3", "", "석고제", "상한금궤", "석고:96/지모:36/갱미:18/자감초:4"),
+        ("백호가계지탕", "", "석고제", "상한금궤", "석고:32/지모:12/갱미:6/자감초:4/계지:6"),
+        ("백호가인삼탕", "백인", "석고제", "상한금궤", "석고:32/지모:12/갱미:18/자감초:4/인삼:6"),
+        ("백호탕", "", "석고제", "상한금궤", "석고:32/지모:12/갱미:18/자감초:4"),
+        ("보중익기탕", "", "", "후세방", "황기:7.5/인삼:5/백출:5/자감초:5/당귀:2.5/귤피:2.5/승마:1.5/시호:1.5"),
+        ("보중치습탕", "", "", "후세방", "인삼:5/백출:5/창출:3.5/귤피:3.5/복령:3.5/맥문동:3.5/목통:3.5/당귀:3.5/황금:2.5/후박:1.5/승마:1.5"),
+        ("보화탕", "", "", "후세방", "귤피:7.5/나복자:5/맥아:5/산사:5/향부자:5/후박:5/자감초:2.5/연교:2.5/"),
+        ("복령사역탕", "", "부자제", "상한금궤", "부자:2/자감초:4/건강:3/인삼:2/복령:8"),
+        ("복령음", "", "귤피제", "상한금궤", "인삼:6/백출:6/복령:6/지실:4/귤피:5/생강:8"),
+        ("복령택사탕", "", "복령제", "상한금궤", "복령:16/계지:4/자감초:2/백출:6/택사:8/생강:8"),
+        ("복령행인감초탕", "", "복령제", "상한금궤", "복령:6/행인:4/자감초:2"),
+        ("부자갱미탕", "", "부자제", "상한금궤", "부자:1/자감초:2/반하:16/대추:5/갱미:15"),
+        ("부자사심탕", "", "금련제", "상한금궤", "대황:4/황련:2/황금:2/부자:2"),
+        ("부자탕", "", "부자제", "상한금궤", "부자:2/인삼:4/백출:8/복령:6/작약:6"),
+        ("불수산", "", "", "후세방", "당귀:30/천궁:20"),
+        ("불환금정기산", "", "", "후세방", "백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3"),
+        ("사간마황탕", "", "마황제", "상한금궤", "사간:6/마황:8/생강:8/세신:6/자완:6/관동화:6/오미자:6/대추:3/반하:16"),
+        ("사군자탕", "", "", "후세방", "인삼:6/백출:6/복령:6/자감초:6"),
+        ("사물탕", "", "", "후세방", "숙지황:6/당귀:6/천궁:6/작약:6"),
+        ("사역가인삼탕", "", "부자제", "상한금궤", "부자:2/자감초:4/건강:3/인삼:2"),
+        ("사역산", "", "시호제", "상한금궤", "시호:16/지실:16/작약:16/자감초:16"),
+        ("사역탕", "", "부자제", "상한금궤", "부자:2/자감초:4/건강:3"),
+        ("산조인탕", "", "당귀제", "상한금궤", "산조인:9/자감초:2/지모:4/복령:4/천궁:4"),
+        ("삼단탕", "", "", "현대처방", "단삼:6/적작약:6/홍화:6"),
+        ("삼릉봉출", "", "기능성약물", "후세방", "삼릉:6/봉출:6"),
+        ("삼물황금탕", "", "금련제", "상한금궤", "황금:2/고삼:4/건지황:8"),
+        ("삼방기탕", "", "", "고시방", "방기황기탕+방기복령탕+방기지황탕"),
+        ("삼출건비탕", "", "", "후세방", "인삼:5/백출:5/복령:5/후박:5/귤피:5/산사:5/지실:4/작약:4/사인:2.5/신곡:2.5/맥아:2.5/자감초:2.5/생강:3/대추:3"),
+        ("삼황사심탕", "", "금련제", "상한금궤", "황련:6/황금:6/대황:6"),
+        ("생간건비탕1", "", "", "현대처방", "인진호:12/갈근:8/울금:6/단삼:6/하수오:6/구기자:10/산사:6/백출:6/귤피:6/후박:6/자감초:3/곽향:3/신곡:3/맥아:3"),
+        ("생강감초탕", "", "건강제", "상한금궤", "생강:10/인삼:6/자감초:8/대추:6"),
+        ("생강사심탕", "생사", "금련제", "상한금궤", "황련:2/황금:6/인삼:6/반하:16/자감초:6/대추:6/건강:2/생강:8"),
+        ("생맥산", "", "", "후세방", "맥문동:10/인삼:5/오미자:5"),
+        ("선복대자석탕", "", "금련제", "상한금궤", "선복화:6/인삼:4/생강:10/대자석:2/자감초:6/반하:10/대추:6"),
+        ("소건중탕", "", "계지제", "상한금궤", "계지:6/작약:12/자감초:4/대추:6/생강:6/교이:40"),
+        ("소건중탕2", "소건중2", "계지제", "상한금궤", "계지:6/작약:12/자감초:4/대추:6/생강:6/교이:20"),
+        ("소목홍화", "", "기능성약물", "후세방", "소목:6/홍화:6"),
+        ("소반하가복령탕", "", "반하제", "상한금궤", "반하:32/생강:16/복령:6"),
+        ("소반하탕", "", "반하제", "상한금궤", "반하:32/생강:16"),
+        ("소승기탕", "", "대황제", "상한금궤", "대황:8/후박:4/지실:6"),
+        ("소시호가망초탕", "", "시호제", "상한금궤", "시호:16/반하:16/황금:6/인삼:6/자감초:6/생강:6/대추:6/망초:4"),
+        ("소시호탕", "", "시호제", "상한금궤", "시호:16/반하:16/황금:6/인삼:6/자감초:6/생강:6/대추:6"),
+        ("소청룡가석고탕", "소청룡석고", "마황제", "상한금궤", "마황:6/계지:6/자감초:6/작약:6/오미자:6/반하:16/건강:6/세신:6/석고:4"),
+        ("소청룡탕", "", "마황제", "상한금궤", "마황:6/계지:6/자감초:6/작약:6/오미자:6/반하:16/건강:6/세신:6"),
+        ("소함흉탕", "", "함흉제", "상한금궤", "황련:3/반하:16/과루인:16"),
+        ("소함흉탕2", "소함흉2", "금련제", "상한금궤", "황련:3/반하:16/과루실:16"),
+        ("승마갈근탕", "", "", "후세방", "갈근:10/승마:5/작약:5/자감초:5/생강:5"),
+        ("시령탕", "", "", "고시방", "소시호탕+오령산"),
+        ("시박탕", "", "", "고시방", "소시호탕+반하후박탕"),
+        ("시평탕", "", "", "고시방", "소시호탕+평위산"),
+        ("시함마", "", "", "고시방", "소시호탕+소함흉탕+마행의감탕"),
+        ("시함마농", "", "", "고시방", "시함마+배농산급탕"),
+        ("시함박", "", "", "고시방", "소시호탕+소함흉탕+반하후박탕"),
+        ("시함박농", "", "", "고시방", "시함박+배농산급탕"),
+        ("시함은화탕", "", "", "고시방", "시함마농+시함박농+금은화연교"),
+        ("시함중", "", "", "고시방", "시함탕+이중탕"),
+        ("시함탕", "", "", "후세방", "소시호탕+소함흉탕"),
+        ("시호가용골모려탕", "시용모/시모", "시호제", "상한금궤", "시호:8/반하:8/황금:3/인삼:3/생강:3/대추:3/대황:4/복령:3/계지:3/용골:3/모려:3"),
+        ("시호거반하가과루탕", "", "금련제", "상한금궤", "시호:16/인삼:6/황금:6/자감초:6/괄루근:8/생강:4/대추:6"),
+        ("시호계지건강탕", "시계건", "시호제", "상한금궤", "시호:16/계지:6/건강:4/괄루근:8/황금:6/모려:4/자감초:4"),
+        ("시호계지탕", "시계", "시호제", "상한금궤", "시호:8/반하:8/황금:3/인삼:3/자감초:2/생강:3/대추:3/작약:3/계지:3"),
+        ("십미패독산", "", "", "후세방", "시호:5/화피:5/길경:5/천궁:5/복령:5/독활:3.5/방풍:3.5/형개:2.5/생감초:2.5/생강:3.5"),
+        ("십전대보탕", "", "", "후세방", "인삼:6/백출:6/복령:6/자감초:6/숙지황:6/작약:6/천궁:6/당귀:6/황기:5/육계:5/생강:5/대추:5"),
+        ("쌍갈탕", "", "", "후세방", "원방쌍화탕+갈근탕"),
+        ("쌍금탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/작약:12.5/백출:10/후박:5/귤피:5/곽향:5/반하:5/자감초:5/생강:3/대추:3"),
+        ("쌍패탕", "", "", "후세방", "원방쌍화탕+인삼패독산"),
+        ("억간산", "", "", "후세방", "백출:10/복령:10/당귀:7.5/천궁:7.5/조구등:7.5/시호:5/자감초:4"),
+        ("연령고본단", "", "", "후세방", "구기자:10/두충:10/맥문동:10/목향:10/백자인:10/복령:10/복분자:7.5/산수유:10/산약:10/건지황:10/석창포:5/숙지황:10/오미자:10/우슬:10/원지:5/육종용:20/인삼:10/지골피:7.5/차전자:7.5/천문동:10/천초:5/택사:5/토사자:20/파극천:10"),
+        ("영감강미신탕", "", "복령제", "상한금궤", "복령:8/자감초:6/건강:6/오미자:6/세신:6"),
+        ("영감강미신하인탕", "", "복령제", "상한금궤", "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16/행인:6"),
+        ("영감강미신하인황탕", "", "복령제", "상한금궤", "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16/행인:6/대황:6"),
+        ("영감강미신하탕", "", "복령제", "상한금궤", "복령:8/자감초:6/건강:6/오미자:6/세신:6/반하:16"),
+        ("영강출감탕", "", "복령제", "상한금궤", "복령:8/자감초:4/건강:8/백출:4"),
+        ("영계감조탕", "", "복령제", "상한금궤", "복령:16/계지:8/자감초:4/대추:8"),
+        ("영계미감탕", "", "복령제", "상한금궤", "복령:8/계지:8/오미자:6/자감초:6"),
+        ("영계출감탕", "", "복령제", "상한금궤", "복령:8/계지:6/자감초:4/백출:4"),
+        ("오령산", "", "복령제", "상한금궤", "복령:6/계지:4/백출:6/택사:10/저령:6"),
+        ("오매환", "", "금련제", "상한금궤", "오매:6/건강:6/당귀:6/세신:4/계지:4/인삼:4/황련:4/황백:3/촉초:2/부자:2"),
+        ("오수유탕", "", "당귀제", "상한금궤", "오수유:5/인삼:6/대추:6/생강:12"),
+        ("오자탕", "", "", "후세방", "사상자:5/육종용:5/복분자:5/구기자:5/토사자:5"),
+        ("온경탕", "", "당귀제", "상한금궤", "당귀:4/작약:4/천궁:4/아교주:4/자감초:4/인삼:4/계지:4/생강:4/목단피:4/반하:16/맥문동:5/오수유:6"),
+        ("온담탕", "", "", "후세방", "반하:10/귤피:10/복령:10/지실:10/죽여:5/자감초:2.5/생강:3/대추:3"),
+        ("원방쌍화탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/육계:3.5/자감초:3.5/작약:12.5/생강:3/대추:3"),
+        ("월비가반하탕", "", "마황제", "상한금궤", "마황:12/석고:16/생강:6/대추:8/자감초:4/반하:16"),
+        ("월비가출탕", "", "마황제", "상한금궤", "마황:12/자감초:4/석고:16/대추:8/생강:6/백출:8"),
+        ("월비탕", "", "마황제", "상한금궤", "마황:12/자감초:4/석고:16/대추:8/생강:6"),
+        ("육군자탕", "", "", "후세방", "반하:7.5/백출:7.5/귤피:5/복령:5/인삼:5/자감초:2.5"),
+        ("육미지황탕", "육미", "복령제", "상한금궤", "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6"),
+        ("육미지황탕2", "육미2", "복령제", "상한금궤", "숙지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6"),
+        ("의이부자패장산", "", "부자제", "상한금궤", "부자:2/의이인:16/패장:8"),
+        ("이진탕", "", "", "후세방", "반하:10/귤피:5/복령:5/자감초:2.5"),
+        ("인삼탕", "이중탕", "건강제", "상한금궤", "인삼:6/백출:6/자감초:6/건강:6"),
+        ("인삼패독산", "", "", "후세방", "인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/천궁:5/복령:5/자감초:5/생강:3/박하:3"),
+        ("인숙산", "", "", "후세방", "백자인:8/숙지황:8/인삼:6/지각:6/오미자:6/계지:6/산수유:6/감국:6/복령:6/구기자:6"),
+        ("인진오령산", "", "복령제", "상한금궤", "인진호:12/택사:8/복령:8/백출:6/계지:6/저령:6"),
+        ("인진호탕", "", "치자제", "상한금궤", "치자:14/대황:4/인진호:12"),
+        ("일반쌍화탕", "", "", "후세방", "숙지황:5/황기:5/당귀:5/천궁:5/계지:3.5/자감초:3.5/작약:12.5/생강:3/대추:3"),
+        ("자감초탕", "자감", "계지제", "상한금궤", "계지:6/자감초:8/대추:10/생강:6/인삼:4/맥문동:10/건지황:8/마자인:8/아교주:4"),
+        ("자음강화탕", "", "", "후세방", "작약:6.5/당귀:6/숙지황:5/천문동:5/맥문동:5/백출:5/건지황:4/귤피:3.5/지모:2.5/황백:2.5/자감초:2.5/생강:3/대추:3"),
+        ("작약감초부자탕", "", "계지제", "상한금궤", "작약:6/자감초:6/부자:1"),
+        ("작약감초탕", "작감탕", "계지제", "상한금궤", "작약:8/자감초:8"),
+        ("저령차전자탕", "", "", "사상방", "택사:10/복령:10/저령:7.5/차전자:7.5/지모:5/석고:5/강활:5/독활:5/형개:5/방풍:5"),
+        ("저령탕", "", "복령제", "상한금궤", "복령:6/택사:6/저령:6/아교주:6"),
+        ("적소두당귀산", "", "당귀제", "상한금궤", "적소두:42/당귀:3"),
+        ("조경종옥탕", "", "", "후세방", "숙지황:7.5/향부자:7.5/당귀:5/오수유:5/천궁:5/작약:4/복령:4/귤피:4/현호색:4/목단피:4/건강:4/육계:2.5/애엽:2.5/생강:3"),
+        ("조위승기탕", "", "대황제", "상한금궤", "대황:8/망초:12/자감초:4"),
+        ("죽엽석고탕", "죽석", "석고제", "상한금궤", "석고:32/갱미:15/자감초:4/죽엽:4/인삼:4/맥문동:20/반하:16"),
+        ("중시호가망초탕", "", "", "시호제", "소시호가망초탕+대시호가망초탕"),
+        ("중시호탕", "", "시호제", "상한금궤", "시호:16/반하:16/황금:6/인삼:6/자감초:6/지실:8/작약:6/대황:4/생강:10/대추:6"),
+        ("지백지황환", "", "", "후세방", "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/지모:4/황백:4"),
+        ("지실치자탕", "", "치자제", "상한금궤", "지실:6/치자:14/두시:3"),
+        ("지실해백계지탕", "", "해백제", "상한금궤", "해백:16/과루인:16/계지:2/후박:8/지실:8"),
+        ("지출탕", "", "기타고방", "상한금궤", "지실:10/백출:8"),
+        ("진무탕", "", "부자제", "상한금궤", "부자:1/백출:4/복령:6/작약:6/생강:6"),
+        ("천마구등음", "", "", "후세방", "조구등:12/천마:9/황금:9/복령:9/익모초:9/야교등:9/석결명:18/상기생:9/치자:9/두충:9/우슬:12"),
+        ("천왕보심단", "", "", "후세방", "길경:2.5/단삼:2.5/당귀:5/맥문동:5/백자인:5/복령:2.5/산조인:5/건지황:5/오미자:5/원지:2.5/인삼:2.5/천문동:5/현삼:2.5"),
+        ("체감탕", "체감탕", "다이어트", "", "의이인:300/숙지황:160/용안육:120/당귀:120/황기:120/괄루근:80/산약:80/상백피:80/귤피:80/천궁:60"),
+        ("총명탕", "", "", "후세방", "원지:10/석창포:10/복령:10"),
+        ("축천환", "", "", "후세방", "오약:5/익지인:5"),
+        ("치자감초시탕", "", "치자제", "상한금궤", "치자:14/자감초:4/두시:20"),
+        ("치자건강탕", "", "치자제", "상한금궤", "치자:14/건강:2"),
+        ("치자대황탕", "", "치자제", "상한금궤", "치자:14/대황:2/지실:10/두시:20"),
+        ("치자벽피탕", "", "치자제", "상한금궤", "치자:14/황백:4/자감초:2"),
+        ("치자생강시탕", "", "치자제", "상한금궤", "치자:14/생강:10/두시:20"),
+        ("치자시탕", "치시", "치자제", "상한금궤", "치자:14/두시:20"),
+        ("치자시탕2", "치자시2", "치자제", "상한금궤", "치자:6/두시:20"),
+        ("치자후박탕", "", "치자제", "상한금궤", "치자:14/후박:8/지실:8"),
+        ("택사탕", "", "복령제", "상한금궤", "백출:4/택사:10"),
+        ("통맥사역탕", "", "부자제", "상한금궤", "부자:3/자감초:4/건강:6"),
+        ("팔미환", "팔미", "복령제", "상한금궤", "건지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/계지:2/부자:2"),
+        ("팔미환2", "팔미2", "복령제", "상한금궤", "숙지황:16/산약:8/산수유:8/복령:6/택사:6/목단피:6/육계:2/부자:2"),
+        ("평위산", "", "", "후세방", "백출:10/귤피:7/후박:5/자감초:3/생강:3/대추:3"),
+        ("포방기탕", "", "", "고시방", "목방기탕+방기황기탕+방기복령탕+방기지황탕"),
+        ("향사갈금련", "", "", "고시방", "향사평위산+갈금련"),
+        ("향사육군자탕", "", "", "후세방", "향부자:5/백출:5/복령:5/반하:5/귤피:5/백두구:5/후박:5/사인:2.5/인삼:2.5/목향:2.5/익지인:2.5/자감초:2.5/생강:3/대추:3"),
+        ("향사평위산", "", "", "후세방", "백출:10/귤피:5/향부자:5/지실:4/곽향:4/후박:3.5/사인:3.5/목향:2.5/자감초:2.5/생강:3"),
+        ("현부이경탕", "", "", "후세방", "육계:3.5/귤피:5/당귀:5/도인:5/목향:3.5/작약:5/봉출:5/생강:6/오약:7.5/지각:5/백출:7.5/천궁:5/향부자:15/현호색:5/홍화:3.5"),
+        ("형방사백산", "", "", "사상방", "건지황:10/복령:10/택사:10/석고:5/지모:5/강활:5/독활:5/형개:5/방풍:5"),
+        ("형방지황탕", "", "", "사상방", "숙지황:10/산수유:10/복령:10/택사:10/차전자:5/강활:5/독활:5/형개:5/방풍:5"),
+        ("형방패독산", "", "", "후세방", "인삼:5/시호:5/전호:5/독활:5/강활:5/지각:5/길경:5/천궁:5/복령:5/자감초:5/형개:5/방풍:5"),
+        ("환탕포방기", "환포", "", "고시방", "대함흉탕+대함흉환+목방기탕+방기황기탕+방기복령탕+방기지황탕"),
+        ("황금탕", "", "금련제", "상한금궤", "황금:6/작약:4/자감초:4/대추:6"),
+        ("황기건중탕", "", "계지제", "상한금궤", "계지:6/작약:12/자감초:6/대추:6/생강:6/교이:40/황기:3"),
+        ("황기건중탕2", "황기건중2", "계지제", "상한금궤", "계지:6/작약:12/자감초:6/대추:6/생강:6/교이:20/황기:6"),
+        ("황기계지오물탕", "황계오물탕/황계오물", "계지제", "상한금궤", "황기:6/계지:6/작약:6/생강:12/대추:6"),
+        ("황기작약계지고주탕", "기작계주", "계지제", "상한금궤", "황기:10/작약:6/계지:6"),
+        ("황련아교탕", "황아", "금련제", "상한금궤", "황련:8/황금:4/작약:4/아교주:3"),
+        ("황련탕", "", "금련제", "상한금궤", "황련:6/건강:6/인삼:4/자감초:6/대추:6/반하:16/계지:6"),
+        ("황련해독탕", "", "", "후세방", "황련:6/황금:6/황백:6/치자:6"),
+        ("후박마황탕", "", "마황제", "상한금궤", "후박:10/마황:8/석고:20/행인:8/반하:16/건강:4/세신:4/부소맥:28/오미자:6"),
+        ("후박삼물탕", "", "대황제", "상한금궤", "후박:16/대황:8/지실:10"),
+        ("후박칠물탕", "", "대황제", "상한금궤", "대황:6/후박:16/지실:10/자감초:6/대추:5/계지:4/생강:10"),
+        ("후생반감인탕", "", "반하제", "상한금궤", "후박:16/생강:16/반하:16/자감초:4/인삼:2"),
+    ];
+
+    let now = Utc::now().to_rfc3339();
+    let mut stmt = conn.prepare(
+        "INSERT INTO prescription_definitions (name, alias, category, source, composition, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+    )?;
+
+    for (name, alias, category, source, composition) in &definitions {
+        let alias_val = if alias.is_empty() { None } else { Some(*alias) };
+        let category_val = if category.is_empty() { None } else { Some(*category) };
+        stmt.execute(params![name, alias_val, category_val, source, composition, now, now])?;
+    }
+
+    Ok(())
 }

@@ -1,12 +1,5 @@
 import { create } from 'zustand';
-import {
-  getNotifications,
-  getUnreadNotificationCount,
-  getNotificationSettings,
-  createNotification,
-  updateNotification,
-  updateNotificationSettings,
-} from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { Notification, NotificationSettings } from '../types';
 
 interface NotificationStore {
@@ -19,13 +12,13 @@ interface NotificationStore {
   toasts: Notification[];
 
   // 알림 액션
-  loadNotifications: () => void;
-  loadSettings: () => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  dismiss: (id: string) => void;
-  addNotification: (notification: Omit<Notification, 'id' | 'created_at' | 'is_read' | 'is_dismissed'>) => Notification | null;
-  updateSettings: (updates: Partial<NotificationSettings>) => void;
+  loadNotifications: () => Promise<void>;
+  loadSettings: () => Promise<void>;
+  markAsRead: (id: string) => Promise<void>;
+  markAllAsRead: () => Promise<void>;
+  dismiss: (id: string) => Promise<void>;
+  addNotification: (notification: Omit<Notification, 'id' | 'created_at' | 'is_read' | 'is_dismissed'>) => Promise<Notification | null>;
+  updateSettings: (updates: Partial<NotificationSettings>) => Promise<void>;
 
   // UI 액션
   showToast: (notification: Notification) => void;
@@ -51,11 +44,11 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
   // ===== 알림 관련 =====
 
-  loadNotifications: () => {
+  loadNotifications: async () => {
     try {
       set({ isLoading: true });
-      const notifications = getNotifications();
-      const unreadCount = getUnreadNotificationCount();
+      const notifications = await invoke<Notification[]>('list_notifications', { limit: 100 });
+      const unreadCount = await invoke<number>('get_unread_notification_count');
       set({ notifications, unreadCount, isLoading: false });
     } catch (error) {
       console.error('[loadNotifications] 알림 로드 실패:', error);
@@ -63,43 +56,39 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
   },
 
-  loadSettings: () => {
+  loadSettings: async () => {
     try {
-      const settings = getNotificationSettings();
+      const settings = await invoke<NotificationSettings | null>('get_notification_settings');
       set({ settings });
     } catch (error) {
       console.error('[loadSettings] 설정 로드 실패:', error);
     }
   },
 
-  markAsRead: (id: string) => {
+  markAsRead: async (id: string) => {
     try {
-      const success = updateNotification(id, {
-        is_read: true,
-        read_at: new Date().toISOString(),
-      });
+      const now = new Date().toISOString();
+      await invoke('update_notification', { id, isRead: true, isDismissed: null, readAt: now });
 
-      if (success) {
-        set((state) => ({
-          notifications: state.notifications.map((n) =>
-            n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
-          ),
-          unreadCount: Math.max(0, state.unreadCount - 1),
-        }));
-      }
+      set((state) => ({
+        notifications: state.notifications.map((n) =>
+          n.id === id ? { ...n, is_read: true, read_at: now } : n
+        ),
+        unreadCount: Math.max(0, state.unreadCount - 1),
+      }));
     } catch (error) {
       console.error('[markAsRead] 읽음 처리 실패:', error);
     }
   },
 
-  markAllAsRead: () => {
+  markAllAsRead: async () => {
     try {
       const { notifications } = get();
       const now = new Date().toISOString();
 
       for (const n of notifications) {
         if (!n.is_read) {
-          updateNotification(n.id, { is_read: true, read_at: now });
+          await invoke('update_notification', { id: n.id, isRead: true, isDismissed: null, readAt: now });
         }
       }
 
@@ -116,38 +105,43 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
   },
 
-  dismiss: (id: string) => {
+  dismiss: async (id: string) => {
     try {
       const notification = get().notifications.find((n) => n.id === id);
-      const success = updateNotification(id, { is_dismissed: true });
+      await invoke('update_notification', { id, isRead: null, isDismissed: true, readAt: null });
 
-      if (success) {
-        set((state) => ({
-          notifications: state.notifications.filter((n) => n.id !== id),
-          unreadCount: notification && !notification.is_read
-            ? Math.max(0, state.unreadCount - 1)
-            : state.unreadCount,
-        }));
-      }
+      set((state) => ({
+        notifications: state.notifications.filter((n) => n.id !== id),
+        unreadCount: notification && !notification.is_read
+          ? Math.max(0, state.unreadCount - 1)
+          : state.unreadCount,
+      }));
     } catch (error) {
       console.error('[dismiss] 알림 삭제 실패:', error);
     }
   },
 
-  addNotification: (notification) => {
+  addNotification: async (notification) => {
     try {
-      const newNotification = createNotification(notification);
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const newNotification: Notification = {
+        ...notification,
+        id,
+        is_read: false,
+        is_dismissed: false,
+        created_at: now,
+      } as Notification;
 
-      if (newNotification) {
-        set((state) => ({
-          notifications: [newNotification, ...state.notifications],
-          unreadCount: state.unreadCount + 1,
-        }));
+      await invoke('create_notification', { notification: newNotification });
 
-        // 토스트 표시
-        get().showToast(newNotification);
-      }
+      set((state) => ({
+        notifications: [newNotification, ...state.notifications],
+        unreadCount: state.unreadCount + 1,
+      }));
 
+      // 토스트 표시
+      get().showToast(newNotification);
       return newNotification;
     } catch (error) {
       console.error('[addNotification] 알림 생성 실패:', error);
@@ -155,20 +149,15 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
   },
 
-  updateSettings: (updates) => {
+  updateSettings: async (updates) => {
     try {
       const { settings } = get();
       if (!settings) return;
 
-      const success = updateNotificationSettings(settings.id, updates);
+      const updatedSettings = { ...settings, ...updates, updated_at: new Date().toISOString() };
+      await invoke('save_notification_settings', { settings: updatedSettings });
 
-      if (success) {
-        set((state) => ({
-          settings: state.settings
-            ? { ...state.settings, ...updates, updated_at: new Date().toISOString() }
-            : null,
-        }));
-      }
+      set({ settings: updatedSettings });
     } catch (error) {
       console.error('[updateSettings] 설정 업데이트 실패:', error);
     }

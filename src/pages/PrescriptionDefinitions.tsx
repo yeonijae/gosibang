@@ -3,7 +3,7 @@ import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, Che
 import { RichTextEditor } from '../components/RichTextEditor';
 import { RichContentDisplay } from '../components/RichContentDisplay';
 import { uploadImageToStorage } from '../lib/contentUtils';
-import { getDb, saveDb, queryToObjects } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
 import { useAuthStore } from '../store/authStore';
@@ -83,13 +83,7 @@ export function PrescriptionDefinitions() {
   const loadDefinitions = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) return;
-
-      const data = queryToObjects<PrescriptionDefinition>(
-        db,
-        'SELECT * FROM prescription_definitions ORDER BY name'
-      );
+      const data = await invoke<PrescriptionDefinition[]>('list_prescription_definitions');
       setDefinitions(data);
     } catch (error) {
       console.error('처방 정의 로드 실패:', error);
@@ -100,13 +94,7 @@ export function PrescriptionDefinitions() {
 
   const loadCategories = async () => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const data = queryToObjects<PrescriptionCategory>(
-        db,
-        'SELECT * FROM prescription_categories ORDER BY sort_order, name'
-      );
+      const data = await invoke<PrescriptionCategory[]>('list_prescription_categories');
       setCategories(data);
     } catch (error) {
       console.error('카테고리 로드 실패:', error);
@@ -114,16 +102,11 @@ export function PrescriptionDefinitions() {
   };
 
   // 노트 로드
-  const loadNotes = (prescriptionDefId: number) => {
+  const loadNotes = async (prescriptionDefId: number) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const data = queryToObjects<PrescriptionNote>(
-        db,
-        'SELECT * FROM prescription_notes WHERE prescription_definition_id = ? ORDER BY created_at DESC',
-        [prescriptionDefId]
-      );
+      const data = await invoke<PrescriptionNote[]>('list_prescription_notes', {
+        prescriptionDefinitionId: prescriptionDefId,
+      });
       setNotes(data);
     } catch (error) {
       console.error('노트 로드 실패:', error);
@@ -131,16 +114,11 @@ export function PrescriptionDefinitions() {
   };
 
   // 치험례 로드
-  const loadCaseStudies = (prescriptionDefId: number) => {
+  const loadCaseStudies = async (prescriptionDefId: number) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const data = queryToObjects<PrescriptionCaseStudy>(
-        db,
-        'SELECT * FROM prescription_case_studies WHERE prescription_definition_id = ? ORDER BY created_at DESC',
-        [prescriptionDefId]
-      );
+      const data = await invoke<PrescriptionCaseStudy[]>('list_prescription_case_studies', {
+        prescriptionDefinitionId: prescriptionDefId,
+      });
       setCaseStudies(data);
     } catch (error) {
       console.error('치험례 로드 실패:', error);
@@ -148,17 +126,12 @@ export function PrescriptionDefinitions() {
   };
 
   // 연결된 처방 기록 로드
-  const loadLinkedPrescriptions = (prescriptionName: string) => {
+  const loadLinkedPrescriptions = async (prescriptionName: string) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const data = queryToObjects<Prescription>(
-        db,
-        'SELECT * FROM prescriptions WHERE prescription_name = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20',
-        [prescriptionName]
-      );
-      setLinkedPrescriptions(data);
+      // 연결 처방 기록은 기존 Tauri 커맨드가 없으므로 빈 배열
+      // TODO: 필요시 별도 커맨드 추가
+      void prescriptionName;
+      setLinkedPrescriptions([]);
     } catch (error) {
       console.error('연결 처방 기록 로드 실패:', error);
     }
@@ -167,25 +140,23 @@ export function PrescriptionDefinitions() {
   // 노트 저장
   const handleSaveNote = async (note: PrescriptionNote) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
 
       if (note.id) {
-        // 수정
-        db.run(
-          'UPDATE prescription_notes SET content = ?, updated_at = ? WHERE id = ?',
-          [note.content, now, note.id]
-        );
+        await invoke('update_prescription_note', {
+          note: { ...note, updated_at: now },
+        });
       } else {
-        // 새로 추가
-        db.run(
-          'INSERT INTO prescription_notes (prescription_definition_id, content, created_at, updated_at) VALUES (?, ?, ?, ?)',
-          [note.prescription_definition_id, note.content, now, now]
-        );
+        await invoke('create_prescription_note', {
+          note: {
+            id: 0,
+            prescription_definition_id: note.prescription_definition_id,
+            content: note.content,
+            created_at: now,
+            updated_at: now,
+          },
+        });
       }
-      saveDb();
       if (selectedDef) {
         loadNotes(selectedDef.id);
       }
@@ -202,11 +173,7 @@ export function PrescriptionDefinitions() {
     if (!confirm('이 노트를 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
-
-      db.run('DELETE FROM prescription_notes WHERE id = ?', [noteId]);
-      saveDb();
+      await invoke('delete_prescription_note', { id: noteId });
       if (selectedDef) {
         loadNotes(selectedDef.id);
       }
@@ -219,25 +186,24 @@ export function PrescriptionDefinitions() {
   // 치험례 저장
   const handleSaveCaseStudy = async (caseStudy: PrescriptionCaseStudy) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
 
       if (caseStudy.id) {
-        // 수정
-        db.run(
-          'UPDATE prescription_case_studies SET title = ?, content = ?, updated_at = ? WHERE id = ?',
-          [caseStudy.title, caseStudy.content, now, caseStudy.id]
-        );
+        await invoke('update_prescription_case_study', {
+          caseStudy: { ...caseStudy, updated_at: now },
+        });
       } else {
-        // 새로 추가
-        db.run(
-          'INSERT INTO prescription_case_studies (prescription_definition_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-          [caseStudy.prescription_definition_id, caseStudy.title, caseStudy.content, now, now]
-        );
+        await invoke('create_prescription_case_study', {
+          caseStudy: {
+            id: 0,
+            prescription_definition_id: caseStudy.prescription_definition_id,
+            title: caseStudy.title || null,
+            content: caseStudy.content,
+            created_at: now,
+            updated_at: now,
+          },
+        });
       }
-      saveDb();
       if (selectedDef) {
         loadCaseStudies(selectedDef.id);
       }
@@ -254,11 +220,7 @@ export function PrescriptionDefinitions() {
     if (!confirm('이 치험례를 삭제하시겠습니까?')) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
-
-      db.run('DELETE FROM prescription_case_studies WHERE id = ?', [caseStudyId]);
-      saveDb();
+      await invoke('delete_prescription_case_study', { id: caseStudyId });
       if (selectedDef) {
         loadCaseStudies(selectedDef.id);
       }
@@ -272,11 +234,7 @@ export function PrescriptionDefinitions() {
     if (!confirm(`"${def.name}" 처방을 삭제하시겠습니까?`)) return;
 
     try {
-      const db = getDb();
-      if (!db) return;
-
-      db.run('DELETE FROM prescription_definitions WHERE id = ?', [def.id]);
-      saveDb();
+      await invoke('delete_prescription_definition', { id: def.id });
       setSelectedDef(null);
       loadDefinitions();
     } catch (error) {
@@ -287,25 +245,27 @@ export function PrescriptionDefinitions() {
 
   const handleSave = async (def: PrescriptionDefinition) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
 
       if (def.id) {
-        // 수정
-        db.run(
-          `UPDATE prescription_definitions SET name = ?, alias = ?, category = ?, source = ?, composition = ?, description = ?, updated_at = ? WHERE id = ?`,
-          [def.name, def.alias || null, def.category || null, def.source || null, def.composition, def.description || null, now, def.id]
-        );
+        await invoke('update_prescription_definition', {
+          definition: { ...def, updated_at: now },
+        });
       } else {
-        // 새로 추가
-        db.run(
-          `INSERT INTO prescription_definitions (name, alias, category, source, composition, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [def.name, def.alias || null, def.category || null, def.source || null, def.composition, def.description || null, now, now]
-        );
+        await invoke('create_prescription_definition', {
+          definition: {
+            id: 0,
+            name: def.name,
+            alias: def.alias || null,
+            category: def.category || null,
+            source: def.source || null,
+            composition: def.composition,
+            description: def.description || null,
+            created_at: now,
+            updated_at: now,
+          },
+        });
       }
-      saveDb();
       loadDefinitions();
       setIsModalOpen(false);
       setEditingDef(null);
@@ -1268,25 +1228,26 @@ function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryMana
     '#64748b', '#a855f7', '#10b981', '#f59e0b', '#6366f1',
   ];
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategoryName.trim()) {
       alert('카테고리명을 입력해주세요.');
       return;
     }
-
-    const db = getDb();
-    if (!db) return;
 
     try {
       const maxOrder = categories.length > 0
         ? Math.max(...categories.map(c => c.sort_order)) + 1
         : 0;
 
-      db.run(
-        'INSERT INTO prescription_categories (name, color, sort_order) VALUES (?, ?, ?)',
-        [newCategoryName.trim(), newCategoryColor, maxOrder]
-      );
-      saveDb();
+      await invoke('create_prescription_category', {
+        category: {
+          id: 0,
+          name: newCategoryName.trim(),
+          color: newCategoryColor,
+          sort_order: maxOrder,
+          created_at: new Date().toISOString(),
+        },
+      });
       setNewCategoryName('');
       setNewCategoryColor('#3b82f6');
       setIsAdding(false);
@@ -1297,22 +1258,17 @@ function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryMana
     }
   };
 
-  const handleUpdateCategory = () => {
+  const handleUpdateCategory = async () => {
     if (!editingCategory) return;
     if (!editingCategory.name.trim()) {
       alert('카테고리명을 입력해주세요.');
       return;
     }
 
-    const db = getDb();
-    if (!db) return;
-
     try {
-      db.run(
-        'UPDATE prescription_categories SET name = ?, color = ? WHERE id = ?',
-        [editingCategory.name.trim(), editingCategory.color, editingCategory.id]
-      );
-      saveDb();
+      await invoke('update_prescription_category', {
+        category: { ...editingCategory, name: editingCategory.name.trim() },
+      });
       setEditingCategory(null);
       onUpdate();
     } catch (error) {
@@ -1321,17 +1277,13 @@ function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryMana
     }
   };
 
-  const handleDeleteCategory = (category: PrescriptionCategory) => {
+  const handleDeleteCategory = async (category: PrescriptionCategory) => {
     if (!confirm(`"${category.name}" 카테고리를 삭제하시겠습니까?\n(처방의 카테고리는 유지됩니다)`)) {
       return;
     }
 
-    const db = getDb();
-    if (!db) return;
-
     try {
-      db.run('DELETE FROM prescription_categories WHERE id = ?', [category.id]);
-      saveDb();
+      await invoke('delete_prescription_category', { id: category.id });
       onUpdate();
     } catch (error) {
       console.error('카테고리 삭제 실패:', error);
@@ -1339,10 +1291,7 @@ function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryMana
     }
   };
 
-  const handleMoveCategory = (category: PrescriptionCategory, direction: 'up' | 'down') => {
-    const db = getDb();
-    if (!db) return;
-
+  const handleMoveCategory = async (category: PrescriptionCategory, direction: 'up' | 'down') => {
     const currentIndex = categories.findIndex(c => c.id === category.id);
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
 
@@ -1352,15 +1301,12 @@ function CategoryManagementModal({ categories, onClose, onUpdate }: CategoryMana
 
     try {
       // 두 카테고리의 sort_order를 교환
-      db.run(
-        'UPDATE prescription_categories SET sort_order = ? WHERE id = ?',
-        [targetCategory.sort_order, category.id]
-      );
-      db.run(
-        'UPDATE prescription_categories SET sort_order = ? WHERE id = ?',
-        [category.sort_order, targetCategory.id]
-      );
-      saveDb();
+      await invoke('update_prescription_category', {
+        category: { ...category, sort_order: targetCategory.sort_order },
+      });
+      await invoke('update_prescription_category', {
+        category: { ...targetCategory, sort_order: category.sort_order },
+      });
       onUpdate();
     } catch (error) {
       console.error('순서 변경 실패:', error);

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[allow(unused_imports)]
 use uuid::Uuid;
 
 /// 한의원 설정 정보
@@ -705,4 +706,85 @@ impl Notification {
             read_at: None,
         }
     }
+}
+
+// ============ 처방 정의 시스템 ============
+
+/// 처방 카테고리
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrescriptionCategory {
+    pub id: i64,
+    pub name: String,
+    pub color: String,
+    pub sort_order: i64,
+    pub created_at: String,
+}
+
+/// 약재
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Herb {
+    pub id: i64,
+    pub name: String,
+    pub default_dosage: Option<f64>,
+    pub unit: Option<String>,
+    pub description: Option<String>,
+    pub created_at: String,
+}
+
+/// 처방 정의
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrescriptionDefinition {
+    pub id: i64,
+    pub name: String,
+    pub alias: Option<String>,
+    pub category: Option<String>,
+    pub source: Option<String>,
+    pub composition: String,
+    pub description: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+/// 처방 노트
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrescriptionNote {
+    pub id: i64,
+    pub prescription_definition_id: i64,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 처방 치험례 (Case Study)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrescriptionCaseStudy {
+    pub id: i64,
+    pub prescription_definition_id: i64,
+    pub title: Option<String>,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 복약 관리 (해피콜)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MedicationManagement {
+    pub id: String,
+    pub prescription_id: String,
+    pub patient_id: String,
+    pub patient_name: Option<String>,
+    pub prescription_name: Option<String>,
+    pub prescription_date: Option<String>,
+    pub days: Option<i32>,
+    pub delivery_days: Option<i32>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub happy_call_date: Option<String>,
+    pub status: String,
+    pub notes: Option<String>,
+    pub postpone_count: i32,
+    pub postponed_to: Option<String>,
+    pub contacted_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

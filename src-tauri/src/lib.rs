@@ -121,6 +121,59 @@ pub fn run() {
             get_staff_account,
             update_staff_account,
             delete_staff_account,
+            // 처방 카테고리
+            list_prescription_categories,
+            create_prescription_category,
+            update_prescription_category,
+            delete_prescription_category,
+            // 약재
+            list_herbs,
+            create_herb,
+            update_herb,
+            delete_herb,
+            // 처방 정의
+            list_prescription_definitions,
+            get_prescription_definition,
+            create_prescription_definition,
+            update_prescription_definition,
+            delete_prescription_definition,
+            // 처방 노트
+            list_prescription_notes,
+            create_prescription_note,
+            update_prescription_note,
+            delete_prescription_note,
+            // 처방 치험례
+            list_prescription_case_studies,
+            create_prescription_case_study,
+            update_prescription_case_study,
+            delete_prescription_case_study,
+            // 복약 관리 (해피콜)
+            list_medication_management,
+            create_medication_management,
+            update_medication_management,
+            delete_medication_management,
+            // 복약 스케줄
+            list_medication_schedules,
+            get_medication_schedule,
+            create_medication_schedule,
+            update_medication_schedule,
+            delete_medication_schedule,
+            // 복약 기록
+            list_medication_logs,
+            create_medication_log,
+            update_medication_log,
+            delete_medication_log,
+            // 알림 설정
+            get_notification_settings,
+            save_notification_settings,
+            // 알림 기록
+            list_notifications,
+            get_unread_notification_count,
+            create_notification,
+            update_notification,
+            delete_notification,
+            // 사용량 카운트
+            get_usage_counts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import type { AuthState, UserSession } from '../types';
 
 // 현재 앱 버전 (package.json과 동기화)
-const APP_VERSION = '0.2.43';
+const APP_VERSION = '0.2.44';
 
 // 버전 비교: a < b이면 true
 function isVersionOlderThan(a: string, b: string): boolean {

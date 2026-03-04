@@ -1,17 +1,5 @@
 import { create } from 'zustand';
-import {
-  getMedicationSchedules,
-  getMedicationSchedule,
-  createMedicationSchedule,
-  updateMedicationSchedule,
-  deleteMedicationSchedule,
-  getMedicationLogs,
-  getMedicationLogsByDateRange,
-  createMedicationLog,
-  updateMedicationLog,
-  deleteMedicationLog,
-  getMedicationStats,
-} from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type {
   MedicationSchedule,
   MedicationLog,
@@ -31,22 +19,21 @@ interface MedicationStore {
   error: string | null;
 
   // 일정 관련 액션
-  loadSchedules: (patientId?: string) => void;
+  loadSchedules: (patientId?: string) => Promise<void>;
   selectSchedule: (schedule: MedicationSchedule | null) => void;
-  addSchedule: (schedule: Omit<MedicationSchedule, 'id' | 'created_at'>) => MedicationSchedule | null;
-  editSchedule: (id: string, updates: Partial<Omit<MedicationSchedule, 'id' | 'created_at'>>) => boolean;
-  removeSchedule: (id: string) => boolean;
+  addSchedule: (schedule: Omit<MedicationSchedule, 'id' | 'created_at'>) => Promise<MedicationSchedule | null>;
+  editSchedule: (id: string, updates: Partial<Omit<MedicationSchedule, 'id' | 'created_at'>>) => Promise<boolean>;
+  removeSchedule: (id: string) => Promise<boolean>;
 
   // 기록 관련 액션
-  loadLogs: (scheduleId: string) => void;
-  loadLogsByDateRange: (scheduleId: string, startDate: string, endDate: string) => void;
-  addLog: (log: Omit<MedicationLog, 'id'>) => MedicationLog | null;
-  editLog: (id: string, updates: Partial<Omit<MedicationLog, 'id' | 'schedule_id'>>) => boolean;
-  removeLog: (id: string) => boolean;
+  loadLogs: (scheduleId: string) => Promise<void>;
+  addLog: (log: Omit<MedicationLog, 'id'>) => Promise<MedicationLog | null>;
+  editLog: (id: string, updates: Partial<Omit<MedicationLog, 'id' | 'schedule_id'>>) => Promise<boolean>;
+  removeLog: (id: string) => Promise<boolean>;
 
   // 슬롯 관련 액션 (UI용)
-  generateSlots: (scheduleId: string) => void;
-  updateSlotStatus: (date: string, time: string, status: MedicationStatus, notes?: string) => boolean;
+  generateSlots: (scheduleId: string) => Promise<void>;
+  updateSlotStatus: (date: string, time: string, status: MedicationStatus, notes?: string) => Promise<boolean>;
 
   // 통계 관련 액션
   loadStats: (scheduleId: string) => void;
@@ -93,7 +80,6 @@ function generateMedicationSlots(
       if (log) {
         status = log.status;
       } else if (isPast) {
-        // 과거인데 기록이 없으면 미복용으로 처리
         status = 'missed';
       }
 
@@ -123,10 +109,12 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   // ===== 일정 관련 =====
 
-  loadSchedules: (patientId?: string) => {
+  loadSchedules: async (patientId?: string) => {
     try {
       set({ isLoading: true, error: null });
-      const schedules = getMedicationSchedules(patientId);
+      const schedules = await invoke<MedicationSchedule[]>('list_medication_schedules', {
+        patientId: patientId || null,
+      });
       set({ schedules, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -142,18 +130,22 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     }
   },
 
-  addSchedule: (schedule) => {
+  addSchedule: async (schedule) => {
     try {
       set({ isLoading: true, error: null });
-      const newSchedule = createMedicationSchedule(schedule);
-      if (newSchedule) {
-        set((state) => ({
-          schedules: [newSchedule, ...state.schedules],
-          isLoading: false,
-        }));
-      } else {
-        set({ error: '복약 일정 생성 실패', isLoading: false });
-      }
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const newSchedule: MedicationSchedule = {
+        id,
+        ...schedule,
+        created_at: now,
+      } as MedicationSchedule;
+
+      await invoke('create_medication_schedule', { schedule: newSchedule });
+      set((state) => ({
+        schedules: [newSchedule, ...state.schedules],
+        isLoading: false,
+      }));
       return newSchedule;
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -161,55 +153,47 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     }
   },
 
-  editSchedule: (id, updates) => {
+  editSchedule: async (id, updates) => {
     try {
       set({ isLoading: true, error: null });
-      const success = updateMedicationSchedule(id, updates);
-      if (success) {
-        const updatedSchedule = getMedicationSchedule(id);
-        set((state) => ({
-          schedules: state.schedules.map((s) =>
-            s.id === id && updatedSchedule ? updatedSchedule : s
-          ),
-          selectedSchedule:
-            state.selectedSchedule?.id === id
-              ? updatedSchedule
-              : state.selectedSchedule,
-          isLoading: false,
-        }));
-
-        // 슬롯 재생성
-        if (get().selectedSchedule?.id === id) {
-          get().generateSlots(id);
-        }
-      } else {
-        set({ error: '복약 일정 수정 실패', isLoading: false });
+      const existing = get().schedules.find((s) => s.id === id);
+      if (!existing) {
+        set({ error: '일정을 찾을 수 없습니다', isLoading: false });
+        return false;
       }
-      return success;
+
+      const updatedSchedule = { ...existing, ...updates };
+      await invoke('update_medication_schedule', { schedule: updatedSchedule });
+
+      set((state) => ({
+        schedules: state.schedules.map((s) => (s.id === id ? updatedSchedule : s)),
+        selectedSchedule: state.selectedSchedule?.id === id ? updatedSchedule : state.selectedSchedule,
+        isLoading: false,
+      }));
+
+      if (get().selectedSchedule?.id === id) {
+        get().generateSlots(id);
+      }
+      return true;
     } catch (error) {
       set({ error: String(error), isLoading: false });
       return false;
     }
   },
 
-  removeSchedule: (id) => {
+  removeSchedule: async (id) => {
     try {
       set({ isLoading: true, error: null });
-      const success = deleteMedicationSchedule(id);
-      if (success) {
-        set((state) => ({
-          schedules: state.schedules.filter((s) => s.id !== id),
-          selectedSchedule:
-            state.selectedSchedule?.id === id ? null : state.selectedSchedule,
-          logs: state.selectedSchedule?.id === id ? [] : state.logs,
-          slots: state.selectedSchedule?.id === id ? [] : state.slots,
-          stats: state.selectedSchedule?.id === id ? null : state.stats,
-          isLoading: false,
-        }));
-      } else {
-        set({ error: '복약 일정 삭제 실패', isLoading: false });
-      }
-      return success;
+      await invoke('delete_medication_schedule', { id });
+      set((state) => ({
+        schedules: state.schedules.filter((s) => s.id !== id),
+        selectedSchedule: state.selectedSchedule?.id === id ? null : state.selectedSchedule,
+        logs: state.selectedSchedule?.id === id ? [] : state.logs,
+        slots: state.selectedSchedule?.id === id ? [] : state.slots,
+        stats: state.selectedSchedule?.id === id ? null : state.stats,
+        isLoading: false,
+      }));
+      return true;
     } catch (error) {
       set({ error: String(error), isLoading: false });
       return false;
@@ -218,36 +202,23 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   // ===== 기록 관련 =====
 
-  loadLogs: (scheduleId) => {
+  loadLogs: async (scheduleId) => {
     try {
-      const logs = getMedicationLogs(scheduleId);
+      const logs = await invoke<MedicationLog[]>('list_medication_logs', { scheduleId });
       set({ logs });
     } catch (error) {
       console.error('[loadLogs] 기록 로드 실패:', error);
     }
   },
 
-  loadLogsByDateRange: (scheduleId, startDate, endDate) => {
+  addLog: async (log) => {
     try {
-      const logs = getMedicationLogsByDateRange(scheduleId, startDate, endDate);
-      set({ logs });
-    } catch (error) {
-      console.error('[loadLogsByDateRange] 기록 로드 실패:', error);
-    }
-  },
-
-  addLog: (log) => {
-    try {
-      const newLog = createMedicationLog(log);
-      if (newLog) {
-        set((state) => ({
-          logs: [newLog, ...state.logs],
-        }));
-
-        // 슬롯 및 통계 업데이트
-        get().generateSlots(log.schedule_id);
-        get().loadStats(log.schedule_id);
-      }
+      const id = crypto.randomUUID();
+      const newLog: MedicationLog = { id, ...log } as MedicationLog;
+      await invoke('create_medication_log', { log: newLog });
+      set((state) => ({ logs: [newLog, ...state.logs] }));
+      get().generateSlots(log.schedule_id);
+      get().loadStats(log.schedule_id);
       return newLog;
     } catch (error) {
       console.error('[addLog] 기록 추가 실패:', error);
@@ -255,46 +226,42 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     }
   },
 
-  editLog: (id, updates) => {
+  editLog: async (id, updates) => {
     try {
-      const success = updateMedicationLog(id, updates);
-      if (success) {
-        const log = get().logs.find((l) => l.id === id);
-        if (log) {
-          set((state) => ({
-            logs: state.logs.map((l) =>
-              l.id === id ? { ...l, ...updates } : l
-            ),
-          }));
+      const log = get().logs.find((l) => l.id === id);
+      if (!log) return false;
 
-          // 슬롯 및 통계 업데이트
-          get().generateSlots(log.schedule_id);
-          get().loadStats(log.schedule_id);
-        }
-      }
-      return success;
+      await invoke('update_medication_log', {
+        id,
+        status: updates.status || log.status,
+        notes: updates.notes ?? log.notes,
+      });
+
+      set((state) => ({
+        logs: state.logs.map((l) => (l.id === id ? { ...l, ...updates } : l)),
+      }));
+
+      get().generateSlots(log.schedule_id);
+      get().loadStats(log.schedule_id);
+      return true;
     } catch (error) {
       console.error('[editLog] 기록 수정 실패:', error);
       return false;
     }
   },
 
-  removeLog: (id) => {
+  removeLog: async (id) => {
     try {
       const log = get().logs.find((l) => l.id === id);
-      const success = deleteMedicationLog(id);
-      if (success) {
-        set((state) => ({
-          logs: state.logs.filter((l) => l.id !== id),
-        }));
-
-        // 슬롯 및 통계 업데이트
-        if (log) {
-          get().generateSlots(log.schedule_id);
-          get().loadStats(log.schedule_id);
-        }
+      await invoke('delete_medication_log', { id });
+      set((state) => ({
+        logs: state.logs.filter((l) => l.id !== id),
+      }));
+      if (log) {
+        get().generateSlots(log.schedule_id);
+        get().loadStats(log.schedule_id);
       }
-      return success;
+      return true;
     } catch (error) {
       console.error('[removeLog] 기록 삭제 실패:', error);
       return false;
@@ -303,15 +270,15 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   // ===== 슬롯 관련 =====
 
-  generateSlots: (scheduleId) => {
+  generateSlots: async (scheduleId) => {
     try {
-      const schedule = getMedicationSchedule(scheduleId);
+      const schedule = await invoke<MedicationSchedule | null>('get_medication_schedule', { id: scheduleId });
       if (!schedule) {
         set({ slots: [] });
         return;
       }
 
-      const logs = getMedicationLogs(scheduleId);
+      const logs = await invoke<MedicationLog[]>('list_medication_logs', { scheduleId });
       const slots = generateMedicationSlots(schedule, logs);
       set({ slots });
     } catch (error) {
@@ -320,55 +287,49 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     }
   },
 
-  updateSlotStatus: (date, time, status, notes) => {
+  updateSlotStatus: async (date, time, status, notes) => {
     try {
       const { selectedSchedule, slots } = get();
       if (!selectedSchedule) return false;
 
-      // 기존 슬롯 찾기
       const slot = slots.find((s) => s.date === date && s.time === time);
       if (!slot) return false;
 
-      // taken_at 생성 (날짜 + 시간)
       const taken_at = `${date}T${time}:00`;
 
       if (slot.log_id) {
-        // 기존 기록 수정
-        const success = updateMedicationLog(slot.log_id, { status, notes });
-        if (success) {
-          set((state) => ({
-            logs: state.logs.map((l) =>
-              l.id === slot.log_id ? { ...l, status, notes } : l
-            ),
-            slots: state.slots.map((s) =>
-              s.date === date && s.time === time ? { ...s, status } : s
-            ),
-          }));
-          get().loadStats(selectedSchedule.id);
-        }
-        return success;
+        await invoke('update_medication_log', { id: slot.log_id, status, notes });
+        set((state) => ({
+          logs: state.logs.map((l) =>
+            l.id === slot.log_id ? { ...l, status, notes } : l
+          ),
+          slots: state.slots.map((s) =>
+            s.date === date && s.time === time ? { ...s, status } : s
+          ),
+        }));
+        get().loadStats(selectedSchedule.id);
+        return true;
       } else {
-        // 새 기록 생성
-        const newLog = createMedicationLog({
+        const id = crypto.randomUUID();
+        const newLog: MedicationLog = {
+          id,
           schedule_id: selectedSchedule.id,
           taken_at,
           status,
           notes,
-        });
+        } as MedicationLog;
 
-        if (newLog) {
-          set((state) => ({
-            logs: [newLog, ...state.logs],
-            slots: state.slots.map((s) =>
-              s.date === date && s.time === time
-                ? { ...s, status, log_id: newLog.id }
-                : s
-            ),
-          }));
-          get().loadStats(selectedSchedule.id);
-          return true;
-        }
-        return false;
+        await invoke('create_medication_log', { log: newLog });
+        set((state) => ({
+          logs: [newLog, ...state.logs],
+          slots: state.slots.map((s) =>
+            s.date === date && s.time === time
+              ? { ...s, status, log_id: id }
+              : s
+          ),
+        }));
+        get().loadStats(selectedSchedule.id);
+        return true;
       }
     } catch (error) {
       console.error('[updateSlotStatus] 상태 업데이트 실패:', error);
@@ -378,14 +339,10 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   // ===== 통계 관련 =====
 
-  loadStats: (scheduleId) => {
-    try {
-      const stats = getMedicationStats(scheduleId);
-      set({ stats });
-    } catch (error) {
-      console.error('[loadStats] 통계 로드 실패:', error);
-      set({ stats: null });
-    }
+  loadStats: (_scheduleId) => {
+    // Stats will be calculated from logs on the frontend side
+    // or we can add a dedicated command later
+    set({ stats: null });
   },
 
   // ===== 유틸리티 =====

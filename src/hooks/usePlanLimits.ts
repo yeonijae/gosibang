@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { getDb } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 
 interface PlanPolicy {
   plan_type: 'free' | 'basic' | 'premium';
@@ -133,32 +133,12 @@ export function usePlanLimits() {
 
   // 사용량 계산
   const refreshUsage = useCallback(async () => {
-    const db = getDb();
-    if (!db) return;
-
     try {
-      // 환자 수
-      const patientsResult = db.exec('SELECT COUNT(*) as count FROM patients');
-      const patientCount = patientsResult[0]?.values[0]?.[0] as number || 0;
-
-      // 이번 달 처방 수
-      const now = new Date();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const prescriptionsResult = db.exec(
-        `SELECT COUNT(*) as count FROM prescriptions WHERE created_at >= '${firstDayOfMonth}'`
-      );
-      const prescriptionCount = prescriptionsResult[0]?.values[0]?.[0] as number || 0;
-
-      // 이번 달 차트 수 (initial_charts 테이블 사용)
-      const chartsResult = db.exec(
-        `SELECT COUNT(*) as count FROM initial_charts WHERE created_at >= '${firstDayOfMonth}'`
-      );
-      const chartCount = chartsResult[0]?.values[0]?.[0] as number || 0;
-
+      const counts = await invoke<[number, number, number]>('get_usage_counts');
       setUsage({
-        patients: patientCount,
-        prescriptionsThisMonth: prescriptionCount,
-        chartsThisMonth: chartCount,
+        patients: counts[0],
+        prescriptionsThisMonth: counts[1],
+        chartsThisMonth: counts[2],
       });
     } catch (err) {
       console.error('Failed to calculate usage:', err);
@@ -166,10 +146,7 @@ export function usePlanLimits() {
   }, []);
 
   useEffect(() => {
-    const db = getDb();
-    if (db) {
-      refreshUsage();
-    }
+    refreshUsage();
   }, [refreshUsage]);
 
   // 환자 추가 가능 여부

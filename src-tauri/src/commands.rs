@@ -704,3 +704,235 @@ pub fn save_survey_response_sync(
     .map_err(|e| e.to_string())
 }
 
+// ============ 처방 카테고리 명령어 ============
+
+#[tauri::command]
+pub fn list_prescription_categories() -> Result<Vec<crate::models::PrescriptionCategory>, String> {
+    db::list_prescription_categories().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_prescription_category(category: crate::models::PrescriptionCategory) -> Result<i64, String> {
+    db::create_prescription_category(&category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_prescription_category(category: crate::models::PrescriptionCategory) -> Result<(), String> {
+    db::update_prescription_category(&category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_prescription_category(id: i64) -> Result<(), String> {
+    db::delete_prescription_category(id).map_err(|e| e.to_string())
+}
+
+// ============ 약재 명령어 ============
+
+#[tauri::command]
+pub fn list_herbs() -> Result<Vec<crate::models::Herb>, String> {
+    db::list_herbs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_herb(herb: crate::models::Herb) -> Result<i64, String> {
+    db::create_herb(&herb).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_herb(herb: crate::models::Herb) -> Result<(), String> {
+    db::update_herb(&herb).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_herb(id: i64) -> Result<(), String> {
+    db::delete_herb(id).map_err(|e| e.to_string())
+}
+
+// ============ 처방 정의 명령어 ============
+
+#[tauri::command]
+pub fn list_prescription_definitions() -> Result<Vec<crate::models::PrescriptionDefinition>, String> {
+    db::list_prescription_definitions().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_prescription_definition(id: i64) -> Result<Option<crate::models::PrescriptionDefinition>, String> {
+    db::get_prescription_definition(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_prescription_definition(definition: crate::models::PrescriptionDefinition) -> Result<i64, String> {
+    db::create_prescription_definition(&definition).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_prescription_definition(definition: crate::models::PrescriptionDefinition) -> Result<(), String> {
+    db::update_prescription_definition(&definition).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_prescription_definition(id: i64) -> Result<(), String> {
+    db::delete_prescription_definition(id).map_err(|e| e.to_string())
+}
+
+// ============ 처방 노트 명령어 ============
+
+#[tauri::command]
+pub fn list_prescription_notes(prescription_definition_id: i64) -> Result<Vec<crate::models::PrescriptionNote>, String> {
+    db::list_prescription_notes(prescription_definition_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_prescription_note(note: crate::models::PrescriptionNote) -> Result<i64, String> {
+    db::create_prescription_note(&note).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_prescription_note(note: crate::models::PrescriptionNote) -> Result<(), String> {
+    db::update_prescription_note(&note).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_prescription_note(id: i64) -> Result<(), String> {
+    db::delete_prescription_note(id).map_err(|e| e.to_string())
+}
+
+// ============ 처방 치험례 명령어 ============
+
+#[tauri::command]
+pub fn list_prescription_case_studies(prescription_definition_id: i64) -> Result<Vec<crate::models::PrescriptionCaseStudy>, String> {
+    db::list_prescription_case_studies(prescription_definition_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_prescription_case_study(case_study: crate::models::PrescriptionCaseStudy) -> Result<i64, String> {
+    db::create_prescription_case_study(&case_study).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_prescription_case_study(case_study: crate::models::PrescriptionCaseStudy) -> Result<(), String> {
+    db::update_prescription_case_study(&case_study).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_prescription_case_study(id: i64) -> Result<(), String> {
+    db::delete_prescription_case_study(id).map_err(|e| e.to_string())
+}
+
+// ============ 복약 관리 (해피콜) 명령어 ============
+
+#[tauri::command]
+pub fn list_medication_management() -> Result<Vec<crate::models::MedicationManagement>, String> {
+    db::list_medication_management().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_medication_management(medication: crate::models::MedicationManagement) -> Result<(), String> {
+    db::create_medication_management(&medication).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_medication_management(medication: crate::models::MedicationManagement) -> Result<(), String> {
+    db::update_medication_management(&medication).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_medication_management(id: String) -> Result<(), String> {
+    db::delete_medication_management(&id).map_err(|e| e.to_string())
+}
+
+// ============ 복약 스케줄 명령어 ============
+
+#[tauri::command]
+pub fn list_medication_schedules(patient_id: Option<String>) -> Result<Vec<crate::models::MedicationSchedule>, String> {
+    db::list_medication_schedules_cmd(patient_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_medication_schedule(id: String) -> Result<Option<crate::models::MedicationSchedule>, String> {
+    db::get_medication_schedule_cmd(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_medication_schedule(schedule: crate::models::MedicationSchedule) -> Result<(), String> {
+    db::create_medication_schedule_cmd(&schedule).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_medication_schedule(schedule: crate::models::MedicationSchedule) -> Result<(), String> {
+    db::update_medication_schedule_cmd(&schedule).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_medication_schedule(id: String) -> Result<(), String> {
+    db::delete_medication_schedule_cmd(&id).map_err(|e| e.to_string())
+}
+
+// ============ 복약 기록 명령어 ============
+
+#[tauri::command]
+pub fn list_medication_logs(schedule_id: String) -> Result<Vec<crate::models::MedicationLog>, String> {
+    db::list_medication_logs_cmd(&schedule_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_medication_log(log: crate::models::MedicationLog) -> Result<(), String> {
+    db::create_medication_log_cmd(&log).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_medication_log(id: String, status: String, notes: Option<String>) -> Result<(), String> {
+    db::update_medication_log_cmd(&id, &status, notes.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_medication_log(id: String) -> Result<(), String> {
+    db::delete_medication_log_cmd(&id).map_err(|e| e.to_string())
+}
+
+// ============ 알림 설정 명령어 ============
+
+#[tauri::command]
+pub fn get_notification_settings() -> Result<Option<crate::models::NotificationSettings>, String> {
+    db::get_notification_settings_cmd().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_notification_settings(settings: crate::models::NotificationSettings) -> Result<(), String> {
+    db::save_notification_settings_cmd(&settings).map_err(|e| e.to_string())
+}
+
+// ============ 알림 기록 명령어 ============
+
+#[tauri::command]
+pub fn list_notifications(limit: Option<i32>) -> Result<Vec<crate::models::Notification>, String> {
+    db::list_notifications_cmd(limit.unwrap_or(100)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_unread_notification_count() -> Result<i32, String> {
+    db::get_unread_notification_count_cmd().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_notification(notification: crate::models::Notification) -> Result<(), String> {
+    db::create_notification_cmd(&notification).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_notification(id: String, is_read: Option<bool>, is_dismissed: Option<bool>, read_at: Option<String>) -> Result<(), String> {
+    db::update_notification_cmd(&id, is_read, is_dismissed, read_at.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_notification(id: String) -> Result<(), String> {
+    db::delete_notification_cmd(&id).map_err(|e| e.to_string())
+}
+
+// ============ 사용량 카운트 명령어 ============
+
+#[tauri::command]
+pub fn get_usage_counts() -> Result<(i32, i32, i32), String> {
+    db::get_usage_counts().map_err(|e| e.to_string())
+}
+

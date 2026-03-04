@@ -41,11 +41,25 @@ export function Patients() {
   const [patientCounts, setPatientCounts] = useState<Record<string, { prescriptions: number; charts: number; surveys: number }>>({});
 
   // 환자별 내역 개수 조회
-  const loadPatientCounts = (patientList: Patient[]) => {
+  const loadPatientCounts = async (patientList: Patient[]) => {
     const db = getDb();
     if (!db) return;
 
     const counts: Record<string, { prescriptions: number; charts: number; surveys: number }> = {};
+
+    // clinic.db에서 설문 응답 전체 조회하여 환자별 카운트 계산
+    let surveyCounts: Record<string, number> = {};
+    try {
+      const allResponses = await useSurveyStore.getState().loadResponses();
+      const responses = useSurveyStore.getState().responses;
+      for (const r of responses) {
+        if (r.patient_id) {
+          surveyCounts[r.patient_id] = (surveyCounts[r.patient_id] || 0) + 1;
+        }
+      }
+    } catch (e) {
+      console.error('설문 카운트 조회 실패:', e);
+    }
 
     for (const patient of patientList) {
       const prescriptionCount = queryToObjects<{ cnt: number }>(
@@ -60,13 +74,11 @@ export function Patients() {
         [patient.id]
       )[0]?.cnt || 0;
 
-      const surveyCount = queryToObjects<{ cnt: number }>(
-        db,
-        'SELECT COUNT(*) as cnt FROM survey_responses WHERE patient_id = ?',
-        [patient.id]
-      )[0]?.cnt || 0;
-
-      counts[patient.id] = { prescriptions: prescriptionCount, charts: chartCount, surveys: surveyCount };
+      counts[patient.id] = {
+        prescriptions: prescriptionCount,
+        charts: chartCount,
+        surveys: surveyCounts[patient.id] || 0,
+      };
     }
 
     setPatientCounts(counts);
@@ -1032,19 +1044,9 @@ function PatientSurveyModal({ patient, onClose }: PatientSurveyModalProps) {
   const loadSurveyResponses = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) return;
 
-      // 응답 조회
-      const responses = queryToObjects<SurveyResponse & { template_name?: string }>(
-        db,
-        `SELECT sr.*, st.name as template_name
-         FROM survey_responses sr
-         LEFT JOIN survey_templates st ON sr.template_id = st.id
-         WHERE sr.patient_id = ?
-         ORDER BY sr.submitted_at DESC`,
-        [patient.id]
-      );
+      // clinic.db(Tauri)에서 환자별 응답 조회
+      const responses = await useSurveyStore.getState().getResponsesByPatient(patient.id);
 
       // 응답에 템플릿 정보 연결 (store에서 가져옴)
       const parsed = responses.map(r => ({
