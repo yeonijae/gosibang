@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut, Bell } from 'lucide-react';
+import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
 import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
@@ -24,7 +24,6 @@ import type { BackupSettings, BackupHistoryItem, CleanupInfo } from '../lib/back
 import type { ClinicSettings, Subscription, DisplayConfig, UserSession } from '../types';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { StaffAccountsTab } from '../components/StaffAccountsTab';
-import { NotificationSettings } from '../components/notification';
 
 // 내보내기 항목 레이블
 const EXPORT_LABELS: Record<string, string> = {
@@ -168,7 +167,7 @@ export function Settings() {
   const [cleanupInfo, setCleanupInfo] = useState<CleanupInfo | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
-  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts' | 'notifications'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
 
   // 내 정보 관련 상태
   interface UserProfile {
@@ -1015,17 +1014,6 @@ export function Settings() {
             </button>
           )}
           <button
-            onClick={() => setActiveTab('notifications')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
-              activeTab === 'notifications'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Bell className="w-4 h-4" />
-            알림
-          </button>
-          <button
             onClick={() => setActiveTab('sessions')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
               activeTab === 'sessions'
@@ -1036,19 +1024,17 @@ export function Settings() {
             <Smartphone className="w-4 h-4" />
             기기 관리
           </button>
-          {canUseFeature('staff_accounts') && (
-            <button
-              onClick={() => setActiveTab('staff_accounts')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
-                activeTab === 'staff_accounts'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              내부계정
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('staff_accounts')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-1 ${
+              activeTab === 'staff_accounts'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Monitor className="w-4 h-4" />
+            원내서버
+          </button>
         </nav>
       </div>
 
@@ -1985,15 +1971,8 @@ export function Settings() {
         </div>
       )}
 
-      {/* 알림 설정 탭 */}
-      {activeTab === 'notifications' && (
-        <div className="max-w-2xl">
-          <NotificationSettings />
-        </div>
-      )}
-
-      {/* 내부계정 탭 */}
-      {activeTab === 'staff_accounts' && canUseFeature('staff_accounts') && (
+      {/* 원내서버 탭 */}
+      {activeTab === 'staff_accounts' && (
         <StaffAccountsTab />
       )}
 
