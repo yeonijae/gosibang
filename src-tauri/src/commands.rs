@@ -297,6 +297,10 @@ pub async fn initialize_encrypted_db(access_token: String, user_id: String) -> R
     // Supabase 초기화 확인
     auth::ensure_supabase_initialized();
 
+    // Access token과 User ID를 Rust 백엔드에 저장 (Staff 페이지 등에서 사용)
+    auth::store_access_token(&access_token);
+    auth::store_user_id(&user_id);
+
     log::info!("Initializing encrypted DB for user: {}", &user_id[..8.min(user_id.len())]);
 
     // Supabase에서 암호화 키 조회 또는 생성

@@ -284,7 +284,7 @@ pub async fn signup(email: &str, password: &str) -> AppResult<String> {
 // ============ Access Token / User ID 관리 ============
 
 /// Access token 저장
-fn store_access_token(token: &str) {
+pub fn store_access_token(token: &str) {
     let _ = ACCESS_TOKEN.get_or_init(|| Mutex::new(None));
     if let Some(mutex) = ACCESS_TOKEN.get() {
         if let Ok(mut guard) = mutex.lock() {
@@ -294,7 +294,7 @@ fn store_access_token(token: &str) {
 }
 
 /// User ID 저장
-fn store_user_id(user_id: &str) {
+pub fn store_user_id(user_id: &str) {
     let _ = CURRENT_USER_ID.get_or_init(|| Mutex::new(None));
     if let Some(mutex) = CURRENT_USER_ID.get() {
         if let Ok(mut guard) = mutex.lock() {
