@@ -1,10 +1,6 @@
 import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import {
-  Bold, Italic, Heading1, Heading2, Heading3,
-  Quote, List, ListOrdered, Link as LinkIcon, Unlink,
-  ImagePlus, Undo2, Redo2, Highlighter, Palette, Type,
-} from 'lucide-react';
+// lucide-react icons removed (unused after toolbar simplification)
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { ensureHtml, fileToBase64 } from '../lib/contentUtils';
 import { resolveImageUrls, unresolveImageUrls, getDisplayUrl, registerResolvedImage } from '../lib/imageStorage';

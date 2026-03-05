@@ -67,18 +67,37 @@ impl Patient {
     }
 }
 
-/// 한약 처방
+/// 한약 처방 (통합 스키마 - Charts/Prescriptions/Medications 공용)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prescription {
     pub id: String,
-    pub patient_id: String,
-    pub prescription_name: String,       // 처방명 (예: 보중익기탕)
-    pub herbs: Vec<HerbItem>,            // 약재 구성
-    pub dosage_instructions: Option<String>, // 복용 방법
-    pub total_days: i32,                 // 총 복용 일수
-    pub notes: Option<String>,           // 처방 메모
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub patient_id: Option<String>,
+    pub patient_name: Option<String>,
+    pub prescription_name: Option<String>,    // 처방명
+    pub chart_number: Option<String>,
+    pub patient_age: Option<String>,
+    pub patient_gender: Option<String>,
+    pub source_type: Option<String>,          // 'initial_chart' | 'progress_note'
+    pub source_id: Option<String>,
+    pub formula: String,                      // 처방 공식
+    pub merged_herbs: String,                 // JSON 문자열
+    pub final_herbs: String,                  // JSON 문자열
+    pub total_doses: f64,                     // 총 첩수
+    pub days: i32,                            // 복용 일수
+    pub doses_per_day: i32,                   // 일 복용 횟수
+    pub total_packs: i32,                     // 총 팩 수
+    pub pack_volume: Option<f64>,             // 팩 용량 (ml)
+    pub water_amount: Option<f64>,            // 탕전 물양 (ml)
+    pub herb_adjustment: Option<String>,      // 약재 가감 메모
+    pub total_dosage: f64,                    // 1첩 총량
+    pub final_total_amount: f64,              // 최종 총량
+    pub notes: Option<String>,
+    pub status: String,                       // 'draft' | 'issued' | 'completed'
+    pub issued_at: Option<String>,
+    pub created_by: Option<String>,
+    pub deleted_at: Option<String>,           // 소프트 삭제
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// 약재 항목

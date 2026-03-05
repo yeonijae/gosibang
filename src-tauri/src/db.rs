@@ -362,15 +362,34 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
             updated_at TEXT NOT NULL
         );
 
-        -- 처방
+        -- 처방 (통합 스키마)
         CREATE TABLE IF NOT EXISTS prescriptions (
             id TEXT PRIMARY KEY,
-            patient_id TEXT NOT NULL,
-            prescription_name TEXT NOT NULL,
-            herbs TEXT NOT NULL,
-            dosage_instructions TEXT,
-            total_days INTEGER NOT NULL,
+            patient_id TEXT,
+            patient_name TEXT,
+            prescription_name TEXT,
+            chart_number TEXT,
+            patient_age TEXT,
+            patient_gender TEXT,
+            source_type TEXT,
+            source_id TEXT,
+            formula TEXT NOT NULL DEFAULT '',
+            merged_herbs TEXT NOT NULL DEFAULT '[]',
+            final_herbs TEXT NOT NULL DEFAULT '[]',
+            total_doses REAL NOT NULL DEFAULT 0,
+            days INTEGER NOT NULL DEFAULT 0,
+            doses_per_day INTEGER NOT NULL DEFAULT 0,
+            total_packs INTEGER NOT NULL DEFAULT 0,
+            pack_volume REAL,
+            water_amount REAL,
+            herb_adjustment TEXT,
+            total_dosage REAL NOT NULL DEFAULT 0,
+            final_total_amount REAL NOT NULL DEFAULT 0,
             notes TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            issued_at TEXT,
+            created_by TEXT,
+            deleted_at TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY (patient_id) REFERENCES patients(id)
@@ -660,6 +679,35 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         [],
     );
 
+    // prescriptions 테이블 마이그레이션 (기존 9필드 → 28필드)
+    let new_columns = [
+        "ALTER TABLE prescriptions ADD COLUMN patient_name TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN chart_number TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN patient_age TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN patient_gender TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN source_type TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN source_id TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN formula TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE prescriptions ADD COLUMN merged_herbs TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE prescriptions ADD COLUMN final_herbs TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE prescriptions ADD COLUMN total_doses REAL NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN days INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN doses_per_day INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN total_packs INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN pack_volume REAL",
+        "ALTER TABLE prescriptions ADD COLUMN water_amount REAL",
+        "ALTER TABLE prescriptions ADD COLUMN herb_adjustment TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN total_dosage REAL NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN final_total_amount REAL NOT NULL DEFAULT 0",
+        "ALTER TABLE prescriptions ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'",
+        "ALTER TABLE prescriptions ADD COLUMN issued_at TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN created_by TEXT",
+        "ALTER TABLE prescriptions ADD COLUMN deleted_at TEXT",
+    ];
+    for sql in &new_columns {
+        let _ = conn.execute(sql, []);
+    }
+
     // 처방 정의 기본 데이터 삽입 (비어있을 때만)
     let count: i32 = conn.query_row(
         "SELECT COUNT(*) FROM prescription_definitions",
@@ -929,57 +977,164 @@ pub fn delete_patient(id: &str) -> AppResult<()> {
 
 pub fn create_prescription(prescription: &Prescription) -> AppResult<()> {
     let conn = get_conn()?;
-    let herbs_json = serde_json::to_string(&prescription.herbs)?;
     conn.execute(
-        r#"INSERT INTO prescriptions (id, patient_id, prescription_name, herbs, dosage_instructions, total_days, notes, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+        r#"INSERT INTO prescriptions (
+            id, patient_id, patient_name, prescription_name, chart_number,
+            patient_age, patient_gender, source_type, source_id,
+            formula, merged_herbs, final_herbs, total_doses, days, doses_per_day,
+            total_packs, pack_volume, water_amount, herb_adjustment, total_dosage,
+            final_total_amount, notes, status, issued_at, created_by, deleted_at,
+            created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)"#,
         params![
             prescription.id,
             prescription.patient_id,
+            prescription.patient_name,
             prescription.prescription_name,
-            herbs_json,
-            prescription.dosage_instructions,
-            prescription.total_days,
+            prescription.chart_number,
+            prescription.patient_age,
+            prescription.patient_gender,
+            prescription.source_type,
+            prescription.source_id,
+            prescription.formula,
+            prescription.merged_herbs,
+            prescription.final_herbs,
+            prescription.total_doses,
+            prescription.days,
+            prescription.doses_per_day,
+            prescription.total_packs,
+            prescription.pack_volume,
+            prescription.water_amount,
+            prescription.herb_adjustment,
+            prescription.total_dosage,
+            prescription.final_total_amount,
             prescription.notes,
-            prescription.created_at.to_rfc3339(),
-            prescription.updated_at.to_rfc3339(),
+            prescription.status,
+            prescription.issued_at,
+            prescription.created_by,
+            prescription.deleted_at,
+            prescription.created_at,
+            prescription.updated_at,
         ],
     )?;
     Ok(())
 }
 
+fn row_to_prescription(row: &rusqlite::Row) -> rusqlite::Result<Prescription> {
+    Ok(Prescription {
+        id: row.get("id")?,
+        patient_id: row.get("patient_id")?,
+        patient_name: row.get("patient_name")?,
+        prescription_name: row.get("prescription_name")?,
+        chart_number: row.get("chart_number")?,
+        patient_age: row.get("patient_age")?,
+        patient_gender: row.get("patient_gender")?,
+        source_type: row.get("source_type")?,
+        source_id: row.get("source_id")?,
+        formula: row.get("formula")?,
+        merged_herbs: row.get("merged_herbs")?,
+        final_herbs: row.get("final_herbs")?,
+        total_doses: row.get("total_doses")?,
+        days: row.get("days")?,
+        doses_per_day: row.get("doses_per_day")?,
+        total_packs: row.get("total_packs")?,
+        pack_volume: row.get("pack_volume")?,
+        water_amount: row.get("water_amount")?,
+        herb_adjustment: row.get("herb_adjustment")?,
+        total_dosage: row.get("total_dosage")?,
+        final_total_amount: row.get("final_total_amount")?,
+        notes: row.get("notes")?,
+        status: row.get("status")?,
+        issued_at: row.get("issued_at")?,
+        created_by: row.get("created_by")?,
+        deleted_at: row.get("deleted_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
 pub fn get_prescriptions_by_patient(patient_id: &str) -> AppResult<Vec<Prescription>> {
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
-        "SELECT id, patient_id, prescription_name, herbs, dosage_instructions, total_days, notes, created_at, updated_at
-         FROM prescriptions WHERE patient_id = ?1 ORDER BY created_at DESC",
+        "SELECT * FROM prescriptions WHERE patient_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC",
     )?;
 
-    let rows = stmt.query_map([patient_id], |row| {
-        let herbs_json: String = row.get(3)?;
-        let herbs: Vec<HerbItem> = serde_json::from_str(&herbs_json).unwrap_or_default();
-        Ok(Prescription {
-            id: row.get(0)?,
-            patient_id: row.get(1)?,
-            prescription_name: row.get(2)?,
-            herbs,
-            dosage_instructions: row.get(4)?,
-            total_days: row.get(5)?,
-            notes: row.get(6)?,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
-                .unwrap()
-                .with_timezone(&Utc),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
-                .unwrap()
-                .with_timezone(&Utc),
-        })
-    })?;
+    let rows = stmt.query_map([patient_id], |row| row_to_prescription(row))?;
 
     let mut prescriptions = Vec::new();
     for row in rows {
         prescriptions.push(row?);
     }
     Ok(prescriptions)
+}
+
+pub fn list_all_prescriptions() -> AppResult<Vec<Prescription>> {
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT * FROM prescriptions WHERE deleted_at IS NULL ORDER BY created_at DESC",
+    )?;
+
+    let rows = stmt.query_map([], |row| row_to_prescription(row))?;
+
+    let mut prescriptions = Vec::new();
+    for row in rows {
+        prescriptions.push(row?);
+    }
+    Ok(prescriptions)
+}
+
+pub fn update_prescription(prescription: &Prescription) -> AppResult<()> {
+    let conn = get_conn()?;
+    conn.execute(
+        r#"UPDATE prescriptions SET
+            patient_id = ?1, patient_name = ?2, prescription_name = ?3, chart_number = ?4,
+            patient_age = ?5, patient_gender = ?6, source_type = ?7, source_id = ?8,
+            formula = ?9, merged_herbs = ?10, final_herbs = ?11, total_doses = ?12,
+            days = ?13, doses_per_day = ?14, total_packs = ?15, pack_volume = ?16,
+            water_amount = ?17, herb_adjustment = ?18, total_dosage = ?19,
+            final_total_amount = ?20, notes = ?21, status = ?22, issued_at = ?23,
+            created_by = ?24, updated_at = ?25
+        WHERE id = ?26"#,
+        params![
+            prescription.patient_id,
+            prescription.patient_name,
+            prescription.prescription_name,
+            prescription.chart_number,
+            prescription.patient_age,
+            prescription.patient_gender,
+            prescription.source_type,
+            prescription.source_id,
+            prescription.formula,
+            prescription.merged_herbs,
+            prescription.final_herbs,
+            prescription.total_doses,
+            prescription.days,
+            prescription.doses_per_day,
+            prescription.total_packs,
+            prescription.pack_volume,
+            prescription.water_amount,
+            prescription.herb_adjustment,
+            prescription.total_dosage,
+            prescription.final_total_amount,
+            prescription.notes,
+            prescription.status,
+            prescription.issued_at,
+            prescription.created_by,
+            prescription.updated_at,
+            prescription.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn soft_delete_prescription(id: &str) -> AppResult<()> {
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE prescriptions SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![now, id],
+    )?;
+    Ok(())
 }
 
 // ============ 차팅 관리 ============

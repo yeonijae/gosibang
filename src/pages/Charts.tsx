@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send, Search } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { getDb, saveDb, generateUUID, queryToObjects, queryOne, softDelete } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import PrescriptionInput from '../components/PrescriptionInput';
 import type { PrescriptionData } from '../components/PrescriptionInput';
 import type { InitialChart, ProgressNote, Patient, ProgressEntry } from '../types';
@@ -698,44 +699,41 @@ export function Charts() {
 
       console.log('[처방전 저장] patientId:', patientId, 'patientName:', patientName, 'chartNumber:', chartNumber);
 
-      // prescriptions 테이블에 저장
-      db.run(
-        `INSERT INTO prescriptions (
-          id, patient_id, patient_name, prescription_name, chart_number,
-          source_type, source_id, formula,
-          merged_herbs, final_herbs, total_doses, days, doses_per_day,
-          total_packs, pack_volume, water_amount, herb_adjustment, total_dosage,
-          final_total_amount, notes, status, issued_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          prescriptionId,
-          patientId || null,
-          patientName || null,
-          data.formula, // prescription_name
-          chartNumber || null,
-          prescriptionSourceType,
-          prescriptionSourceId,
-          data.formula,
-          JSON.stringify(data.mergedHerbs),
-          JSON.stringify(data.finalHerbs),
-          data.totalDoses,
-          data.days,
-          data.dosesPerDay,
-          data.totalPacks,
-          data.packVolume,
-          data.waterAmount,
-          data.herbAdjustment || null,
-          data.totalDosage,
-          data.finalTotalAmount,
-          data.notes || null,
-          'issued',
-          now,
-          now,
-          now
-        ]
-      );
+      // Rust clinic.db에 처방 저장 (invoke)
+      await invoke('create_prescription', {
+        prescription: {
+          id: prescriptionId,
+          patient_id: patientId || null,
+          patient_name: patientName || null,
+          prescription_name: data.formula,
+          chart_number: chartNumber || null,
+          patient_age: null,
+          patient_gender: null,
+          source_type: prescriptionSourceType || null,
+          source_id: prescriptionSourceId || null,
+          formula: data.formula,
+          merged_herbs: JSON.stringify(data.mergedHerbs),
+          final_herbs: JSON.stringify(data.finalHerbs),
+          total_doses: data.totalDoses,
+          days: data.days,
+          doses_per_day: data.dosesPerDay,
+          total_packs: data.totalPacks,
+          pack_volume: data.packVolume,
+          water_amount: data.waterAmount,
+          herb_adjustment: data.herbAdjustment || null,
+          total_dosage: data.totalDosage,
+          final_total_amount: data.finalTotalAmount,
+          notes: data.notes || null,
+          status: 'issued',
+          issued_at: now,
+          created_by: null,
+          deleted_at: null,
+          created_at: now,
+          updated_at: now,
+        }
+      });
 
-      // 처방발급 상태 업데이트
+      // 처방발급 상태 업데이트 (localDb - initial_charts/progress_notes는 아직 localDb 의존)
       if (prescriptionSourceType === 'initial_chart' && prescriptionSourceId) {
         db.run(
           `UPDATE initial_charts SET prescription_issued = 1, prescription_issued_at = ? WHERE id = ?`,

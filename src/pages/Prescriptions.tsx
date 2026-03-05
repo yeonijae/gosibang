@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X, Search } from 'lucide-react';
-import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { Prescription } from '../types';
@@ -32,16 +32,10 @@ export function Prescriptions() {
   }, []);
 
   // 처방 정의 로드 (alias 검색용)
-  const loadPrescriptionDefs = () => {
+  const loadPrescriptionDefs = async () => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const defs = queryToObjects<PrescriptionDefForSearch>(
-        db,
-        'SELECT name, alias FROM prescription_definitions'
-      );
-      setPrescriptionDefs(defs);
+      const defs = await invoke<PrescriptionDefForSearch[]>('list_prescription_definitions');
+      setPrescriptionDefs(defs.map(d => ({ name: d.name, alias: d.alias })));
     } catch (error) {
       console.error('처방 정의 로드 실패:', error);
     }
@@ -50,19 +44,10 @@ export function Prescriptions() {
   const loadPrescriptions = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) {
-        setLoading(false);
-        return;
-      }
+      const data = await invoke<Prescription[]>('list_all_prescriptions');
 
-      const data = queryToObjects<Prescription>(
-        db,
-        'SELECT * FROM prescriptions WHERE deleted_at IS NULL ORDER BY created_at DESC'
-      );
-
-      // JSON 파싱
-      const parsed = data.map((p) => ({
+      // JSON 문자열 파싱
+      const parsed = data.map((p: any) => ({
         ...p,
         merged_herbs: typeof p.merged_herbs === 'string' ? JSON.parse(p.merged_herbs) : p.merged_herbs,
         final_herbs: typeof p.final_herbs === 'string' ? JSON.parse(p.final_herbs) : p.final_herbs,
@@ -78,44 +63,46 @@ export function Prescriptions() {
 
   const handleSaveNew = async (data: PrescriptionData) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      const id = generateUUID();
+      const id = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO prescriptions (id, patient_name, prescription_name, formula, merged_herbs, final_herbs, total_doses, days, doses_per_day, total_packs, pack_volume, water_amount, herb_adjustment, total_dosage, final_total_amount, notes, status, issued_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+      await invoke('create_prescription', {
+        prescription: {
           id,
-          data.patientName || '',
-          data.formula, // prescription_name
-          data.formula,
-          JSON.stringify(data.mergedHerbs),
-          JSON.stringify(data.finalHerbs),
-          data.totalDoses,
-          data.days,
-          data.dosesPerDay,
-          data.totalPacks,
-          data.packVolume,
-          data.waterAmount,
-          data.herbAdjustment || null,
-          data.totalDosage,
-          data.finalTotalAmount,
-          data.notes || null,
-          'issued',
-          now,
-          now,
-          now,
-        ]
-      );
-      saveDb();
+          patient_id: null,
+          patient_name: data.patientName || '',
+          prescription_name: data.formula,
+          chart_number: null,
+          patient_age: null,
+          patient_gender: null,
+          source_type: null,
+          source_id: null,
+          formula: data.formula,
+          merged_herbs: JSON.stringify(data.mergedHerbs),
+          final_herbs: JSON.stringify(data.finalHerbs),
+          total_doses: data.totalDoses,
+          days: data.days,
+          doses_per_day: data.dosesPerDay,
+          total_packs: data.totalPacks,
+          pack_volume: data.packVolume,
+          water_amount: data.waterAmount,
+          herb_adjustment: data.herbAdjustment || null,
+          total_dosage: data.totalDosage,
+          final_total_amount: data.finalTotalAmount,
+          notes: data.notes || null,
+          status: 'issued',
+          issued_at: now,
+          created_by: null,
+          deleted_at: null,
+          created_at: now,
+          updated_at: now,
+        }
+      });
 
       alert('처방전이 저장되었습니다.');
       setViewMode('list');
       loadPrescriptions();
-      refreshUsage(); // 사용량 갱신
+      refreshUsage();
     } catch (error) {
       console.error('처방 저장 실패:', error);
       alert('처방 저장에 실패했습니다.');
@@ -136,34 +123,29 @@ export function Prescriptions() {
     if (!editingPrescription) return;
 
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
 
-      db.run(
-        `UPDATE prescriptions SET patient_name = ?, formula = ?, merged_herbs = ?, final_herbs = ?, total_doses = ?, days = ?, doses_per_day = ?, total_packs = ?, pack_volume = ?, water_amount = ?, herb_adjustment = ?, total_dosage = ?, final_total_amount = ?, notes = ?, updated_at = ?
-         WHERE id = ?`,
-        [
-          data.patientName || '',
-          data.formula,
-          JSON.stringify(data.mergedHerbs),
-          JSON.stringify(data.finalHerbs),
-          data.totalDoses,
-          data.days,
-          data.dosesPerDay,
-          data.totalPacks,
-          data.packVolume,
-          data.waterAmount,
-          data.herbAdjustment || null,
-          data.totalDosage,
-          data.finalTotalAmount,
-          data.notes || null,
-          now,
-          editingPrescription.id,
-        ]
-      );
-      saveDb();
+      await invoke('update_prescription', {
+        prescription: {
+          ...editingPrescription,
+          patient_name: data.patientName || '',
+          prescription_name: data.formula,
+          formula: data.formula,
+          merged_herbs: JSON.stringify(data.mergedHerbs),
+          final_herbs: JSON.stringify(data.finalHerbs),
+          total_doses: data.totalDoses,
+          days: data.days,
+          doses_per_day: data.dosesPerDay,
+          total_packs: data.totalPacks,
+          pack_volume: data.packVolume,
+          water_amount: data.waterAmount,
+          herb_adjustment: data.herbAdjustment || null,
+          total_dosage: data.totalDosage,
+          final_total_amount: data.finalTotalAmount,
+          notes: data.notes || null,
+          updated_at: now,
+        }
+      });
 
       alert('처방전이 수정되었습니다.');
       setViewMode('list');
@@ -177,23 +159,27 @@ export function Prescriptions() {
 
   const handleDelete = async (id: string) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       // 삭제할 처방전 정보 조회 (source_type, source_id 확인)
       const prescription = prescriptions.find(p => p.id === id);
 
-      const success = softDelete('prescriptions', id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_prescription', { id });
 
-      // 처방전의 source 차트가 있으면 prescription_issued 상태 초기화
+      // 처방전의 source 차트가 있으면 prescription_issued 상태 초기화 (localDb)
       if (prescription?.source_type && prescription?.source_id) {
-        const tableName = prescription.source_type === 'initial_chart' ? 'initial_charts' : 'progress_notes';
-        db.run(
-          `UPDATE ${tableName} SET prescription_issued = 0, prescription_issued_at = NULL WHERE id = ?`,
-          [prescription.source_id]
-        );
-        saveDb();
+        try {
+          const { getDb, saveDb } = await import('../lib/localDb');
+          const db = getDb();
+          if (db) {
+            const tableName = prescription.source_type === 'initial_chart' ? 'initial_charts' : 'progress_notes';
+            db.run(
+              `UPDATE ${tableName} SET prescription_issued = 0, prescription_issued_at = NULL WHERE id = ?`,
+              [prescription.source_id]
+            );
+            saveDb();
+          }
+        } catch (e) {
+          console.warn('localDb 처방상태 초기화 실패:', e);
+        }
       }
 
       alert('처방전이 휴지통으로 이동되었습니다.');

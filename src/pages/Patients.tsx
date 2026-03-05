@@ -50,7 +50,7 @@ export function Patients() {
     // clinic.db에서 설문 응답 전체 조회하여 환자별 카운트 계산
     let surveyCounts: Record<string, number> = {};
     try {
-      const allResponses = await useSurveyStore.getState().loadResponses();
+      await useSurveyStore.getState().loadResponses();
       const responses = useSurveyStore.getState().responses;
       for (const r of responses) {
         if (r.patient_id) {

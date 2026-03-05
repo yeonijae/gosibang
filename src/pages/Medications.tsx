@@ -66,9 +66,15 @@ export function Medications() {
       const medicationsData = await invoke<MedicationManagement[]>('list_medication_management');
       setMedications(medicationsData);
 
-      // 처방전 목록은 현재 Rust 백엔드 스키마가 다르므로 빈 배열로 설정
-      // TODO: prescriptions 테이블 스키마 통합 후 연동
-      setPrescriptions([]);
+      // 처방전 목록 로드 (clinic.db 통합 스키마)
+      const prescriptionsData = await invoke<any[]>('list_all_prescriptions');
+      const withMedication: PrescriptionWithMedication[] = prescriptionsData.map((p: any) => ({
+        ...p,
+        merged_herbs: typeof p.merged_herbs === 'string' ? JSON.parse(p.merged_herbs || '[]') : (p.merged_herbs || []),
+        final_herbs: typeof p.final_herbs === 'string' ? JSON.parse(p.final_herbs || '[]') : (p.final_herbs || []),
+        has_medication: medicationsData.some((m: MedicationManagement) => m.prescription_id === p.id),
+      }));
+      setPrescriptions(withMedication);
     } catch (error) {
       console.error('Failed to load data:', error);
     }

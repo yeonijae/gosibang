@@ -129,6 +129,21 @@ pub fn get_prescriptions_by_patient(patient_id: String) -> Result<Vec<Prescripti
     db::get_prescriptions_by_patient(&patient_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn list_all_prescriptions() -> Result<Vec<Prescription>, String> {
+    db::list_all_prescriptions().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_prescription(prescription: Prescription) -> Result<(), String> {
+    db::update_prescription(&prescription).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn soft_delete_prescription(id: String) -> Result<(), String> {
+    db::soft_delete_prescription(&id).map_err(|e| e.to_string())
+}
+
 // ============ 차팅 관리 명령어 ============
 
 #[tauri::command]

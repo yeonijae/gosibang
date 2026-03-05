@@ -64,6 +64,9 @@ pub fn run() {
             // 처방 관리
             create_prescription,
             get_prescriptions_by_patient,
+            list_all_prescriptions,
+            update_prescription,
+            soft_delete_prescription,
             // 차팅 관리
             create_chart_record,
             get_chart_records_by_patient,
