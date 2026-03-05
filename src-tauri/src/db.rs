@@ -679,33 +679,64 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         [],
     );
 
-    // prescriptions 테이블 마이그레이션 (기존 9필드 → 28필드)
-    let new_columns = [
-        "ALTER TABLE prescriptions ADD COLUMN patient_name TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN chart_number TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN patient_age TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN patient_gender TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN source_type TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN source_id TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN formula TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE prescriptions ADD COLUMN merged_herbs TEXT NOT NULL DEFAULT '[]'",
-        "ALTER TABLE prescriptions ADD COLUMN final_herbs TEXT NOT NULL DEFAULT '[]'",
-        "ALTER TABLE prescriptions ADD COLUMN total_doses REAL NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN days INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN doses_per_day INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN total_packs INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN pack_volume REAL",
-        "ALTER TABLE prescriptions ADD COLUMN water_amount REAL",
-        "ALTER TABLE prescriptions ADD COLUMN herb_adjustment TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN total_dosage REAL NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN final_total_amount REAL NOT NULL DEFAULT 0",
-        "ALTER TABLE prescriptions ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'",
-        "ALTER TABLE prescriptions ADD COLUMN issued_at TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN created_by TEXT",
-        "ALTER TABLE prescriptions ADD COLUMN deleted_at TEXT",
-    ];
-    for sql in &new_columns {
-        let _ = conn.execute(sql, []);
+    // prescriptions 테이블 마이그레이션: 구 스키마(herbs/total_days NOT NULL) → 신 스키마(28컬럼)
+    // 기존 DB에 herbs 컬럼이 있으면 구 스키마로 판단하여 테이블 재생성
+    let has_old_schema = conn
+        .prepare("SELECT herbs FROM prescriptions LIMIT 0")
+        .is_ok();
+
+    if has_old_schema {
+        log::info!("[DB] prescriptions 테이블 스키마 마이그레이션 (구→신)...");
+        conn.execute_batch(r#"
+            ALTER TABLE prescriptions RENAME TO _prescriptions_old;
+
+            CREATE TABLE prescriptions (
+                id TEXT PRIMARY KEY,
+                patient_id TEXT,
+                patient_name TEXT,
+                prescription_name TEXT,
+                chart_number TEXT,
+                patient_age TEXT,
+                patient_gender TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                formula TEXT NOT NULL DEFAULT '',
+                merged_herbs TEXT NOT NULL DEFAULT '[]',
+                final_herbs TEXT NOT NULL DEFAULT '[]',
+                total_doses REAL NOT NULL DEFAULT 0,
+                days INTEGER NOT NULL DEFAULT 0,
+                doses_per_day INTEGER NOT NULL DEFAULT 0,
+                total_packs INTEGER NOT NULL DEFAULT 0,
+                pack_volume REAL,
+                water_amount REAL,
+                herb_adjustment TEXT,
+                total_dosage REAL NOT NULL DEFAULT 0,
+                final_total_amount REAL NOT NULL DEFAULT 0,
+                notes TEXT,
+                status TEXT NOT NULL DEFAULT 'draft',
+                issued_at TEXT,
+                created_by TEXT,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (patient_id) REFERENCES patients(id)
+            );
+
+            INSERT INTO prescriptions (
+                id, patient_id, prescription_name, formula, merged_herbs,
+                days, notes, status, created_at, updated_at
+            )
+            SELECT
+                id, patient_id, prescription_name,
+                COALESCE(prescription_name, ''),
+                COALESCE(herbs, '[]'),
+                COALESCE(total_days, 0),
+                notes, 'issued', created_at, updated_at
+            FROM _prescriptions_old;
+
+            DROP TABLE _prescriptions_old;
+        "#)?;
+        log::info!("[DB] prescriptions 테이블 스키마 마이그레이션 완료");
     }
 
     // 처방 정의 기본 데이터 삽입 (비어있을 때만)
