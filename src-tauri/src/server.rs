@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::auth;
 use crate::db;
 use crate::error::AppResult;
 
@@ -75,8 +76,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/staff", get(staff_login_page))
         .route("/staff/login", post(staff_login))
         .route("/staff/dashboard", get(staff_dashboard))
-        .route("/staff/new-survey", get(new_survey_page))
         .route("/api/staff/create-session", post(create_session_api))
+        .route("/api/staff/create-online-session", post(create_online_session_api))
         .route("/api/responses", get(get_responses_api))
         .route("/api/templates", get(get_templates_api))
         // 디버그 (개발용)
@@ -770,8 +771,6 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
         .header {{ background: white; padding: 1rem 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }}
         .header h1 {{ font-size: 1.25rem; color: #333; }}
         .header-actions {{ display: flex; gap: 1rem; align-items: center; }}
-        .btn-new {{ padding: 0.5rem 1rem; background: #4f46e5; color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 600; }}
-        .btn-new:hover {{ background: #4338ca; }}
         .btn-online {{ padding: 0.5rem 1rem; background: #7c3aed; color: white; border: none; border-radius: 0.5rem; font-weight: 600; cursor: pointer; }}
         .btn-online:hover {{ background: #6d28d9; }}
         .logout {{ color: #666; text-decoration: none; }}
@@ -807,7 +806,6 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
         <h1>📊 {} - 설문 결과</h1>
         <div class="header-actions">
             {}
-            <a href="/staff/new-survey?token={}" class="btn-new">+ 새 설문</a>
             <a href="/staff" class="logout">로그아웃</a>
         </div>
     </div>
@@ -908,7 +906,7 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
             }}
 
             try {{
-                const res = await fetch('/api/staff/create-session?token=' + token, {{
+                const res = await fetch('/api/staff/create-online-session?token=' + token, {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
@@ -919,8 +917,7 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
 
                 const data = await res.json();
                 if (data.success) {{
-                    const onlineUrl = window.location.origin + data.url;
-                    document.getElementById('online-url-text').textContent = onlineUrl;
+                    document.getElementById('online-url-text').textContent = data.url;
                     document.getElementById('online-result').style.display = 'block';
                 }} else {{
                     alert(data.error || '생성 실패');
@@ -966,7 +963,7 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
         </div>
     </div>
 </body>
-</html>"#, clinic_name, clinic_name, online_link_btn, token, token)
+</html>"#, clinic_name, clinic_name, online_link_btn, token)
 }
 
 /// 디버그: 테스트 세션 생성
@@ -1032,32 +1029,6 @@ async fn debug_db_handler() -> impl IntoResponse {
         "password": password_info,
         "all_rows": all_rows.unwrap_or_default(),
     }))
-}
-
-// ============ 직원 설문 생성 핸들러 ============
-
-/// 새 설문 시작 페이지
-async fn new_survey_page(
-    State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    let token = params.get("token").cloned().unwrap_or_default();
-
-    // 세션 확인
-    let session = {
-        let sessions = state.staff_sessions.lock().ok();
-        sessions.and_then(|s| s.get(&token).cloned())
-    };
-
-    match session {
-        Some(s) => {
-            if chrono::Utc::now().signed_duration_since(s.created_at).num_hours() > 24 {
-                return Html(render_staff_login_page_with_error("세션이 만료되었습니다."));
-            }
-            Html(render_new_survey_page(&s.clinic_name, &token))
-        }
-        None => Html(render_staff_login_page_with_error("로그인이 필요합니다.")),
-    }
 }
 
 /// 템플릿 목록 API
@@ -1143,161 +1114,151 @@ async fn create_session_api(
     }
 }
 
-/// 새 설문 시작 페이지 렌더링
-fn render_new_survey_page(clinic_name: &str, token: &str) -> String {
-    format!(r#"<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{} - 새 설문</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }}
-        .header {{ background: white; padding: 1rem 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }}
-        .header h1 {{ font-size: 1.25rem; color: #333; }}
-        .back-link {{ color: #4f46e5; text-decoration: none; }}
-        .back-link:hover {{ text-decoration: underline; }}
-        .container {{ max-width: 600px; margin: 2rem auto; padding: 0 1rem; }}
-        .card {{ background: white; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.5rem; }}
-        .form-group {{ margin-bottom: 1.5rem; }}
-        label {{ display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151; }}
-        select, input {{ width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 0.5rem; font-size: 1rem; }}
-        select:focus, input:focus {{ outline: none; border-color: #4f46e5; }}
-        .btn {{ width: 100%; padding: 1rem; background: #4f46e5; color: white; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; }}
-        .btn:hover {{ background: #4338ca; }}
-        .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
-        .result {{ margin-top: 1.5rem; padding: 1rem; background: #f0fdf4; border: 1px solid #22c55e; border-radius: 0.5rem; display: none; }}
-        .result.show {{ display: block; }}
-        .result-url {{ word-break: break-all; font-family: monospace; margin: 0.5rem 0; padding: 0.5rem; background: white; border-radius: 0.25rem; }}
-        .result-actions {{ display: flex; gap: 0.5rem; margin-top: 1rem; }}
-        .result-actions button {{ flex: 1; padding: 0.75rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; }}
-        .btn-copy {{ background: #e5e7eb; color: #374151; border: none; }}
-        .btn-open {{ background: #22c55e; color: white; border: none; }}
-        .loading {{ display: none; }}
-        .loading.show {{ display: block; text-align: center; padding: 1rem; color: #666; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📝 새 설문 시작</h1>
-        <a href="/staff/dashboard?token={}" class="back-link">← 대시보드로</a>
-    </div>
-    <div class="container">
-        <div class="card">
-            <form id="create-form" onsubmit="createSession(event)">
-                <div class="form-group">
-                    <label for="template">설문 템플릿</label>
-                    <select id="template" name="template_id" required>
-                        <option value="">템플릿을 선택하세요</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="name">응답자 이름 (선택)</label>
-                    <input type="text" id="name" name="respondent_name" placeholder="환자 또는 응답자 이름">
-                </div>
-                <button type="submit" class="btn" id="submit-btn">설문 링크 생성</button>
-            </form>
-            <div class="loading" id="loading">생성 중...</div>
-            <div class="result" id="result">
-                <strong>✅ 설문 링크가 생성되었습니다</strong>
-                <div class="result-url" id="result-url"></div>
-                <div class="result-actions">
-                    <button class="btn-copy" onclick="copyUrl()">복사</button>
-                    <button class="btn-open" onclick="openSurvey()">설문 열기</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <script>
-        const staffToken = '{}';
-        let surveyUrl = '';
+/// 온라인 설문 세션 생성 (Supabase 연동)
+async fn create_online_session_api(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+    Json(payload): Json<CreateSessionRequest>,
+) -> impl IntoResponse {
+    let token = params.get("token").cloned().unwrap_or_default();
 
-        async function loadTemplates() {{
-            try {{
-                const res = await fetch('/api/templates?token=' + staffToken);
-                const data = await res.json();
-                const select = document.getElementById('template');
+    // Staff 세션 확인
+    let valid = {
+        let sessions = state.staff_sessions.lock().ok();
+        sessions.map(|s| s.contains_key(&token)).unwrap_or(false)
+    };
 
-                if (data.templates && data.templates.length > 0) {{
-                    data.templates.forEach(t => {{
-                        const option = document.createElement('option');
-                        option.value = t.id;
-                        option.textContent = t.name;
-                        select.appendChild(option);
-                    }});
-                }} else {{
-                    const option = document.createElement('option');
-                    option.disabled = true;
-                    option.textContent = '사용 가능한 템플릿이 없습니다';
-                    select.appendChild(option);
-                }}
-            }} catch (e) {{
-                console.error('템플릿 로드 실패:', e);
-            }}
-        }}
+    if !valid {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "인증 필요"}))).into_response();
+    }
 
-        async function createSession(e) {{
-            e.preventDefault();
-            const form = document.getElementById('create-form');
-            const submitBtn = document.getElementById('submit-btn');
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
+    // 템플릿 조회
+    let template = match db::get_survey_template(&payload.template_id) {
+        Ok(Some(t)) => t,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "템플릿을 찾을 수 없습니다"}))).into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    };
 
-            const templateId = document.getElementById('template').value;
-            const name = document.getElementById('name').value;
+    // Supabase 설정 가져오기
+    auth::ensure_supabase_initialized();
+    let config = match auth::get_supabase_config() {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Supabase 미초기화: {}", e)}))).into_response(),
+    };
+    let client = match auth::get_http_client() {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("HTTP 클라이언트 오류: {}", e)}))).into_response(),
+    };
 
-            if (!templateId) {{
-                alert('템플릿을 선택하세요');
-                return;
-            }}
+    let user_id = auth::get_user_id().unwrap_or_default();
+    let access_token = auth::get_access_token().unwrap_or_default();
 
-            submitBtn.disabled = true;
-            loading.classList.add('show');
-            result.classList.remove('show');
+    if user_id.is_empty() || access_token.is_empty() {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "로그인이 필요합니다 (Supabase 인증)"}))).into_response();
+    }
 
-            try {{
-                const res = await fetch('/api/staff/create-session?token=' + staffToken, {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        template_id: templateId,
-                        respondent_name: name || null
-                    }})
-                }});
+    // 1. Supabase에 템플릿 upsert
+    let questions_json = serde_json::to_value(&template.questions).unwrap_or_default();
+    let template_body = serde_json::json!({
+        "id": template.id,
+        "user_id": user_id,
+        "name": template.name,
+        "description": template.description,
+        "questions": questions_json,
+        "display_mode": template.display_mode.unwrap_or_else(|| "single_page".to_string()),
+    });
 
-                const data = await res.json();
-                if (data.success) {{
-                    surveyUrl = window.location.origin + data.url;
-                    document.getElementById('result-url').textContent = surveyUrl;
-                    result.classList.add('show');
-                }} else {{
-                    alert(data.error || '생성 실패');
-                }}
-            }} catch (e) {{
-                alert('네트워크 오류');
-            }} finally {{
-                submitBtn.disabled = false;
-                loading.classList.remove('show');
-            }}
-        }}
+    let upsert_res = client
+        .post(format!("{}/rest/v1/survey_templates", config.url))
+        .header("apikey", &config.anon_key)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Content-Type", "application/json")
+        .header("Prefer", "resolution=merge-duplicates")
+        .json(&template_body)
+        .send()
+        .await;
 
-        function copyUrl() {{
-            navigator.clipboard.writeText(surveyUrl).then(() => {{
-                alert('복사되었습니다');
-            }}).catch(() => {{
-                prompt('URL을 복사하세요:', surveyUrl);
-            }});
-        }}
+    if let Err(e) = upsert_res {
+        log::error!("Supabase 템플릿 upsert 실패: {}", e);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("템플릿 동기화 실패: {}", e)}))).into_response();
+    }
 
-        function openSurvey() {{
-            window.open(surveyUrl, '_blank');
-        }}
+    // 2. 16자 랜덤 토큰 생성
+    let survey_token = generate_online_token(16);
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now();
+    let expires_at = (now + chrono::Duration::hours(24)).to_rfc3339();
 
-        loadTemplates();
-    </script>
-</body>
-</html>"#, clinic_name, token, token)
+    // 3. Supabase에 세션 INSERT
+    let session_body = serde_json::json!({
+        "id": session_id,
+        "user_id": user_id,
+        "template_id": template.id,
+        "token": survey_token,
+        "respondent_name": payload.respondent_name,
+        "expires_at": expires_at,
+    });
+
+    let session_res = client
+        .post(format!("{}/rest/v1/survey_sessions", config.url))
+        .header("apikey", &config.anon_key)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Content-Type", "application/json")
+        .header("Prefer", "return=minimal")
+        .json(&session_body)
+        .send()
+        .await;
+
+    match session_res {
+        Ok(resp) if !resp.status().is_success() => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            log::error!("Supabase 세션 생성 실패: {} - {}", status, body);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("세션 생성 실패: {}", body)}))).into_response();
+        }
+        Err(e) => {
+            log::error!("Supabase 세션 생성 요청 실패: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("세션 생성 실패: {}", e)}))).into_response();
+        }
+        _ => {}
+    }
+
+    // 4. 로컬 DB에도 세션 저장 (동기화용)
+    if let Err(e) = db::create_survey_session(
+        payload.patient_id.as_deref(),
+        &payload.template_id,
+        payload.respondent_name.as_deref(),
+        Some(&user_id),
+    ) {
+        log::warn!("로컬 DB 세션 저장 실패 (무시): {}", e);
+    }
+
+    // 5. Vercel URL 반환
+    let survey_url = format!("https://gosibang-survey.vercel.app/s/{}", survey_token);
+    log::info!("온라인 설문 링크 생성: {}", survey_url);
+
+    Json(serde_json::json!({
+        "success": true,
+        "url": survey_url,
+        "token": survey_token,
+        "session_id": session_id
+    })).into_response()
+}
+
+/// 온라인 설문용 토큰 생성 (지정 길이)
+fn generate_online_token(len: usize) -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..len)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 10 {
+                (b'0' + idx) as char
+            } else {
+                (b'a' + idx - 10) as char
+            }
+        })
+        .collect()
 }
 
 // ============ 환자 전용 키오스크 페이지 ============
