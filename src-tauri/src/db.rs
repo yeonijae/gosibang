@@ -18,19 +18,17 @@ fn get_db_path() -> AppResult<PathBuf> {
     Ok(app_dir.join("clinic.db"))
 }
 
-/// 데이터베이스가 초기화되어 있는지 확인하고, 안 되어 있으면 자동 초기화
+/// 데이터베이스가 초기화되어 있는지 확인 (로그인 후 암호화 DB만 사용)
 pub fn ensure_db_initialized() -> AppResult<()> {
     if DB_CONNECTION.get().is_none() {
-        log::info!("[DB] ensure_db_initialized: DB가 초기화되지 않음, init_database 호출");
-        init_database("")?;
-    } else {
-        log::debug!("[DB] ensure_db_initialized: DB 이미 초기화됨");
+        return Err(AppError::Custom("데이터베이스가 초기화되지 않았습니다. 로그인이 필요합니다.".to_string()));
     }
     Ok(())
 }
 
-/// 데이터베이스 초기화 (암호화 키 설정)
-pub fn init_database(_encryption_key: &str) -> AppResult<()> {
+/// 데이터베이스 초기화 (레거시 - 암호화 DB 전환으로 미사용)
+#[allow(dead_code)]
+fn init_database(_encryption_key: &str) -> AppResult<()> {
     // 이미 초기화되어 있으면 스킵
     if DB_CONNECTION.get().is_some() {
         log::info!("[DB] init_database: 이미 초기화됨, 스킵");

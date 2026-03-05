@@ -44,22 +44,25 @@ function App() {
         const planType = authResult?.subscription?.plan || 'free';
         await loadFeatures(planType);
 
-        // 설정 로드 (로컬 DB)
-        await loadSettings();
+        // 로그인된 경우에만 DB 접근 (암호화 DB는 로그인 후 초기화됨)
+        if (authResult?.is_authenticated) {
+          // 설정 로드 (로컬 DB)
+          await loadSettings();
 
-        // 원내 서버 자동 시작
-        try {
-          const status = await invoke<{ running: boolean }>('get_server_status');
-          if (!status.running) {
-            await invoke<string>('start_http_server', {
-              port: 8787,
-              planType: planType,
-              surveyExternal: true,
-            });
-            console.log('[App] 원내 서버 자동 시작 완료');
+          // 원내 서버 자동 시작
+          try {
+            const status = await invoke<{ running: boolean }>('get_server_status');
+            if (!status.running) {
+              await invoke<string>('start_http_server', {
+                port: 8787,
+                planType: planType,
+                surveyExternal: true,
+              });
+              console.log('[App] 원내 서버 자동 시작 완료');
+            }
+          } catch (serverErr) {
+            console.warn('[App] 원내 서버 자동 시작 실패:', serverErr);
           }
-        } catch (serverErr) {
-          console.warn('[App] 원내 서버 자동 시작 실패:', serverErr);
         }
       } catch (error) {
         console.error('Initialization error:', error);

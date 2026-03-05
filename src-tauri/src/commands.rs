@@ -246,13 +246,12 @@ pub fn initialize_app(
     supabase_key: String,
     db_encryption_key: String,
 ) -> Result<(), String> {
-    // Supabase 초기화
+    let _ = &db_encryption_key; // 레거시 파라미터 (호환성 유지)
+
+    // Supabase 초기화만 수행 (DB는 로그인 후 암호화 DB 사용)
     auth::init_supabase(&supabase_url, &supabase_key);
 
-    // DB 초기화
-    db::init_database(&db_encryption_key).map_err(|e| e.to_string())?;
-
-    log::info!("App initialized successfully");
+    log::info!("App initialized successfully (DB will be initialized after login)");
     Ok(())
 }
 
