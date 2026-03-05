@@ -545,8 +545,8 @@ pub fn list_survey_sessions(patient_id: Option<String>, status: Option<String>) 
 
 /// 설문 세션 생성
 #[tauri::command]
-pub fn create_survey_session(patient_id: Option<String>, template_id: String, respondent_name: Option<String>, created_by: Option<String>) -> Result<db::SurveySessionDb, String> {
-    db::create_survey_session(patient_id.as_deref(), &template_id, respondent_name.as_deref(), created_by.as_deref()).map_err(|e| e.to_string())
+pub fn create_survey_session(patient_id: Option<String>, template_id: String, respondent_name: Option<String>, created_by: Option<String>, token: Option<String>) -> Result<db::SurveySessionDb, String> {
+    db::create_survey_session(patient_id.as_deref(), &template_id, respondent_name.as_deref(), created_by.as_deref(), token.as_deref()).map_err(|e| e.to_string())
 }
 
 /// 설문 세션 토큰으로 조회

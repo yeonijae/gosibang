@@ -582,6 +582,11 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
       return;
     }
 
+    if (!userId) {
+      setError('로그인이 필요합니다. 다시 로그인해주세요.');
+      return;
+    }
+
     setIsGenerating(true);
     setError(null);
 
@@ -596,33 +601,36 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
         throw new Error('템플릿을 찾을 수 없습니다.');
       }
 
-      // 1. 세션 저장 (surveyStore가 처리)
-      console.log('[Survey] 세션 생성:', sessionId);
+      console.log('[Survey] 온라인 링크 생성 시작:', { sessionId, userId, templateId: selectedTemplateId });
 
-      // 2. Supabase에 템플릿 복사 (아직 없으면)
-      const { data: existingTemplate } = await supabase
+      // 1. 로컬 DB에 세션 저장 (Supabase와 동일한 토큰 사용)
+      try {
+        await invoke('create_survey_session', {
+          patientId: null,
+          templateId: selectedTemplateId,
+          respondentName: respondentName || patientName || null,
+          createdBy: userId,
+          token,
+        });
+        console.log('[Survey] 로컬 DB에 세션 저장 완료 (token:', token, ')');
+      } catch (localErr) {
+        console.warn('[Survey] 로컬 DB 세션 저장 실패 (무시):', localErr);
+      }
+
+      // 2. Supabase에 템플릿 upsert
+      const { error: templateError } = await supabase
         .from('survey_templates')
-        .select('id')
-        .eq('id', selectedTemplateId)
-        .single();
+        .upsert({
+          id: selectedTemplateId,
+          user_id: userId,
+          name: selectedTemplate.name,
+          description: selectedTemplate.description || null,
+          questions: selectedTemplate.questions,
+          display_mode: selectedTemplate.display_mode || 'single_page',
+        }, { onConflict: 'id' });
 
-      if (!existingTemplate) {
-        // 템플릿 복사
-        const { error: templateError } = await supabase
-          .from('survey_templates')
-          .insert({
-            id: selectedTemplateId,
-            user_id: userId,
-            name: selectedTemplate.name,
-            description: selectedTemplate.description || null,
-            questions: selectedTemplate.questions,
-            display_mode: selectedTemplate.display_mode || 'single_page',
-          });
-
-        if (templateError) {
-          console.error('Template insert error:', templateError);
-          // 이미 존재하는 경우 무시
-        }
+      if (templateError) {
+        console.error('[Survey] Template upsert error:', templateError);
       }
 
       // 3. Supabase에 세션 생성
@@ -640,15 +648,13 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
           gender: gender || null,
           age: age || null,
           expires_at: expiresAt,
-        })
-        .select()
-        .single();
+        });
 
       if (sessionError) {
         throw sessionError;
       }
 
-      console.log('[Survey] Supabase에 세션 저장:', sessionId);
+      console.log('[Survey] Supabase에 세션 저장 완료:', sessionId);
 
       // Vercel URL 반환
       const link = `${SURVEY_APP_URL}/s/${token}`;
@@ -657,8 +663,8 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
       // 세션 목록 새로고침
       await loadSessions();
     } catch (e) {
-      console.error('Link generation error:', e);
-      setError(String(e));
+      console.error('[Survey] Link generation error:', e);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsGenerating(false);
     }

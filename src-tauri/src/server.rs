@@ -990,7 +990,7 @@ async fn create_test_session_handler() -> impl IntoResponse {
     let _ = db::save_survey_template(&template);
 
     // 테스트 세션 생성
-    match db::create_survey_session(None, template_id, Some("테스트 응답자"), None) {
+    match db::create_survey_session(None, template_id, Some("테스트 응답자"), None, None) {
         Ok(session) => {
             Json(serde_json::json!({
                 "success": true,
@@ -1097,6 +1097,7 @@ async fn create_session_api(
         payload.patient_id.as_deref(),
         &payload.template_id,
         payload.respondent_name.as_deref(),
+        None,
         None,
     ) {
         Ok(session) => {
@@ -1223,12 +1224,13 @@ async fn create_online_session_api(
         _ => {}
     }
 
-    // 4. 로컬 DB에도 세션 저장 (동기화용)
+    // 4. 로컬 DB에도 세션 저장 (동기화용, 동일 토큰 사용)
     if let Err(e) = db::create_survey_session(
         payload.patient_id.as_deref(),
         &payload.template_id,
         payload.respondent_name.as_deref(),
         Some(&user_id),
+        Some(&survey_token),
     ) {
         log::warn!("로컬 DB 세션 저장 실패 (무시): {}", e);
     }
@@ -1290,6 +1292,7 @@ async fn patient_create_session_api(
         payload.patient_id.as_deref(),
         &payload.template_id,
         payload.respondent_name.as_deref(),
+        None,
         None,
     ) {
         Ok(session) => {

@@ -1508,10 +1508,11 @@ pub fn create_survey_session(
     template_id: &str,
     respondent_name: Option<&str>,
     created_by: Option<&str>,
+    token_override: Option<&str>,
 ) -> AppResult<SurveySessionDb> {
     let conn = get_conn()?;
     let id = uuid::Uuid::new_v4().to_string();
-    let token = generate_survey_token();
+    let token = token_override.map(|t| t.to_string()).unwrap_or_else(|| generate_survey_token());
     let now = Utc::now();
     let expires_at = (now + chrono::Duration::hours(24)).to_rfc3339();
     let created_at = now.to_rfc3339();
