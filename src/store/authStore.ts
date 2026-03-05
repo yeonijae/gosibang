@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { supabase } from '../lib/supabase';
 import type { AuthState, UserSession } from '../types';
 
-// 현재 앱 버전 (package.json과 동기화)
-const APP_VERSION = '0.2.44';
+// 앱 버전 (tauri.conf.json에서 동적으로 가져옴)
+let APP_VERSION = '0.0.0';
+getVersion().then(v => { APP_VERSION = v; }).catch(() => {});
 
 // 버전 비교: a < b이면 true
 function isVersionOlderThan(a: string, b: string): boolean {

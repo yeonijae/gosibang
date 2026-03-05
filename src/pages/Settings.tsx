@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 
 // TrashItem type (from Rust backend)
 interface TrashItem {
@@ -178,6 +179,7 @@ export function Settings() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [usageStats, setUsageStats] = useState<UsageStats>({ patients: 0, prescriptions: 0, initialCharts: 0, progressNotes: 0 });
   const [activeTab, setActiveTab] = useState<'profile' | 'clinic' | 'subscription' | 'data' | 'backup' | 'sessions' | 'staff_accounts'>('profile');
+  const [appVersion, setAppVersion] = useState('');
 
   // 내 정보 관련 상태
   interface UserProfile {
@@ -247,6 +249,7 @@ export function Settings() {
     loadUsageStats();
     loadPlanPolicies();
     loadUserProfile();
+    getVersion().then(v => setAppVersion(v)).catch(() => {});
   }, [loadSettings]);
 
   // 세션 목록 로드 (탭 활성화 시)
@@ -2051,6 +2054,13 @@ export function Settings() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 앱 버전 정보 */}
+      {appVersion && (
+        <div className="text-center text-sm text-gray-400 pt-4 border-t border-gray-100">
+          Gosibang v{appVersion}
         </div>
       )}
     </div>
