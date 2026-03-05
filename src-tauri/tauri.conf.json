@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Gosibang",
-  "version": "0.2.46",
+  "version": "0.2.47",
   "identifier": "com.gosibang.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1520",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
