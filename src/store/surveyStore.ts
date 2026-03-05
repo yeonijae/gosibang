@@ -1,10 +1,36 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { getDb, saveDb, generateUUID, queryToObjects, queryOne } from '../lib/localDb';
-import { generateSurveyToken, generateExpiresAt, isSessionExpired } from '../lib/surveyUtils';
+
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from './authStore';
 import type { SurveyTemplate, SurveySession, SurveyResponse, SurveyAnswer, SurveyQuestion, SurveyDisplayMode } from '../types';
+
+// Tauri에서 반환하는 세션 구조 (list_survey_sessions)
+interface TauriSurveySessionWithPatient {
+  id: string;
+  token: string;
+  patient_id: string | null;
+  template_id: string;
+  respondent_name: string | null;
+  status: string;
+  expires_at: string;
+  created_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+  patient_name: string | null;
+}
+
+// Tauri에서 반환하는 세션 구조 (create/get)
+interface TauriSurveySession {
+  id: string;
+  token: string;
+  patient_id: string | null;
+  template_id: string;
+  respondent_name: string | null;
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
 
 // Tauri에서 반환하는 템플릿 구조
 interface TauriSurveyTemplate {
@@ -161,8 +187,6 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   loadSessions: async (filters) => {
     try {
       set({ isLoading: true, error: null });
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
       // 템플릿 목록이 비어있으면 먼저 로드
       let templates = get().templates;
@@ -172,39 +196,26 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       }
       const templateMap = new Map(templates.map(t => [t.id, t.name]));
 
-      let sql = `
-        SELECT s.*, p.name as patient_name
-        FROM survey_sessions s
-        LEFT JOIN patients p ON s.patient_id = p.id
-        WHERE 1=1
-      `;
-      const params: unknown[] = [];
-
-      if (filters?.patient_id) {
-        sql += ' AND s.patient_id = ?';
-        params.push(filters.patient_id);
-      }
-      if (filters?.status) {
-        sql += ' AND s.status = ?';
-        params.push(filters.status);
-      }
-
-      sql += ' ORDER BY s.created_at DESC';
-
-      const rawSessions = queryToObjects<SurveySession>(db, sql, params);
-
-      // 만료된 세션 상태 업데이트 및 템플릿 이름 추가
-      const sessions = rawSessions.map(session => {
-        if (session.status === 'pending' && isSessionExpired(session.expires_at)) {
-          session.status = 'expired';
-          db.run('UPDATE survey_sessions SET status = ? WHERE id = ?', ['expired', session.id]);
-        }
-        return {
-          ...session,
-          template_name: templateMap.get(session.template_id) || '알 수 없는 템플릿',
-        };
+      const rawSessions = await invoke<TauriSurveySessionWithPatient[]>('list_survey_sessions', {
+        patientId: filters?.patient_id || null,
+        status: filters?.status || null,
       });
-      saveDb();
+
+      // 템플릿 이름 추가
+      const sessions: SurveySession[] = rawSessions.map(s => ({
+        id: s.id,
+        token: s.token,
+        patient_id: s.patient_id || undefined,
+        template_id: s.template_id,
+        respondent_name: s.respondent_name || undefined,
+        status: s.status as SurveySession['status'],
+        expires_at: s.expires_at,
+        created_by: s.created_by || undefined,
+        created_at: s.created_at,
+        completed_at: s.completed_at || undefined,
+        patient_name: s.patient_name || undefined,
+        template_name: templateMap.get(s.template_id) || '알 수 없는 템플릿',
+      }));
 
       set({ sessions, isLoading: false });
     } catch (error) {
@@ -213,29 +224,20 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   },
 
   createSession: async (patientId, templateId, createdBy) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    const id = generateUUID();
-    const token = generateSurveyToken();
-    const expiresAt = generateExpiresAt(24);
-    const now = new Date().toISOString();
-
-    // 환자 이름 가져오기 (sql.js에서)
-    const patient = queryOne<{ name: string }>(db, 'SELECT name FROM patients WHERE id = ?', [patientId]);
-
-    // 템플릿 정보 가져오기 (Tauri 명령어로 Rust DB에서)
+    // 템플릿 정보 가져오기
     const localTemplate = await invoke<TauriSurveyTemplate | null>('get_survey_template', { id: templateId });
-
     if (!localTemplate) throw new Error('템플릿을 찾을 수 없습니다.');
 
-    // 로컬 DB에 세션 저장
-    db.run(
-      `INSERT INTO survey_sessions (id, token, patient_id, template_id, status, expires_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [id, token, patientId, templateId, expiresAt, createdBy || null, now]
-    );
-    saveDb();
+    // 환자 이름 가져오기
+    const patient = await invoke<{ id: string; name: string } | null>('get_patient', { id: patientId });
+
+    // Rust DB에 세션 저장
+    const created = await invoke<TauriSurveySession>('create_survey_session', {
+      patientId,
+      templateId,
+      respondentName: null,
+      createdBy: createdBy || null,
+    });
 
     // Supabase 동기화
     const authState = useAuthStore.getState().authState;
@@ -251,7 +253,6 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
           .single();
 
         if (!existingTemplate) {
-          // 템플릿 업로드 (Tauri에서 가져온 템플릿은 이미 파싱됨)
           await supabase.from('survey_templates').insert({
             id: templateId,
             user_id: userId,
@@ -265,32 +266,31 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
         // 2. 세션 업로드
         await supabase.from('survey_sessions').insert({
-          id,
+          id: created.id,
           user_id: userId,
           template_id: templateId,
-          token,
+          token: created.token,
           patient_id: patientId,
           respondent_name: patient?.name || null,
           status: 'pending',
-          expires_at: expiresAt,
+          expires_at: created.expires_at,
         });
 
-        console.log('[Survey] Supabase 동기화 완료:', { sessionId: id, token });
+        console.log('[Survey] Supabase 동기화 완료:', { sessionId: created.id, token: created.token });
       } catch (error) {
         console.error('[Survey] Supabase 동기화 실패:', error);
-        // 로컬에는 저장되었으므로 에러를 throw하지 않음
       }
     }
 
     const session: SurveySession = {
-      id,
-      token,
+      id: created.id,
+      token: created.token,
       patient_id: patientId,
       template_id: templateId,
       status: 'pending',
-      expires_at: expiresAt,
+      expires_at: created.expires_at,
       created_by: createdBy,
-      created_at: now,
+      created_at: created.created_at,
       patient_name: patient?.name,
       template_name: localTemplate.name,
     };
@@ -300,47 +300,33 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   },
 
   getSessionByToken: async (token) => {
-    const db = getDb();
-    if (!db) return null;
+    const result = await invoke<TauriSurveySession | null>('get_survey_session_by_token', { token });
+    if (!result) return null;
 
-    const session = queryOne<SurveySession>(
-      db,
-      `SELECT s.*, p.name as patient_name
-       FROM survey_sessions s
-       LEFT JOIN patients p ON s.patient_id = p.id
-       WHERE s.token = ?`,
-      [token]
-    );
-
-    if (!session) return null;
-
-    // 만료 확인
-    if (session.status === 'pending' && isSessionExpired(session.expires_at)) {
-      db.run('UPDATE survey_sessions SET status = ? WHERE id = ?', ['expired', session.id]);
-      saveDb();
-      session.status = 'expired';
-    }
-
-    if (session.status !== 'pending') {
-      return null;
-    }
+    // 만료/완료된 세션은 제외
+    if (result.status !== 'pending') return null;
 
     // 템플릿은 상태에서 가져오기 (Rust DB에서 로드됨)
-    const template = get().getTemplate(session.template_id);
+    const template = get().getTemplate(result.template_id);
     if (!template) return null;
 
-    // 세션에 템플릿 이름 추가
-    session.template_name = template.name;
+    const session: SurveySession = {
+      id: result.id,
+      token: result.token,
+      patient_id: result.patient_id || undefined,
+      template_id: result.template_id,
+      respondent_name: result.respondent_name || undefined,
+      status: result.status as SurveySession['status'],
+      expires_at: result.expires_at,
+      created_at: result.created_at,
+      template_name: template.name,
+    };
 
     return { session, template };
   },
 
   expireSession: async (id) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    db.run('UPDATE survey_sessions SET status = ? WHERE id = ?', ['expired', id]);
-    saveDb();
+    await invoke('expire_survey_session', { id });
 
     set({
       sessions: get().sessions.map(s =>
@@ -350,12 +336,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   },
 
   deleteSession: async (id) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    // 로컬 DB에서 삭제
-    db.run('DELETE FROM survey_sessions WHERE id = ?', [id]);
-    saveDb();
+    // Rust DB에서 삭제
+    await invoke('delete_survey_session', { id });
 
     // Supabase에서도 삭제 (동기화)
     try {
@@ -372,36 +354,28 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
 
   // 키오스크용 세션 생성 (환자 미등록 지원)
   createKioskSession: async (templateId, patientId, respondentName) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    const id = generateUUID();
-    const token = generateSurveyToken();
-    const expiresAt = generateExpiresAt(24);
-    const now = new Date().toISOString();
-
     // 템플릿 정보 가져오기
     const localTemplate = await invoke<TauriSurveyTemplate | null>('get_survey_template', { id: templateId });
     if (!localTemplate) throw new Error('템플릿을 찾을 수 없습니다.');
 
-    // 로컬 DB에 세션 저장
-    db.run(
-      `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, status, expires_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, 'kiosk', ?)`,
-      [id, token, patientId, templateId, respondentName, expiresAt, now]
-    );
-    saveDb();
+    // Rust DB에 세션 저장
+    const created = await invoke<TauriSurveySession>('create_survey_session', {
+      patientId: patientId || null,
+      templateId,
+      respondentName,
+      createdBy: 'kiosk',
+    });
 
     const session: SurveySession = {
-      id,
-      token,
+      id: created.id,
+      token: created.token,
       patient_id: patientId || undefined,
       template_id: templateId,
       respondent_name: respondentName,
       status: 'pending',
-      expires_at: expiresAt,
+      expires_at: created.expires_at,
       created_by: 'kiosk',
-      created_at: now,
+      created_at: created.created_at,
       patient_name: respondentName,
       template_name: localTemplate.name,
     };
@@ -456,15 +430,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
   },
 
   submitResponse: async (sessionId, answers) => {
-    const db = getDb();
-    if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-    // 세션 정보 가져오기 (세션은 아직 sql.js에 있음)
-    const session = queryOne<SurveySession>(
-      db,
-      'SELECT * FROM survey_sessions WHERE id = ?',
-      [sessionId]
-    );
+    // 세션 정보 가져오기
+    const session = await invoke<TauriSurveySession | null>('get_survey_session', { id: sessionId });
 
     if (!session) throw new Error('세션을 찾을 수 없습니다.');
     if (session.status !== 'pending') throw new Error('이미 완료되었거나 만료된 세션입니다.');
@@ -478,13 +445,8 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       answers,
     });
 
-    // 세션 완료 처리 (세션은 아직 sql.js)
-    const now = new Date().toISOString();
-    db.run(
-      'UPDATE survey_sessions SET status = ?, completed_at = ? WHERE id = ?',
-      ['completed', now, sessionId]
-    );
-    saveDb();
+    // 세션 완료 처리
+    await invoke('complete_survey_session', { sessionId });
   },
 
   getResponsesByPatient: async (patientId) => {

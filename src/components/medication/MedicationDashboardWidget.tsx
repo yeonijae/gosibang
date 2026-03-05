@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Pill, Clock, Check, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
-import { getDb, queryToObjects } from '../../lib/localDb';
-import type { MedicationSchedule } from '../../types';
+import { invoke } from '@tauri-apps/api/core';
+import type { MedicationSchedule, Patient, MedicationLog } from '../../types';
 
 interface MedicationDashboardWidgetProps {
   onScheduleClick?: (schedule: MedicationSchedule) => void;
@@ -31,38 +31,29 @@ export function MedicationDashboardWidget({
   const loadTodaySchedules = async () => {
     try {
       setIsLoading(true);
-      const db = getDb();
-      if (!db) return;
 
       const today = new Date().toISOString().split('T')[0];
 
-      // 오늘 해당하는 복약 일정 조회
-      const schedulesData = queryToObjects<MedicationSchedule>(
-        db,
-        `SELECT * FROM medication_schedules
-         WHERE start_date <= ? AND end_date >= ?`,
-        [today, today]
-      );
+      // 전체 복약 일정 조회
+      const allSchedules = await invoke<MedicationSchedule[]>('list_medication_schedules', { patientId: null });
+      // 오늘 해당하는 일정 필터링
+      const schedulesData = allSchedules.filter(s => s.start_date <= today && s.end_date >= today);
+
+      // 환자 목록 조회
+      const allPatients = await invoke<Patient[]>('list_patients', {});
+      const patientMap = new Map<string, Patient>();
+      allPatients.forEach(p => patientMap.set(p.id, p));
 
       // 각 일정에 대한 상세 정보 조회
-      const enriched: TodaySchedule[] = schedulesData.map((schedule) => {
-        // 환자 이름 조회
-        const patient = queryToObjects<{ name: string }>(
-          db,
-          'SELECT name FROM patients WHERE id = ?',
-          [schedule.patient_id]
-        )[0];
+      const enriched: TodaySchedule[] = await Promise.all(schedulesData.map(async (schedule) => {
+        const patient = patientMap.get(schedule.patient_id);
 
         // 오늘 복약 기록 조회
-        const logs = queryToObjects<{ id: string }>(
-          db,
-          `SELECT id FROM medication_logs
-           WHERE schedule_id = ? AND date(taken_at) = ?`,
-          [schedule.id, today]
-        );
+        const logs = await invoke<MedicationLog[]>('list_medication_logs', { scheduleId: schedule.id });
+        const todayLogs = logs.filter(l => l.taken_at.split('T')[0] === today);
 
         const totalSlots = schedule.times_per_day;
-        const completedSlots = logs.length;
+        const completedSlots = todayLogs.length;
 
         return {
           ...schedule,
@@ -70,7 +61,7 @@ export function MedicationDashboardWidget({
           total_slots: totalSlots,
           completed_slots: completedSlots,
         };
-      });
+      }));
 
       setSchedules(enriched);
 

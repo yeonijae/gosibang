@@ -164,21 +164,26 @@ export function Prescriptions() {
 
       await invoke('soft_delete_prescription', { id });
 
-      // 처방전의 source 차트가 있으면 prescription_issued 상태 초기화 (localDb)
+      // 처방전의 source 차트가 있으면 prescription_issued 상태 초기화
       if (prescription?.source_type && prescription?.source_id) {
         try {
-          const { getDb, saveDb } = await import('../lib/localDb');
-          const db = getDb();
-          if (db) {
-            const tableName = prescription.source_type === 'initial_chart' ? 'initial_charts' : 'progress_notes';
-            db.run(
-              `UPDATE ${tableName} SET prescription_issued = 0, prescription_issued_at = NULL WHERE id = ?`,
-              [prescription.source_id]
-            );
-            saveDb();
+          if (prescription.source_type === 'initial_chart') {
+            const chart = await invoke<any>('get_initial_chart', { id: prescription.source_id });
+            if (chart) {
+              await invoke('update_initial_chart', {
+                chart: { ...chart, prescription_issued: false, prescription_issued_at: null }
+              });
+            }
+          } else if (prescription.source_type === 'progress_note') {
+            const note = await invoke<any>('get_progress_note', { id: prescription.source_id });
+            if (note) {
+              await invoke('update_progress_note', {
+                note: { ...note, prescription_issued: false, prescription_issued_at: null }
+              });
+            }
           }
         } catch (e) {
-          console.warn('localDb 처방상태 초기화 실패:', e);
+          console.warn('처방상태 초기화 실패:', e);
         }
       }
 

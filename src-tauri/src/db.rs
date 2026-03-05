@@ -739,6 +739,9 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("[DB] prescriptions 테이블 스키마 마이그레이션 완료");
     }
 
+    // patients 테이블에 deleted_at 컬럼 추가 (휴지통 기능)
+    let _ = conn.execute("ALTER TABLE patients ADD COLUMN deleted_at TEXT", []);
+
     // 처방 정의 기본 데이터 삽입 (비어있을 때만)
     let count: i32 = conn.query_row(
         "SELECT COUNT(*) FROM prescription_definitions",
@@ -750,6 +753,19 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("[DB] 처방 정의 기본 데이터 삽입 중...");
         seed_prescription_definitions(conn)?;
         log::info!("[DB] 처방 정의 기본 데이터 삽입 완료");
+    }
+
+    // 약재 기본 데이터 삽입 (비어있을 때만)
+    let herb_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM herbs",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if herb_count == 0 {
+        log::info!("[DB] 약재 기본 데이터 삽입 중...");
+        seed_herbs(conn)?;
+        log::info!("[DB] 약재 기본 데이터 삽입 완료");
     }
 
     Ok(())
@@ -934,11 +950,11 @@ pub fn list_patients(search: Option<&str>) -> AppResult<Vec<Patient>> {
     let query = match search {
         Some(_) => {
             "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
-             FROM patients WHERE name LIKE ?1 ORDER BY name"
+             FROM patients WHERE name LIKE ?1 AND deleted_at IS NULL ORDER BY name"
         }
         None => {
             "SELECT id, name, chart_number, birth_date, gender, phone, address, notes, created_at, updated_at
-             FROM patients ORDER BY name"
+             FROM patients WHERE deleted_at IS NULL ORDER BY name"
         }
     };
 
@@ -1007,6 +1023,7 @@ pub fn delete_patient(id: &str) -> AppResult<()> {
 // ============ 처방 관리 ============
 
 pub fn create_prescription(prescription: &Prescription) -> AppResult<()> {
+    log::info!("[DB] create_prescription 호출: id={}, formula={}", prescription.id, prescription.formula);
     let conn = get_conn()?;
     conn.execute(
         r#"INSERT INTO prescriptions (
@@ -1100,6 +1117,7 @@ pub fn get_prescriptions_by_patient(patient_id: &str) -> AppResult<Vec<Prescript
 }
 
 pub fn list_all_prescriptions() -> AppResult<Vec<Prescription>> {
+    log::info!("[DB] list_all_prescriptions 호출");
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
         "SELECT * FROM prescriptions WHERE deleted_at IS NULL ORDER BY created_at DESC",
@@ -1111,7 +1129,14 @@ pub fn list_all_prescriptions() -> AppResult<Vec<Prescription>> {
     for row in rows {
         prescriptions.push(row?);
     }
+    log::info!("[DB] list_all_prescriptions 결과: {}건", prescriptions.len());
     Ok(prescriptions)
+}
+
+pub fn clear_all_prescriptions() -> AppResult<()> {
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM prescriptions", [])?;
+    Ok(())
 }
 
 pub fn update_prescription(prescription: &Prescription) -> AppResult<()> {
@@ -1271,6 +1296,22 @@ pub fn export_all_data() -> AppResult<String> {
 }
 
 // ============ 설문 세션 관리 (HTTP 서버용) ============
+
+/// 설문 세션 정보 (환자명 포함, 프론트엔드용)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SurveySessionWithPatient {
+    pub id: String,
+    pub token: String,
+    pub patient_id: Option<String>,
+    pub template_id: String,
+    pub respondent_name: Option<String>,
+    pub status: String,
+    pub expires_at: String,
+    pub created_by: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub patient_name: Option<String>,
+}
 
 /// 설문 세션 정보 (DB용)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1491,6 +1532,123 @@ pub fn create_survey_session(
         expires_at,
         created_at,
     })
+}
+
+/// 설문 세션 목록 조회 (환자명 포함)
+pub fn list_survey_sessions(patient_id: Option<&str>, status: Option<&str>) -> AppResult<Vec<SurveySessionWithPatient>> {
+    let conn = get_conn()?;
+    let mut sql = String::from(
+        "SELECT s.id, s.token, s.patient_id, s.template_id, s.respondent_name, s.status, s.expires_at, s.created_by, s.created_at, s.completed_at, p.name as patient_name
+         FROM survey_sessions s
+         LEFT JOIN patients p ON s.patient_id = p.id
+         WHERE 1=1"
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(pid) = patient_id {
+        sql.push_str(&format!(" AND s.patient_id = ?{}", params_vec.len() + 1));
+        params_vec.push(Box::new(pid.to_string()));
+    }
+    if let Some(st) = status {
+        sql.push_str(&format!(" AND s.status = ?{}", params_vec.len() + 1));
+        params_vec.push(Box::new(st.to_string()));
+    }
+    sql.push_str(" ORDER BY s.created_at DESC");
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_refs.as_slice(), |row| {
+        let status_str: String = row.get(5)?;
+        let status = match status_str.as_str() {
+            "completed" => "completed".to_string(),
+            "expired" => "expired".to_string(),
+            _ => "pending".to_string(),
+        };
+        Ok(SurveySessionWithPatient {
+            id: row.get(0)?,
+            token: row.get(1)?,
+            patient_id: row.get(2)?,
+            template_id: row.get(3)?,
+            respondent_name: row.get(4)?,
+            status,
+            expires_at: row.get(6)?,
+            created_by: row.get(7)?,
+            created_at: row.get(8)?,
+            completed_at: row.get(9)?,
+            patient_name: row.get(10)?,
+        })
+    })?;
+
+    let mut sessions = Vec::new();
+    for row in rows {
+        let mut session = row?;
+        // 만료 확인
+        if session.status == "pending" {
+            if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&session.expires_at) {
+                if expires < Utc::now() {
+                    conn.execute(
+                        "UPDATE survey_sessions SET status = 'expired' WHERE id = ?1",
+                        [&session.id],
+                    )?;
+                    session.status = "expired".to_string();
+                }
+            }
+        }
+        sessions.push(session);
+    }
+
+    Ok(sessions)
+}
+
+/// 설문 세션 ID로 조회
+pub fn get_survey_session(id: &str) -> AppResult<Option<SurveySessionDb>> {
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, token, patient_id, template_id, respondent_name, status, expires_at, created_at
+         FROM survey_sessions WHERE id = ?1",
+    )?;
+
+    let result = stmt.query_row([id], |row| {
+        let status_str: String = row.get(5)?;
+        let status = match status_str.as_str() {
+            "completed" => SessionStatus::Completed,
+            "expired" => SessionStatus::Expired,
+            _ => SessionStatus::Pending,
+        };
+        Ok(SurveySessionDb {
+            id: row.get(0)?,
+            token: row.get(1)?,
+            patient_id: row.get(2)?,
+            template_id: row.get(3)?,
+            respondent_name: row.get(4)?,
+            status,
+            expires_at: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    });
+
+    match result {
+        Ok(session) => Ok(Some(session)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 설문 세션 만료 처리
+pub fn expire_survey_session(id: &str) -> AppResult<()> {
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE survey_sessions SET status = 'expired' WHERE id = ?1",
+        [id],
+    )?;
+    Ok(())
+}
+
+/// 설문 세션 삭제
+pub fn delete_survey_session(id: &str) -> AppResult<()> {
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM survey_sessions WHERE id = ?1", [id])?;
+    Ok(())
 }
 
 /// 8자리 토큰 생성
@@ -3455,6 +3613,465 @@ pub fn get_usage_counts() -> AppResult<(i32, i32, i32)> {
     )?;
 
     Ok((patient_count, prescription_count, chart_count))
+}
+
+// ============ 휴지통 관리 ============
+
+/// 환자 소프트 삭제 (연관 데이터 cascade)
+pub fn soft_delete_patient(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE patients SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![now, id],
+    )?;
+    // cascade: prescriptions
+    conn.execute(
+        "UPDATE prescriptions SET deleted_at = ?1, updated_at = ?1 WHERE patient_id = ?2 AND deleted_at IS NULL",
+        params![now, id],
+    )?;
+    // cascade: initial_charts
+    conn.execute(
+        "UPDATE initial_charts SET deleted_at = ?1, updated_at = ?1 WHERE patient_id = ?2 AND deleted_at IS NULL",
+        params![now, id],
+    )?;
+    // cascade: progress_notes
+    conn.execute(
+        "UPDATE progress_notes SET deleted_at = ?1, updated_at = ?1 WHERE patient_id = ?2 AND deleted_at IS NULL",
+        params![now, id],
+    )?;
+
+    Ok(())
+}
+
+/// 초진차트 소프트 삭제
+pub fn soft_delete_initial_chart(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE initial_charts SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
+}
+
+/// 경과기록 소프트 삭제
+pub fn soft_delete_progress_note(id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE progress_notes SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
+}
+
+/// 휴지통에서 복원
+pub fn restore_from_trash(table: &str, id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = Utc::now().to_rfc3339();
+
+    match table {
+        "patients" => {
+            conn.execute(
+                "UPDATE patients SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )?;
+            // cascade restore: related items
+            conn.execute(
+                "UPDATE prescriptions SET deleted_at = NULL, updated_at = ?1 WHERE patient_id = ?2",
+                params![now, id],
+            )?;
+            conn.execute(
+                "UPDATE initial_charts SET deleted_at = NULL, updated_at = ?1 WHERE patient_id = ?2",
+                params![now, id],
+            )?;
+            conn.execute(
+                "UPDATE progress_notes SET deleted_at = NULL, updated_at = ?1 WHERE patient_id = ?2",
+                params![now, id],
+            )?;
+        }
+        "prescriptions" => {
+            conn.execute(
+                "UPDATE prescriptions SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )?;
+        }
+        "initial_charts" => {
+            conn.execute(
+                "UPDATE initial_charts SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )?;
+        }
+        "progress_notes" => {
+            conn.execute(
+                "UPDATE progress_notes SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )?;
+        }
+        _ => return Err(AppError::Custom(format!("Unknown table: {}", table))),
+    }
+    Ok(())
+}
+
+/// 영구 삭제
+pub fn permanent_delete(table: &str, id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    match table {
+        "patients" => {
+            conn.execute("DELETE FROM prescriptions WHERE patient_id = ?1", [id])?;
+            conn.execute("DELETE FROM initial_charts WHERE patient_id = ?1", [id])?;
+            conn.execute("DELETE FROM progress_notes WHERE patient_id = ?1", [id])?;
+            conn.execute("DELETE FROM patients WHERE id = ?1", [id])?;
+        }
+        "prescriptions" => {
+            conn.execute("DELETE FROM prescriptions WHERE id = ?1", [id])?;
+        }
+        "initial_charts" => {
+            conn.execute("DELETE FROM initial_charts WHERE id = ?1", [id])?;
+        }
+        "progress_notes" => {
+            conn.execute("DELETE FROM progress_notes WHERE id = ?1", [id])?;
+        }
+        _ => return Err(AppError::Custom(format!("Unknown table: {}", table))),
+    }
+    Ok(())
+}
+
+/// 휴지통 비우기
+pub fn empty_trash() -> AppResult<TrashEmptyResult> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let p: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM patients WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let rx: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescriptions WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let ic: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM initial_charts WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let pn: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM progress_notes WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+
+    conn.execute("DELETE FROM patients WHERE deleted_at IS NOT NULL", [])?;
+    conn.execute("DELETE FROM prescriptions WHERE deleted_at IS NOT NULL", [])?;
+    conn.execute("DELETE FROM initial_charts WHERE deleted_at IS NOT NULL", [])?;
+    conn.execute("DELETE FROM progress_notes WHERE deleted_at IS NOT NULL", [])?;
+
+    Ok(TrashEmptyResult {
+        deleted_patients: p,
+        deleted_prescriptions: rx,
+        deleted_initial_charts: ic,
+        deleted_progress_notes: pn,
+        total: p + rx + ic + pn,
+    })
+}
+
+/// 휴지통 항목 조회
+pub fn get_trash_items() -> AppResult<Vec<TrashItem>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut items = Vec::new();
+
+    // patients
+    let mut stmt = conn.prepare(
+        "SELECT id, name, deleted_at FROM patients WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashItem {
+            id: row.get(0)?,
+            item_type: "patient".to_string(),
+            name: row.get(1)?,
+            deleted_at: row.get(2)?,
+            extra_info: None,
+        })
+    })?;
+    for r in rows { items.push(r?); }
+
+    // prescriptions
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(prescription_name, formula, '처방'), deleted_at, patient_name FROM prescriptions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashItem {
+            id: row.get(0)?,
+            item_type: "prescription".to_string(),
+            name: row.get(1)?,
+            deleted_at: row.get(2)?,
+            extra_info: row.get(3)?,
+        })
+    })?;
+    for r in rows { items.push(r?); }
+
+    // initial_charts
+    let mut stmt = conn.prepare(
+        "SELECT ic.id, COALESCE(p.name, '환자'), ic.deleted_at, ic.chart_date FROM initial_charts ic LEFT JOIN patients p ON ic.patient_id = p.id WHERE ic.deleted_at IS NOT NULL ORDER BY ic.deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashItem {
+            id: row.get(0)?,
+            item_type: "initial_chart".to_string(),
+            name: row.get::<_, String>(1)? + " 초진차트",
+            deleted_at: row.get(2)?,
+            extra_info: row.get(3)?,
+        })
+    })?;
+    for r in rows { items.push(r?); }
+
+    // progress_notes
+    let mut stmt = conn.prepare(
+        "SELECT pn.id, COALESCE(p.name, '환자'), pn.deleted_at, pn.note_date FROM progress_notes pn LEFT JOIN patients p ON pn.patient_id = p.id WHERE pn.deleted_at IS NOT NULL ORDER BY pn.deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashItem {
+            id: row.get(0)?,
+            item_type: "progress_note".to_string(),
+            name: row.get::<_, String>(1)? + " 경과기록",
+            deleted_at: row.get(2)?,
+            extra_info: row.get(3)?,
+        })
+    })?;
+    for r in rows { items.push(r?); }
+
+    // sort by deleted_at DESC
+    items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+
+    Ok(items)
+}
+
+/// 휴지통 항목 수
+pub fn get_trash_count() -> AppResult<TrashCount> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let p: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM patients WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let rx: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescriptions WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let ic: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM initial_charts WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+    let pn: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM progress_notes WHERE deleted_at IS NOT NULL", [], |r| r.get(0),
+    )?;
+
+    Ok(TrashCount {
+        patients: p,
+        prescriptions: rx,
+        initial_charts: ic,
+        progress_notes: pn,
+        total: p + rx + ic + pn,
+    })
+}
+
+// ============ 사용량 통계 ============
+
+/// 사용량 통계 (deleted_at IS NULL 기준)
+pub fn get_usage_stats() -> AppResult<UsageStats> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    let patients: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM patients WHERE deleted_at IS NULL", [], |r| r.get(0),
+    )?;
+    let prescriptions: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescriptions WHERE deleted_at IS NULL", [], |r| r.get(0),
+    )?;
+    let initial_charts: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM initial_charts WHERE deleted_at IS NULL", [], |r| r.get(0),
+    )?;
+    let progress_notes: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM progress_notes WHERE deleted_at IS NULL", [], |r| r.get(0),
+    )?;
+
+    Ok(UsageStats { patients, prescriptions, initial_charts, progress_notes })
+}
+
+// ============ 처방정의 초기화 ============
+
+/// 처방 정의 초기화 (전체 삭제 후 시드 재삽입)
+pub fn reset_prescription_definitions() -> AppResult<i32> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute("DELETE FROM prescription_notes", [])?;
+    conn.execute("DELETE FROM prescription_case_studies", [])?;
+    conn.execute("DELETE FROM prescription_definitions", [])?;
+    conn.execute("DELETE FROM prescription_categories", [])?;
+
+    seed_prescription_definitions(&conn)?;
+
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM prescription_definitions", [], |r| r.get(0),
+    )?;
+    Ok(count)
+}
+
+// ============ 전체 사용자 데이터 초기화 ============
+
+/// 전체 사용자 데이터 삭제 (처방정의/카테고리/약재는 유지)
+pub fn reset_all_user_data() -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute("DELETE FROM progress_notes", [])?;
+    conn.execute("DELETE FROM initial_charts", [])?;
+    conn.execute("DELETE FROM prescriptions", [])?;
+    conn.execute("DELETE FROM chart_records", [])?;
+    conn.execute("DELETE FROM medication_logs", [])?;
+    conn.execute("DELETE FROM medication_schedules", [])?;
+    conn.execute("DELETE FROM medication_management", [])?;
+    conn.execute("DELETE FROM survey_responses", [])?;
+    conn.execute("DELETE FROM survey_sessions", [])?;
+    conn.execute("DELETE FROM patients", [])?;
+
+    Ok(())
+}
+
+// ============ 선택적 데이터 내보내기 ============
+
+/// 선택된 테이블만 JSON 내보내기
+pub fn export_selected_data(tables: Vec<String>) -> AppResult<String> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut export = serde_json::Map::new();
+
+    for table in &tables {
+        match table.as_str() {
+            "patients" => {
+                let patients = list_patients(None)?;
+                export.insert("patients".to_string(), serde_json::to_value(&patients)?);
+            }
+            "prescriptions" => {
+                let items = list_all_prescriptions()?;
+                export.insert("prescriptions".to_string(), serde_json::to_value(&items)?);
+            }
+            "initial_charts" => {
+                let mut stmt = conn.prepare(
+                    "SELECT id, patient_id, doctor_name, chart_date, chief_complaint, present_illness, past_medical_history, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at FROM initial_charts WHERE deleted_at IS NULL",
+                )?;
+                let rows = stmt.query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "id": row.get::<_, String>(0)?,
+                        "patient_id": row.get::<_, String>(1)?,
+                        "doctor_name": row.get::<_, Option<String>>(2)?,
+                        "chart_date": row.get::<_, String>(3)?,
+                        "chief_complaint": row.get::<_, Option<String>>(4)?,
+                        "present_illness": row.get::<_, Option<String>>(5)?,
+                        "past_medical_history": row.get::<_, Option<String>>(6)?,
+                        "notes": row.get::<_, Option<String>>(7)?,
+                        "prescription_issued": row.get::<_, i32>(8)? != 0,
+                        "prescription_issued_at": row.get::<_, Option<String>>(9)?,
+                        "created_at": row.get::<_, String>(11)?,
+                        "updated_at": row.get::<_, String>(12)?,
+                    }))
+                })?;
+                let items: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
+                export.insert("initial_charts".to_string(), serde_json::Value::Array(items));
+            }
+            "progress_notes" => {
+                let mut stmt = conn.prepare(
+                    "SELECT id, patient_id, doctor_name, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, prescription_issued, prescription_issued_at, deleted_at, created_at, updated_at FROM progress_notes WHERE deleted_at IS NULL",
+                )?;
+                let rows = stmt.query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "id": row.get::<_, String>(0)?,
+                        "patient_id": row.get::<_, String>(1)?,
+                        "doctor_name": row.get::<_, Option<String>>(2)?,
+                        "note_date": row.get::<_, String>(3)?,
+                        "subjective": row.get::<_, Option<String>>(4)?,
+                        "objective": row.get::<_, Option<String>>(5)?,
+                        "assessment": row.get::<_, Option<String>>(6)?,
+                        "plan": row.get::<_, Option<String>>(7)?,
+                        "follow_up_plan": row.get::<_, Option<String>>(8)?,
+                        "notes": row.get::<_, Option<String>>(9)?,
+                        "prescription_issued": row.get::<_, i32>(10)? != 0,
+                        "prescription_issued_at": row.get::<_, Option<String>>(11)?,
+                        "created_at": row.get::<_, String>(13)?,
+                        "updated_at": row.get::<_, String>(14)?,
+                    }))
+                })?;
+                let items: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
+                export.insert("progress_notes".to_string(), serde_json::Value::Array(items));
+            }
+            "clinic_settings" => {
+                let settings = get_clinic_settings()?;
+                export.insert("clinic_settings".to_string(), serde_json::to_value(&settings)?);
+            }
+            "survey_templates" => {
+                let items = list_survey_templates()?;
+                export.insert("survey_templates".to_string(), serde_json::to_value(&items)?);
+            }
+            "survey_responses" => {
+                let items = list_survey_responses(None)?;
+                export.insert("survey_responses".to_string(), serde_json::to_value(&items)?);
+            }
+            _ => {
+                log::warn!("Unknown table for export: {}", table);
+            }
+        }
+    }
+
+    export.insert("exported_at".to_string(), serde_json::Value::String(Utc::now().to_rfc3339()));
+    Ok(serde_json::to_string_pretty(&serde_json::Value::Object(export))?)
+}
+
+// ============ DB 바이너리 백업/복원 ============
+
+/// DB 파일을 바이너리로 읽기
+pub fn export_db_binary() -> AppResult<Vec<u8>> {
+    let db_path = get_db_path()?;
+    let data = std::fs::read(&db_path)?;
+    Ok(data)
+}
+
+/// DB 파일을 바이너리로 덮어쓰기
+pub fn import_db_binary(data: Vec<u8>) -> AppResult<()> {
+    let db_path = get_db_path()?;
+    std::fs::write(&db_path, &data)?;
+    log::info!("Database binary imported to {:?} ({} bytes)", db_path, data.len());
+    Ok(())
+}
+
+// ============ 약재 기본 데이터 시드 ============
+
+fn seed_herbs(conn: &Connection) -> AppResult<()> {
+    let herbs = vec![
+        ("감초", 4.0, "g"), ("갈근", 8.0, "g"), ("계지", 6.0, "g"), ("작약", 6.0, "g"),
+        ("대추", 6.0, "g"), ("생강", 6.0, "g"), ("마황", 6.0, "g"), ("행인", 12.0, "g"),
+        ("석고", 32.0, "g"), ("자감초", 4.0, "g"), ("반하", 16.0, "g"), ("황련", 2.0, "g"),
+        ("황금", 6.0, "g"), ("인삼", 6.0, "g"), ("건강", 6.0, "g"), ("시호", 16.0, "g"),
+        ("대황", 8.0, "g"), ("망초", 8.0, "g"), ("후박", 8.0, "g"), ("지실", 10.0, "g"),
+        ("복령", 8.0, "g"), ("백출", 6.0, "g"), ("택사", 12.0, "g"), ("부자", 2.0, "g"),
+        ("세신", 4.0, "g"), ("오미자", 6.0, "g"), ("당귀", 6.0, "g"), ("천궁", 6.0, "g"),
+        ("숙지황", 8.0, "g"), ("산수유", 8.0, "g"), ("목단피", 6.0, "g"), ("산약", 8.0, "g"),
+        ("도인", 6.0, "g"), ("지모", 12.0, "g"), ("치자", 14.0, "g"), ("길경", 4.0, "g"),
+        ("방풍", 5.0, "g"), ("강활", 5.0, "g"), ("독활", 5.0, "g"), ("황기", 6.0, "g"),
+        ("귤피", 5.0, "g"), ("향부자", 5.0, "g"), ("의이인", 12.0, "g"), ("아교주", 4.0, "g"),
+        ("용골", 6.0, "g"), ("모려", 6.0, "g"), ("맥문동", 10.0, "g"), ("원지", 5.0, "g"),
+        ("건지황", 8.0, "g"),
+    ];
+
+    let now = Utc::now().to_rfc3339();
+    let mut stmt = conn.prepare(
+        "INSERT INTO herbs (name, default_dosage, unit, created_at) VALUES (?1, ?2, ?3, ?4)"
+    )?;
+
+    for (name, dosage, unit) in &herbs {
+        stmt.execute(params![name, dosage, unit, now])?;
+    }
+
+    Ok(())
 }
 
 // ============ 처방 정의 기본 데이터 시드 ============

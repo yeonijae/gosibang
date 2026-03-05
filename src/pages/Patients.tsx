@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import { Search, Plus, Edit2, Trash2, X, FileText, ClipboardList, Printer, Loader2, MessageSquare, AlertCircle, Eye, ArrowLeft, ExternalLink } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
 import { useSurveyStore } from '../store/surveyStore';
-import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
+// localDb removed — using Tauri invoke
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
 import InitialChartView from '../components/InitialChartView';
 import { ResponseViewerModal } from '../components/survey/ResponseViewerModal';
@@ -42,9 +43,6 @@ export function Patients() {
 
   // 환자별 내역 개수 조회
   const loadPatientCounts = async (patientList: Patient[]) => {
-    const db = getDb();
-    if (!db) return;
-
     const counts: Record<string, { prescriptions: number; charts: number; surveys: number }> = {};
 
     // clinic.db에서 설문 응답 전체 조회하여 환자별 카운트 계산
@@ -61,21 +59,30 @@ export function Patients() {
       console.error('설문 카운트 조회 실패:', e);
     }
 
-    for (const patient of patientList) {
-      const prescriptionCount = queryToObjects<{ cnt: number }>(
-        db,
-        'SELECT COUNT(*) as cnt FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL',
-        [patient.id]
-      )[0]?.cnt || 0;
+    // clinic.db에서 전체 처방 목록 조회하여 환자별 카운트 계산
+    let prescriptionCounts: Record<string, number> = {};
+    try {
+      const allPrescriptions = await invoke<any[]>('list_all_prescriptions');
+      for (const p of allPrescriptions) {
+        if (p.patient_id) {
+          prescriptionCounts[p.patient_id] = (prescriptionCounts[p.patient_id] || 0) + 1;
+        }
+      }
+    } catch (e) {
+      console.error('처방 카운트 조회 실패:', e);
+    }
 
-      const chartCount = queryToObjects<{ cnt: number }>(
-        db,
-        'SELECT COUNT(*) as cnt FROM initial_charts WHERE patient_id = ? AND deleted_at IS NULL',
-        [patient.id]
-      )[0]?.cnt || 0;
+    for (const patient of patientList) {
+      let chartCount = 0;
+      try {
+        const charts = await invoke<any[]>('get_initial_charts_by_patient', { patientId: patient.id });
+        chartCount = charts.length;
+      } catch (e) {
+        console.error('차트 카운트 조회 실패:', e);
+      }
 
       counts[patient.id] = {
-        prescriptions: prescriptionCount,
+        prescriptions: prescriptionCounts[patient.id] || 0,
         charts: chartCount,
         surveys: surveyCounts[patient.id] || 0,
       };
@@ -560,16 +567,9 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
   const loadPrescriptions = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) return;
+      const results = await invoke<any[]>('get_prescriptions_by_patient', { patientId: patient.id });
 
-      const data = queryToObjects<Prescription>(
-        db,
-        'SELECT * FROM prescriptions WHERE patient_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
-        [patient.id]
-      );
-
-      const parsed = data.map((p) => ({
+      const parsed = results.map((p: any) => ({
         ...p,
         merged_herbs: typeof p.merged_herbs === 'string' ? JSON.parse(p.merged_herbs) : p.merged_herbs || [],
         final_herbs: typeof p.final_herbs === 'string' ? JSON.parse(p.final_herbs) : p.final_herbs || [],
@@ -585,40 +585,41 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
 
   const handleSaveNew = async (data: PrescriptionData) => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
-      const id = generateUUID();
+      const id = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO prescriptions (id, patient_id, patient_name, prescription_name, formula, merged_herbs, final_herbs, total_doses, days, doses_per_day, total_packs, pack_volume, water_amount, herb_adjustment, total_dosage, final_total_amount, notes, status, issued_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+      await invoke('create_prescription', {
+        prescription: {
           id,
-          patient.id,
-          patient.name,
-          data.formula, // prescription_name - 처방 수식을 이름으로 사용
-          data.formula,
-          JSON.stringify(data.mergedHerbs),
-          JSON.stringify(data.finalHerbs),
-          data.totalDoses,
-          data.days,
-          data.dosesPerDay,
-          data.totalPacks,
-          data.packVolume,
-          data.waterAmount,
-          data.herbAdjustment || null,
-          data.totalDosage,
-          data.finalTotalAmount,
-          data.notes || null,
-          'issued',
-          now,
-          now,
-          now,
-        ]
-      );
-      saveDb();
+          patient_id: patient.id,
+          patient_name: patient.name,
+          prescription_name: data.formula,
+          chart_number: patient.chart_number || null,
+          patient_age: null,
+          patient_gender: null,
+          source_type: null,
+          source_id: null,
+          formula: data.formula,
+          merged_herbs: JSON.stringify(data.mergedHerbs),
+          final_herbs: JSON.stringify(data.finalHerbs),
+          total_doses: data.totalDoses,
+          days: data.days,
+          doses_per_day: data.dosesPerDay,
+          total_packs: data.totalPacks,
+          pack_volume: data.packVolume,
+          water_amount: data.waterAmount,
+          herb_adjustment: data.herbAdjustment || null,
+          total_dosage: data.totalDosage,
+          final_total_amount: data.finalTotalAmount,
+          notes: data.notes || null,
+          status: 'issued',
+          issued_at: now,
+          created_by: null,
+          deleted_at: null,
+          created_at: now,
+          updated_at: now,
+        }
+      });
 
       alert('처방전이 저장되었습니다.');
       setViewMode('list');
@@ -633,32 +634,27 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
     if (!editingPrescription) return;
 
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
 
-      db.run(
-        `UPDATE prescriptions SET formula = ?, merged_herbs = ?, final_herbs = ?, total_doses = ?, days = ?, doses_per_day = ?, total_packs = ?, pack_volume = ?, water_amount = ?, herb_adjustment = ?, total_dosage = ?, final_total_amount = ?, notes = ?, updated_at = ? WHERE id = ?`,
-        [
-          data.formula,
-          JSON.stringify(data.mergedHerbs),
-          JSON.stringify(data.finalHerbs),
-          data.totalDoses,
-          data.days,
-          data.dosesPerDay,
-          data.totalPacks,
-          data.packVolume,
-          data.waterAmount,
-          data.herbAdjustment || null,
-          data.totalDosage,
-          data.finalTotalAmount,
-          data.notes || null,
-          now,
-          editingPrescription.id,
-        ]
-      );
-      saveDb();
+      await invoke('update_prescription', {
+        prescription: {
+          ...editingPrescription,
+          formula: data.formula,
+          merged_herbs: JSON.stringify(data.mergedHerbs),
+          final_herbs: JSON.stringify(data.finalHerbs),
+          total_doses: data.totalDoses,
+          days: data.days,
+          doses_per_day: data.dosesPerDay,
+          total_packs: data.totalPacks,
+          pack_volume: data.packVolume,
+          water_amount: data.waterAmount,
+          herb_adjustment: data.herbAdjustment || null,
+          total_dosage: data.totalDosage,
+          final_total_amount: data.finalTotalAmount,
+          notes: data.notes || null,
+          updated_at: now,
+        }
+      });
 
       alert('처방전이 수정되었습니다.');
       setViewMode('list');
@@ -674,8 +670,7 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
     if (!confirm('이 처방전을 삭제하시겠습니까?')) return;
 
     try {
-      const success = softDelete('prescriptions', prescription.id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_prescription', { id: prescription.id });
 
       alert('처방전이 휴지통으로 이동되었습니다.');
       loadPrescriptions();
@@ -885,14 +880,7 @@ function PatientChartModal({ patient, onClose, navigate }: PatientChartModalProp
   const loadCharts = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) return;
-
-      const initialData = queryToObjects<InitialChart>(
-        db,
-        'SELECT * FROM initial_charts WHERE patient_id = ? AND deleted_at IS NULL ORDER BY chart_date DESC',
-        [patient.id]
-      );
+      const initialData = await invoke<InitialChart[]>('get_initial_charts_by_patient', { patientId: patient.id });
       setInitialCharts(initialData);
     } catch (error) {
       console.error('차트 로드 실패:', error);
@@ -905,8 +893,7 @@ function PatientChartModal({ patient, onClose, navigate }: PatientChartModalProp
     if (!confirm('이 초진차트를 삭제하시겠습니까?')) return;
 
     try {
-      const success = softDelete('initial_charts', chart.id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_initial_chart', { id: chart.id });
 
       alert('초진차트가 휴지통으로 이동되었습니다.');
       loadCharts();

@@ -640,6 +640,48 @@ pub struct PrescriptionCaseStudy {
     pub updated_at: String,
 }
 
+// ============ 휴지통 / 통계 / 초기화 ============
+
+/// 휴지통 항목
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashItem {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub item_type: String,       // "patient" | "prescription" | "initial_chart" | "progress_note"
+    pub name: String,
+    pub deleted_at: String,
+    pub extra_info: Option<String>,
+}
+
+/// 휴지통 항목 수
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashCount {
+    pub patients: i32,
+    pub prescriptions: i32,
+    pub initial_charts: i32,
+    pub progress_notes: i32,
+    pub total: i32,
+}
+
+/// 휴지통 비우기 결과
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashEmptyResult {
+    pub deleted_patients: i32,
+    pub deleted_prescriptions: i32,
+    pub deleted_initial_charts: i32,
+    pub deleted_progress_notes: i32,
+    pub total: i32,
+}
+
+/// 사용량 통계
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageStats {
+    pub patients: i32,
+    pub prescriptions: i32,
+    pub initial_charts: i32,
+    pub progress_notes: i32,
+}
+
 /// 복약 관리 (해피콜)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MedicationManagement {

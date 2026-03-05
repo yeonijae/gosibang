@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getDb, queryToObjects } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { PrescriptionTemplate, PrescriptionHerb } from '../types';
 
 // 최종 약재 타입
@@ -89,25 +89,17 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
   const loadPrescriptionTemplates = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) {
-        setLoading(false);
-        return;
-      }
 
-      // 약재 목록 로드
-      const herbsData = queryToObjects<{ id: number; name: string }>(db, 'SELECT id, name FROM herbs ORDER BY id');
+      // 약재 목록 로드 (clinic.db)
+      const herbsData = await invoke<{ id: number; name: string }[]>('list_herbs');
       const idMap = new Map<string, number>();
       herbsData.forEach((herb) => {
         idMap.set(herb.name, herb.id);
       });
       setHerbIdMap(idMap);
 
-      // 처방 템플릿 로드
-      const data = queryToObjects<{ id: number; name: string; alias: string; composition: string; description: string }>(
-        db,
-        'SELECT * FROM prescription_definitions ORDER BY name'
-      );
+      // 처방 템플릿 로드 (clinic.db)
+      const data = await invoke<{ id: number; name: string; alias: string; composition: string; description: string }[]>('list_prescription_definitions');
 
       // 이름/별칭으로 raw 데이터 맵 생성 (합방 해석용)
       const rawDataMap = new Map<string, { id: number; name: string; alias: string; composition: string; description: string }>();

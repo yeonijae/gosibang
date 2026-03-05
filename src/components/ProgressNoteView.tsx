@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Plus, Save, Edit, Trash2, Loader2, Check, Cloud, AlertCircle } from 'lucide-react';
-import { getDb, saveDb, generateUUID, queryToObjects, softDelete } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { ProgressNote } from '../types';
 
 type SaveStatus = 'idle' | 'changed' | 'saving' | 'saved' | 'error';
@@ -52,18 +52,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
   const loadNotes = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) {
-        setLoading(false);
-        return;
-      }
-
-      const data = queryToObjects<ProgressNote>(
-        db,
-        'SELECT * FROM progress_notes WHERE patient_id = ? AND deleted_at IS NULL ORDER BY note_date DESC',
-        [patientId]
-      );
-
+      const data = await invoke<ProgressNote[]>('get_progress_notes_by_patient', { patientId });
       setNotes(data);
     } catch (error) {
       console.error('경과기록 로드 실패:', error);
@@ -90,8 +79,6 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
 
     try {
       setSaveStatus('saving');
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
       const now = new Date().toISOString();
       const noteDate = formData.note_date || now.split('T')[0];
@@ -99,45 +86,47 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
 
       if (existingId) {
         // 기존 기록 업데이트
-        db.run(
-          `UPDATE progress_notes SET note_date = ?, subjective = ?, objective = ?, assessment = ?, plan = ?, follow_up_plan = ?, notes = ?, updated_at = ?
-           WHERE id = ?`,
-          [
-            noteDate,
-            formData.subjective || null,
-            formData.objective || null,
-            formData.assessment || null,
-            formData.plan || null,
-            formData.follow_up_plan || null,
-            formData.notes || null,
-            now,
-            existingId
-          ]
-        );
+        const existing = await invoke<ProgressNote | null>('get_progress_note', { id: existingId });
+        if (existing) {
+          await invoke('update_progress_note', {
+            note: {
+              ...existing,
+              note_date: noteDate,
+              subjective: formData.subjective || null,
+              objective: formData.objective || null,
+              assessment: formData.assessment || null,
+              plan: formData.plan || null,
+              follow_up_plan: formData.follow_up_plan || null,
+              notes: formData.notes || null,
+              updated_at: now,
+            }
+          });
+        }
       } else {
         // 새 기록 생성
-        const newId = generateUUID();
-        db.run(
-          `INSERT INTO progress_notes (id, patient_id, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            newId,
-            patientId,
-            noteDate,
-            formData.subjective || null,
-            formData.objective || null,
-            formData.assessment || null,
-            formData.plan || null,
-            formData.follow_up_plan || null,
-            formData.notes || null,
-            now,
-            now
-          ]
-        );
+        const newId = crypto.randomUUID();
+        await invoke('create_progress_note', {
+          note: {
+            id: newId,
+            patient_id: patientId,
+            doctor_name: null,
+            note_date: noteDate,
+            subjective: formData.subjective || null,
+            objective: formData.objective || null,
+            assessment: formData.assessment || null,
+            plan: formData.plan || null,
+            follow_up_plan: formData.follow_up_plan || null,
+            notes: formData.notes || null,
+            prescription_issued: false,
+            prescription_issued_at: null,
+            deleted_at: null,
+            created_at: now,
+            updated_at: now,
+          }
+        });
         setCurrentNoteId(newId);
       }
 
-      saveDb();
       setSaveStatus('saved');
 
       // 3초 후 상태를 idle로 변경
@@ -232,53 +221,51 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
 
   const handleSave = async () => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
       const noteDate = formData.note_date || now.split('T')[0];
       const existingId = editingNote?.id || currentNoteId;
 
       if (existingId) {
         // 기존 기록 업데이트
-        db.run(
-          `UPDATE progress_notes SET note_date = ?, subjective = ?, objective = ?, assessment = ?, plan = ?, follow_up_plan = ?, notes = ?, updated_at = ?
-           WHERE id = ?`,
-          [
-            noteDate,
-            formData.subjective || null,
-            formData.objective || null,
-            formData.assessment || null,
-            formData.plan || null,
-            formData.follow_up_plan || null,
-            formData.notes || null,
-            now,
-            existingId
-          ]
-        );
-        saveDb();
+        const existing = await invoke<ProgressNote | null>('get_progress_note', { id: existingId });
+        if (existing) {
+          await invoke('update_progress_note', {
+            note: {
+              ...existing,
+              note_date: noteDate,
+              subjective: formData.subjective || null,
+              objective: formData.objective || null,
+              assessment: formData.assessment || null,
+              plan: formData.plan || null,
+              follow_up_plan: formData.follow_up_plan || null,
+              notes: formData.notes || null,
+              updated_at: now,
+            }
+          });
+        }
         alert('경과기록이 저장되었습니다');
       } else {
         // 새 기록 생성
-        const id = generateUUID();
-        db.run(
-          `INSERT INTO progress_notes (id, patient_id, note_date, subjective, objective, assessment, plan, follow_up_plan, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
+        const id = crypto.randomUUID();
+        await invoke('create_progress_note', {
+          note: {
             id,
-            patientId,
-            noteDate,
-            formData.subjective || null,
-            formData.objective || null,
-            formData.assessment || null,
-            formData.plan || null,
-            formData.follow_up_plan || null,
-            formData.notes || null,
-            now,
-            now
-          ]
-        );
-        saveDb();
+            patient_id: patientId,
+            doctor_name: null,
+            note_date: noteDate,
+            subjective: formData.subjective || null,
+            objective: formData.objective || null,
+            assessment: formData.assessment || null,
+            plan: formData.plan || null,
+            follow_up_plan: formData.follow_up_plan || null,
+            notes: formData.notes || null,
+            prescription_issued: false,
+            prescription_issued_at: null,
+            deleted_at: null,
+            created_at: now,
+            updated_at: now,
+          }
+        });
         alert('경과기록이 추가되었습니다');
       }
 
@@ -298,8 +285,7 @@ export function ProgressNoteView({ patientId, patientName, onClose, forceNew = f
     if (!confirm('이 경과기록을 삭제하시겠습니까?')) return;
 
     try {
-      const success = softDelete('progress_notes', id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_progress_note', { id });
 
       alert('경과기록이 휴지통으로 이동되었습니다');
       setSelectedNote(null);

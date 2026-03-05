@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, Calendar, Pill } from 'lucide-react';
 import { TimePickerGrid } from './TimePickerGrid';
-import { getDb, queryToObjects } from '../../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { Patient, Prescription, MedicationSchedule } from '../../types';
 
 interface MedicationScheduleFormProps {
@@ -72,14 +72,9 @@ export function MedicationScheduleForm({
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const db = getDb();
-      if (!db) return;
 
       // 환자 목록 로드
-      const patientsData = queryToObjects<Patient>(
-        db,
-        'SELECT * FROM patients WHERE deleted_at IS NULL ORDER BY name'
-      );
+      const patientsData = await invoke<Patient[]>('list_patients', {});
       setPatients(patientsData);
 
       // 수정 모드인 경우 해당 환자의 처방 로드
@@ -95,17 +90,9 @@ export function MedicationScheduleForm({
 
   const loadPrescriptions = async (pId: string) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const prescriptionsData = queryToObjects<Prescription>(
-        db,
-        `SELECT * FROM prescriptions
-         WHERE patient_id = ? AND status = 'issued' AND deleted_at IS NULL
-         ORDER BY created_at DESC`,
-        [pId]
-      );
-      setPrescriptions(prescriptionsData);
+      const allPrescriptions = await invoke<Prescription[]>('get_prescriptions_by_patient', { patientId: pId });
+      const issuedPrescriptions = allPrescriptions.filter(p => p.status === 'issued');
+      setPrescriptions(issuedPrescriptions);
     } catch (error) {
       console.error('처방 로드 실패:', error);
     }

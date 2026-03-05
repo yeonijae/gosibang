@@ -10,7 +10,7 @@ import {
   User,
   Loader2,
 } from 'lucide-react';
-import { getDb, queryToObjects } from '../../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import type { MedicationSchedule, Patient, Prescription } from '../../types';
 
 interface MedicationScheduleListProps {
@@ -42,25 +42,21 @@ export function MedicationScheduleList({
   const loadDetails = async () => {
     try {
       setIsLoading(true);
-      const db = getDb();
-      if (!db) {
-        setSchedulesWithDetails(schedules);
-        return;
-      }
+
+      // 처방 정보를 clinic.db에서 조회
+      const allPrescriptions = await invoke<Prescription[]>('list_all_prescriptions');
+      const prescriptionMap = new Map<string, Prescription>();
+      allPrescriptions.forEach(p => prescriptionMap.set(p.id, p));
+
+      // 환자 목록 조회
+      const allPatients = await invoke<Patient[]>('list_patients', {});
+      const patientMap = new Map<string, Patient>();
+      allPatients.forEach(p => patientMap.set(p.id, p));
 
       // 환자 및 처방 정보 조회
       const enriched = schedules.map((schedule) => {
-        const patient = queryToObjects<Patient>(
-          db,
-          'SELECT name FROM patients WHERE id = ?',
-          [schedule.patient_id]
-        )[0];
-
-        const prescription = queryToObjects<Prescription>(
-          db,
-          'SELECT formula, prescription_name FROM prescriptions WHERE id = ?',
-          [schedule.prescription_id]
-        )[0];
+        const patient = patientMap.get(schedule.patient_id);
+        const prescription = prescriptionMap.get(schedule.prescription_id);
 
         return {
           ...schedule,

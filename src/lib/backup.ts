@@ -1,10 +1,8 @@
 // 로컬 백업 유틸리티
 // File System Access API를 사용하여 로컬 폴더에 백업
 
-import { getDb, saveDb } from './localDb';
+import { invoke } from '@tauri-apps/api/core';
 import { listImageFiles, readImageFile, writeImageFile } from './imageStorage';
-
-const DB_KEY = 'gosibang_db';
 const BACKUP_SETTINGS_KEY = 'gosibang_backup_settings';
 const BACKUP_HISTORY_KEY = 'gosibang_backup_history';
 
@@ -100,27 +98,23 @@ export function generateBackupFilename(): string {
   return `gosibang_backup_${dateStr}_${timeStr}.db`;
 }
 
-// DB 데이터를 Uint8Array로 내보내기
-export function exportDbToBytes(): Uint8Array | null {
-  const db = getDb();
-  if (!db) return null;
-
-  // 먼저 현재 상태 저장
-  saveDb();
-
-  return db.export();
+// DB 데이터를 Uint8Array로 내보내기 (Rust backend)
+export async function exportDbToBytes(): Promise<Uint8Array | null> {
+  try {
+    const data = await invoke<number[]>('export_db_binary');
+    return new Uint8Array(data);
+  } catch (e) {
+    console.error('DB 내보내기 실패:', e);
+    return null;
+  }
 }
 
 // DB 데이터를 Blob으로 변환
-export function exportDbToBlob(): Blob | null {
-  const data = exportDbToBytes();
+export async function exportDbToBlob(): Promise<Blob | null> {
+  const data = await exportDbToBytes();
   if (!data) return null;
 
-  // Uint8Array를 새 ArrayBuffer로 복사하여 Blob 생성
-  const buffer = new ArrayBuffer(data.length);
-  const view = new Uint8Array(buffer);
-  view.set(data);
-  return new Blob([buffer], { type: 'application/x-sqlite3' });
+  return new Blob([data.buffer as ArrayBuffer], { type: 'application/x-sqlite3' });
 }
 
 // File System Access API 지원 여부 확인
@@ -142,7 +136,7 @@ export async function selectFolderAndBackup(): Promise<{ success: boolean; filen
 
     // 백업 파일 생성
     const filename = generateBackupFilename();
-    const blob = exportDbToBlob();
+    const blob = await exportDbToBlob();
 
     if (!blob) {
       return { success: false, error: '데이터베이스를 내보내는데 실패했습니다.' };
@@ -179,9 +173,9 @@ export async function selectFolderAndBackup(): Promise<{ success: boolean; filen
 }
 
 // 다운로드 방식 백업 (File System Access API 미지원 브라우저용)
-export function downloadBackup(): { success: boolean; filename?: string; error?: string } {
+export async function downloadBackup(): Promise<{ success: boolean; filename?: string; error?: string }> {
   try {
-    const blob = exportDbToBlob();
+    const blob = await exportDbToBlob();
     if (!blob) {
       return { success: false, error: '데이터베이스를 내보내는데 실패했습니다.' };
     }
@@ -228,15 +222,8 @@ export async function restoreFromBackup(file: File): Promise<{ success: boolean;
       return { success: false, error: '유효한 SQLite 백업 파일이 아닙니다.' };
     }
 
-    // localStorage에 저장
-    const CHUNK_SIZE = 0x8000; // 32KB
-    let binary = '';
-    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-      const chunk = data.subarray(i, i + CHUNK_SIZE);
-      binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
-    }
-    const base64 = btoa(binary);
-    localStorage.setItem(DB_KEY, base64);
+    // Rust backend로 복원
+    await invoke('import_db_binary', { data: Array.from(data) });
 
     return { success: true };
   } catch (e: any) {
@@ -405,7 +392,7 @@ export async function exportToZip(userId?: string): Promise<{ success: boolean; 
     const zip = new JSZip();
 
     // 1. DB 내보내기
-    const dbBytes = exportDbToBytes();
+    const dbBytes = await exportDbToBytes();
     if (!dbBytes) {
       return { success: false, error: '데이터베이스를 내보내는데 실패했습니다.' };
     }
@@ -484,15 +471,8 @@ export async function restoreFromZip(file: File, userId?: string): Promise<{ suc
       return { success: false, error: 'ZIP의 DB 파일이 유효한 SQLite 파일이 아닙니다.' };
     }
 
-    // DB → localStorage 저장
-    const CHUNK_SIZE = 0x8000;
-    let binary = '';
-    for (let i = 0; i < dbData.length; i += CHUNK_SIZE) {
-      const chunk = dbData.subarray(i, i + CHUNK_SIZE);
-      binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
-    }
-    const base64 = btoa(binary);
-    localStorage.setItem(DB_KEY, base64);
+    // Rust backend로 복원
+    await invoke('import_db_binary', { data: Array.from(dbData) });
 
     // 2. 이미지 파일 복원
     const imageFolder = zip.folder('images');

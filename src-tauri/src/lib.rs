@@ -67,6 +67,7 @@ pub fn run() {
             list_all_prescriptions,
             update_prescription,
             soft_delete_prescription,
+            clear_all_prescriptions,
             // 차팅 관리
             create_chart_record,
             get_chart_records_by_patient,
@@ -101,6 +102,14 @@ pub fn run() {
             save_survey_template,
             delete_survey_template,
             restore_default_survey_templates,
+            // 설문 세션 관리
+            list_survey_sessions,
+            create_survey_session,
+            get_survey_session_by_token,
+            get_survey_session,
+            complete_survey_session,
+            expire_survey_session,
+            delete_survey_session,
             // 설문 응답 관리
             list_survey_responses,
             delete_survey_response,
@@ -159,6 +168,25 @@ pub fn run() {
             delete_medication_log,
             // 사용량 카운트
             get_usage_counts,
+            // 휴지통 관리
+            soft_delete_patient,
+            soft_delete_initial_chart,
+            soft_delete_progress_note,
+            restore_from_trash,
+            permanent_delete,
+            empty_trash,
+            get_trash_items,
+            get_trash_count,
+            // 사용량 통계
+            get_usage_stats,
+            // 초기화
+            reset_prescription_definitions,
+            reset_all_user_data,
+            // 선택적 데이터 내보내기
+            export_selected_data,
+            // DB 바이너리 백업/복원
+            export_db_binary,
+            import_db_binary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

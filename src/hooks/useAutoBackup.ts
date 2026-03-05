@@ -10,7 +10,7 @@ import type { BackupSettings } from '../lib/backup';
 interface UseAutoBackupReturn {
   settings: BackupSettings;
   updateSettings: (updates: Partial<BackupSettings>) => void;
-  triggerBackup: () => { success: boolean; filename?: string; error?: string };
+  triggerBackup: () => Promise<{ success: boolean; filename?: string; error?: string }>;
   isBackingUp: boolean;
 }
 
@@ -28,9 +28,9 @@ export function useAutoBackup(): UseAutoBackupReturn {
   }, []);
 
   // 수동 백업 트리거
-  const triggerBackup = useCallback(() => {
+  const triggerBackup = useCallback(async () => {
     setIsBackingUp(true);
-    const result = downloadBackup();
+    const result = await downloadBackup();
     if (result.success) {
       setSettings((prev) => ({
         ...prev,
@@ -45,10 +45,10 @@ export function useAutoBackup(): UseAutoBackupReturn {
   useEffect(() => {
     if (!settings.autoBackupEnabled) return;
 
-    const checkAndBackup = () => {
+    const checkAndBackup = async () => {
       if (needsAutoBackup()) {
         console.log('[AutoBackup] Starting automatic backup...');
-        const result = downloadBackup();
+        const result = await downloadBackup();
         if (result.success) {
           console.log('[AutoBackup] Backup completed:', result.filename);
           setSettings((prev) => ({

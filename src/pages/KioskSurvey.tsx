@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Search, User, UserPlus, ChevronRight, Loader2, CheckCircle, FileText } from 'lucide-react';
-import { initLocalDb, getDb, queryToObjects } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import { useSurveyStore } from '../store/surveyStore';
 import { QuestionRenderer } from '../components/survey/QuestionRenderer';
 import type { Patient, SurveyTemplate, SurveySession, SurveyAnswer } from '../types';
@@ -36,7 +36,6 @@ export function KioskSurvey() {
   useEffect(() => {
     const init = async () => {
       try {
-        await initLocalDb();
         await loadTemplates();
         setPageState('patient_select');
       } catch (err) {
@@ -56,18 +55,8 @@ export function KioskSurvey() {
 
     setSearching(true);
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const results = queryToObjects<Patient>(
-        db,
-        `SELECT * FROM patients
-         WHERE name LIKE ?
-         ORDER BY name
-         LIMIT 10`,
-        [`%${searchName.trim()}%`]
-      );
-      setSearchResults(results);
+      const results = await invoke<Patient[]>('list_patients', { search: searchName.trim() });
+      setSearchResults(results.slice(0, 10));
     } catch (err) {
       console.error('검색 실패:', err);
     } finally {

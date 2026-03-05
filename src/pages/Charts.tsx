@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Save, Edit, Trash2, Loader2, FileText, ClipboardList, X, Calendar, Eye, Stethoscope, Pill, ChevronRight, CheckCircle, ExternalLink, Send, Search } from 'lucide-react';
 import { usePatientStore } from '../store/patientStore';
-import { getDb, saveDb, generateUUID, queryToObjects, queryOne, softDelete } from '../lib/localDb';
 import { invoke } from '@tauri-apps/api/core';
 import PrescriptionInput from '../components/PrescriptionInput';
 import type { PrescriptionData } from '../components/PrescriptionInput';
@@ -102,18 +101,7 @@ export function Charts() {
   const loadChartRecords = async () => {
     try {
       setListLoading(true);
-      const db = getDb();
-      if (!db) return;
-
-      const initialCharts = queryToObjects<InitialChart & { patient_name: string; chart_number?: string }>(
-        db,
-        `SELECT ic.*, p.name as patient_name, p.chart_number as chart_number
-         FROM initial_charts ic
-         LEFT JOIN patients p ON ic.patient_id = p.id
-         WHERE ic.deleted_at IS NULL
-         ORDER BY ic.chart_date DESC`
-      );
-
+      const initialCharts = await invoke<(InitialChart & { patient_name: string; chart_number?: string })[]>('list_initial_charts');
       setChartRecords(initialCharts);
     } catch (error) {
       console.error('차트 목록 로드 실패:', error);
@@ -197,15 +185,9 @@ export function Charts() {
   const loadDetailData = async (chartId: string, patientId: string) => {
     try {
       setDetailLoading(true);
-      const db = getDb();
-      if (!db) return;
 
       // 초진차트 로드
-      const chartData = queryOne<InitialChart>(
-        db,
-        'SELECT * FROM initial_charts WHERE id = ?',
-        [chartId]
-      );
+      const chartData = await invoke<InitialChart | null>('get_initial_chart', { id: chartId });
 
       if (chartData) {
         setInitialChart(chartData);
@@ -213,11 +195,7 @@ export function Charts() {
       }
 
       // 경과기록 로드
-      const notesData = queryToObjects<ProgressNote>(
-        db,
-        'SELECT * FROM progress_notes WHERE patient_id = ? AND deleted_at IS NULL ORDER BY note_date DESC',
-        [patientId]
-      );
+      const notesData = await invoke<ProgressNote[]>('get_progress_notes_by_patient', { patientId });
 
       // ProgressNote → ProgressEntry 변환
       const entries: ProgressEntry[] = notesData.map(note => ({
@@ -234,7 +212,7 @@ export function Charts() {
       setProgressEntries(entries);
 
       // 환자 선택
-      const patient = queryOne<Patient>(db, 'SELECT * FROM patients WHERE id = ?', [patientId]);
+      const patient = await invoke<Patient | null>('get_patient', { id: patientId });
       if (patient) {
         selectPatient(patient);
       }
@@ -390,36 +368,28 @@ export function Charts() {
       const now = new Date().toISOString();
       const noteDate = progressDate;
 
-      const db = getDb();
-      if (!db) return;
+      const targetId = editingProgressId || lastSavedId;
 
-      if (editingProgressId) {
-        // 수정 모드
-        db.run(
-          `UPDATE progress_notes SET
-            note_date = ?, objective = ?, assessment = ?, plan = ?, updated_at = ?
-          WHERE id = ?`,
-          [noteDate, parsed.treatment || null, parsed.diagnosis || null, parsed.prescription || null, now, editingProgressId]
-        );
-        saveDb();
-      } else if (lastSavedId) {
-        // 기존 경과 업데이트
-        db.run(
-          `UPDATE progress_notes SET
-            note_date = ?, objective = ?, assessment = ?, plan = ?, updated_at = ?
-          WHERE id = ?`,
-          [noteDate, parsed.treatment || null, parsed.diagnosis || null, parsed.prescription || null, now, lastSavedId]
-        );
-        saveDb();
+      if (targetId) {
+        // 수정 모드 또는 기존 경과 업데이트
+        const existingNote = await invoke<ProgressNote | null>('get_progress_note', { id: targetId });
+        if (existingNote) {
+          await invoke('update_progress_note', {
+            note: { ...existingNote, note_date: noteDate, objective: parsed.treatment || null, assessment: parsed.diagnosis || null, plan: parsed.prescription || null, updated_at: now }
+          });
+        }
       } else {
         // 새 경과 생성
-        const newId = generateUUID();
-        db.run(
-          `INSERT INTO progress_notes (id, patient_id, note_date, objective, assessment, plan, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [newId, initialChart.patient_id, noteDate, parsed.treatment || null, parsed.diagnosis || null, parsed.prescription || null, now, now]
-        );
-        saveDb();
+        const newId = crypto.randomUUID();
+        await invoke('create_progress_note', {
+          note: {
+            id: newId, patient_id: initialChart.patient_id, doctor_name: null,
+            note_date: noteDate, subjective: null, objective: parsed.treatment || null,
+            assessment: parsed.diagnosis || null, plan: parsed.prescription || null,
+            follow_up_plan: null, notes: null, prescription_issued: false,
+            prescription_issued_at: null, deleted_at: null, created_at: now, updated_at: now,
+          }
+        });
         setLastSavedId(newId);
       }
 
@@ -451,17 +421,17 @@ export function Charts() {
 
       const parsed = parseProgressText(progressText);
       const now = new Date().toISOString();
+      const id = crypto.randomUUID();
 
-      const db = getDb();
-      if (!db) return;
-
-      const id = generateUUID();
-      db.run(
-        `INSERT INTO progress_notes (id, patient_id, note_date, objective, assessment, plan, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, initialChart.patient_id, progressDate, parsed.treatment || null, parsed.diagnosis || null, parsed.prescription || null, now, now]
-      );
-      saveDb();
+      await invoke('create_progress_note', {
+        note: {
+          id, patient_id: initialChart.patient_id, doctor_name: null,
+          note_date: progressDate, subjective: null, objective: parsed.treatment || null,
+          assessment: parsed.diagnosis || null, plan: parsed.prescription || null,
+          follow_up_plan: null, notes: null, prescription_issued: false,
+          prescription_issued_at: null, deleted_at: null, created_at: now, updated_at: now,
+        }
+      });
 
       alert('경과가 추가되었습니다');
       setShowAddForm(false);
@@ -521,16 +491,12 @@ export function Charts() {
       const parsed = parseProgressText(progressText);
       const now = new Date().toISOString();
 
-      const db = getDb();
-      if (!db) return;
-
-      db.run(
-        `UPDATE progress_notes SET
-          note_date = ?, objective = ?, assessment = ?, plan = ?, updated_at = ?
-        WHERE id = ?`,
-        [progressDate, parsed.treatment || null, parsed.diagnosis || null, parsed.prescription || null, now, editingProgressId]
-      );
-      saveDb();
+      const existingNote = await invoke<ProgressNote | null>('get_progress_note', { id: editingProgressId });
+      if (existingNote) {
+        await invoke('update_progress_note', {
+          note: { ...existingNote, note_date: progressDate, objective: parsed.treatment || null, assessment: parsed.diagnosis || null, plan: parsed.prescription || null, updated_at: now }
+        });
+      }
 
       alert('경과가 수정되었습니다');
       setShowAddForm(false);
@@ -551,8 +517,7 @@ export function Charts() {
     if (!confirm('이 경과를 삭제하시겠습니까?')) return;
 
     try {
-      const success = softDelete('progress_notes', progressId);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_progress_note', { id: progressId });
 
       alert('경과가 휴지통으로 이동되었습니다');
       await loadDetailData(initialChart!.id, initialChart!.patient_id);
@@ -576,14 +541,10 @@ export function Charts() {
       if (!initialChart) return;
 
       const now = new Date().toISOString();
-      const db = getDb();
-      if (!db) return;
 
-      db.run(
-        `UPDATE initial_charts SET notes = ?, updated_at = ? WHERE id = ?`,
-        [editedNotes, now, initialChart.id]
-      );
-      saveDb();
+      await invoke('update_initial_chart', {
+        chart: { ...initialChart, notes: editedNotes, updated_at: now }
+      });
 
       alert('초진차트가 수정되었습니다');
       setIsEditingChart(false);
@@ -601,8 +562,7 @@ export function Charts() {
     if (!confirm('이 진료기록을 삭제하시겠습니까?')) return;
 
     try {
-      const success = softDelete('initial_charts', initialChart.id);
-      if (!success) throw new Error('삭제에 실패했습니다.');
+      await invoke('soft_delete_initial_chart', { id: initialChart.id });
 
       alert('진료기록이 휴지통으로 이동되었습니다');
       closeDetailModal();
@@ -631,7 +591,7 @@ export function Charts() {
   };
 
   // 초진차트 처방전 발급
-  const handleIssuePrescriptionInitial = () => {
+  const handleIssuePrescriptionInitial = async () => {
     if (!initialChart) return;
 
     const prescriptionSection = extractSectionFromNotes(initialChart.notes || '', '처방');
@@ -643,17 +603,18 @@ export function Charts() {
       setPrescriptionPatientName(detailPatient.name);
       setPrescriptionChartNumber(detailPatient.chart_number || null);
       console.log('[처방전 발급] detailPatient 사용:', detailPatient.name);
-    } else {
+    } else if (initialChart.patient_id) {
       // 폴백: DB에서 직접 조회
-      const db = getDb();
-      if (db && initialChart.patient_id) {
-        const patient = queryOne<Patient>(db, 'SELECT * FROM patients WHERE id = ?', [initialChart.patient_id]);
+      try {
+        const patient = await invoke<Patient | null>('get_patient', { id: initialChart.patient_id });
         if (patient) {
           setPrescriptionPatientId(patient.id);
           setPrescriptionPatientName(patient.name);
           setPrescriptionChartNumber(patient.chart_number || null);
           console.log('[처방전 발급] DB에서 조회:', patient.name);
         }
+      } catch (e) {
+        console.error('환자 조회 실패:', e);
       }
     }
 
@@ -686,11 +647,8 @@ export function Charts() {
   // 처방 저장
   const handleSavePrescription = async (data: PrescriptionData) => {
     try {
-      const db = getDb();
-      if (!db) return;
-
       const now = new Date().toISOString();
-      const prescriptionId = generateUUID();
+      const prescriptionId = crypto.randomUUID();
 
       // 처방전 발급 시 저장해둔 환자 정보 사용
       const patientId = prescriptionPatientId || initialChart?.patient_id || selectedPatient?.id;
@@ -733,19 +691,22 @@ export function Charts() {
         }
       });
 
-      // 처방발급 상태 업데이트 (localDb - initial_charts/progress_notes는 아직 localDb 의존)
+      // 처방발급 상태 업데이트
       if (prescriptionSourceType === 'initial_chart' && prescriptionSourceId) {
-        db.run(
-          `UPDATE initial_charts SET prescription_issued = 1, prescription_issued_at = ? WHERE id = ?`,
-          [now, prescriptionSourceId]
-        );
+        const chart = await invoke<InitialChart | null>('get_initial_chart', { id: prescriptionSourceId });
+        if (chart) {
+          await invoke('update_initial_chart', {
+            chart: { ...chart, prescription_issued: true, prescription_issued_at: now }
+          });
+        }
         setInitialChartPrescriptionIssued(true);
       } else if (prescriptionSourceType === 'progress_note' && prescriptionSourceId) {
-        db.run(
-          `UPDATE progress_notes SET prescription_issued = 1, prescription_issued_at = ? WHERE id = ?`,
-          [now, prescriptionSourceId]
-        );
-
+        const note = await invoke<ProgressNote | null>('get_progress_note', { id: prescriptionSourceId });
+        if (note) {
+          await invoke('update_progress_note', {
+            note: { ...note, prescription_issued: true, prescription_issued_at: now }
+          });
+        }
         setProgressEntries(prev =>
           prev.map(entry =>
             entry.id === prescriptionSourceId
@@ -754,8 +715,6 @@ export function Charts() {
           )
         );
       }
-
-      saveDb();
 
       alert('처방전이 발급되었습니다');
       setShowPrescriptionInputModal(false);

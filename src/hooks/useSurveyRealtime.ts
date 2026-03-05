@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { supabase } from '../lib/supabase';
-import { getDb, saveDb } from '../lib/localDb';
 import { useSurveyStore } from '../store/surveyStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -48,16 +47,8 @@ export function useSurveyRealtime(userId: string | null) {
 
       console.log('[Survey Realtime] clinic.db에 응답 저장 완료 (session:', response.session_id, ')');
 
-      // 세션 상태를 completed로 업데이트 (세션은 아직 sql.js)
-      const db = getDb();
-      if (db) {
-        const now = new Date().toISOString();
-        db.run(
-          'UPDATE survey_sessions SET status = ?, completed_at = ? WHERE id = ?',
-          ['completed', now, response.session_id]
-        );
-        saveDb();
-      }
+      // 세션 상태를 completed로 업데이트
+      await invoke('complete_survey_session', { sessionId: response.session_id });
 
       // Supabase에서 해당 응답 삭제 (로컬에 저장 완료되었으므로)
       const { error: deleteError } = await supabase

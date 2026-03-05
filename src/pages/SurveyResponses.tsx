@@ -8,7 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { useSurveyRealtime } from '../hooks/useSurveyRealtime';
 import { supabase } from '../lib/supabase';
-import { getDb, saveDb, generateUUID } from '../lib/localDb';
+// generateUUID replaced with crypto.randomUUID()
 import { generateExpiresAt, generateQuestionId } from '../lib/surveyUtils';
 import type { SurveyResponse, SurveyTemplate, SurveyAnswer, Patient, SurveyQuestion, QuestionType, ScaleConfig, SurveyDisplayMode } from '../types';
 
@@ -587,9 +587,8 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
 
     try {
       const token = generateToken();
-      const sessionId = generateUUID();
+      const sessionId = crypto.randomUUID();
       const expiresAt = generateExpiresAt(24); // 24시간 만료
-      const now = new Date().toISOString();
 
       // 선택된 템플릿 찾기
       const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
@@ -597,17 +596,8 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
         throw new Error('템플릿을 찾을 수 없습니다.');
       }
 
-      // 1. 로컬 DB에 세션 저장 (patient_id는 빈 문자열로 - NOT NULL 제약조건)
-      const db = getDb();
-      if (db) {
-        db.run(
-          `INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, patient_name, chart_number, doctor_name, gender, age, status, expires_at, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-          [sessionId, token, '', selectedTemplateId, respondentName || null, patientName || null, chartNumber || null, doctorName || null, gender || null, age || null, expiresAt, userId, now]
-        );
-        saveDb();
-        console.log('[Survey] 로컬 DB에 세션 저장:', sessionId);
-      }
+      // 1. 세션 저장 (surveyStore가 처리)
+      console.log('[Survey] 세션 생성:', sessionId);
 
       // 2. Supabase에 템플릿 복사 (아직 없으면)
       const { data: existingTemplate } = await supabase

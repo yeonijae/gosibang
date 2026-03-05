@@ -24,7 +24,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from './store/authStore';
 import { useClinicStore } from './store/clinicStore';
 import { useFeatureStore } from './store/featureStore';
-import { initLocalDb, ensureSampleData } from './lib/localDb';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -41,13 +40,6 @@ function App() {
       try {
         // 인증 상태 확인 (Supabase) - 먼저 사용자 확인
         const authResult = await checkAuth();
-
-        // 로컬 DB 초기화 (사용자별 분리)
-        const userId = authResult?.user?.id;
-        await initLocalDb(userId);
-
-        // 기본 처방 템플릿 확인 및 삽입
-        ensureSampleData();
 
         // 기능 권한 로드 (플랜에 따라)
         const planType = authResult?.subscription?.plan || 'free';

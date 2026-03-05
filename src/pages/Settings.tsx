@@ -1,6 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
 import { Save, Download, Upload, Loader2, Crown, Check, X, Users, FileText, ClipboardList, HardDrive, FolderOpen, RotateCcw, Trash2, UserX, AlertTriangle, User, Mail, Phone, GraduationCap, FileDown, Key, Smartphone, Monitor, LogOut } from 'lucide-react';
-import { getDb, saveDb, queryOne, queryToObjects, resetPrescriptionDefinitions, getTrashItems, getTrashCount, restoreFromTrash, permanentDelete, emptyTrash, type TrashItem } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
+
+// TrashItem type (from Rust backend)
+interface TrashItem {
+  id: string;
+  type: string;
+  name: string;
+  deleted_at: string;
+  extra_info?: string;
+}
+
 import { useClinicStore } from '../store/clinicStore';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
@@ -458,37 +468,32 @@ export function Settings() {
     }
   }, [activeTab]);
 
-  const loadUsageStats = () => {
+  const loadUsageStats = async () => {
     try {
-      const db = getDb();
-      if (!db) return;
-
-      const patientsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM patients WHERE deleted_at IS NULL');
-      const prescriptionsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM prescriptions WHERE deleted_at IS NULL');
-      const initialChartsCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM initial_charts WHERE deleted_at IS NULL');
-      const progressNotesCount = queryOne<{ cnt: number }>(db, 'SELECT COUNT(*) as cnt FROM progress_notes WHERE deleted_at IS NULL');
-
+      const stats = await invoke<{ patients: number; prescriptions: number; initial_charts: number; progress_notes: number }>('get_usage_stats');
       setUsageStats({
-        patients: patientsCount?.cnt || 0,
-        prescriptions: prescriptionsCount?.cnt || 0,
-        initialCharts: initialChartsCount?.cnt || 0,
-        progressNotes: progressNotesCount?.cnt || 0,
+        patients: stats.patients,
+        prescriptions: stats.prescriptions,
+        initialCharts: stats.initial_charts,
+        progressNotes: stats.progress_notes,
       });
 
       // 휴지통 개수도 업데이트
-      setTrashCount(getTrashCount());
+      const tc = await invoke<{ total: number; patients: number; prescriptions: number; initial_charts: number; progress_notes: number }>('get_trash_count');
+      setTrashCount({ total: tc.total, patients: tc.patients, prescriptions: tc.prescriptions, charts: tc.initial_charts + tc.progress_notes });
     } catch (error) {
       console.error('Failed to load usage stats:', error);
     }
   };
 
   // 휴지통 항목 로드
-  const loadTrashItems = () => {
+  const loadTrashItems = async () => {
     setIsLoadingTrash(true);
     try {
-      const items = getTrashItems();
+      const items = await invoke<TrashItem[]>('get_trash_items');
       setTrashItems(items);
-      setTrashCount(getTrashCount());
+      const tc = await invoke<{ total: number; patients: number; prescriptions: number; initial_charts: number; progress_notes: number }>('get_trash_count');
+      setTrashCount({ total: tc.total, patients: tc.patients, prescriptions: tc.prescriptions, charts: tc.initial_charts + tc.progress_notes });
     } catch (error) {
       console.error('Failed to load trash items:', error);
     } finally {
@@ -497,55 +502,60 @@ export function Settings() {
   };
 
   // 휴지통에서 복원
-  const handleRestore = (item: TrashItem) => {
-    const tableMap = {
+  const handleRestore = async (item: TrashItem) => {
+    const tableMap: Record<string, string> = {
       patient: 'patients',
       prescription: 'prescriptions',
       initial_chart: 'initial_charts',
       progress_note: 'progress_notes',
-    } as const;
+    };
 
-    const success = restoreFromTrash(tableMap[item.type], item.id);
-    if (success) {
-      loadTrashItems();
-      loadUsageStats();
+    try {
+      await invoke('restore_from_trash', { table: tableMap[item.type], id: item.id });
+      await loadTrashItems();
+      await loadUsageStats();
       setMessage({ type: 'success', text: `${item.name}이(가) 복원되었습니다.` });
-    } else {
+    } catch {
       setMessage({ type: 'error', text: '복원에 실패했습니다.' });
     }
   };
 
   // 영구 삭제
-  const handlePermanentDelete = (item: TrashItem) => {
+  const handlePermanentDelete = async (item: TrashItem) => {
     if (!confirm(`"${item.name}"을(를) 영구 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
 
-    const tableMap = {
+    const tableMap: Record<string, string> = {
       patient: 'patients',
       prescription: 'prescriptions',
       initial_chart: 'initial_charts',
       progress_note: 'progress_notes',
-    } as const;
+    };
 
-    const success = permanentDelete(tableMap[item.type], item.id);
-    if (success) {
-      loadTrashItems();
+    try {
+      await invoke('permanent_delete', { table: tableMap[item.type], id: item.id });
+      await loadTrashItems();
       setMessage({ type: 'success', text: `${item.name}이(가) 영구 삭제되었습니다.` });
-    } else {
+    } catch {
       setMessage({ type: 'error', text: '삭제에 실패했습니다.' });
     }
   };
 
   // 휴지통 비우기
-  const handleEmptyTrash = () => {
+  const handleEmptyTrash = async () => {
     if (!confirm('휴지통을 비우시겠습니까?\n\n모든 항목이 영구 삭제되며 복구할 수 없습니다.')) return;
 
-    const result = emptyTrash();
-    loadTrashItems();
-    loadUsageStats();
-    setMessage({
-      type: 'success',
-      text: `휴지통이 비워졌습니다. (환자 ${result.patients}명, 처방 ${result.prescriptions}개, 차트 ${result.charts}개 삭제)`,
-    });
+    try {
+      const result = await invoke<{ deleted_patients: number; deleted_prescriptions: number; deleted_initial_charts: number; deleted_progress_notes: number; total: number }>('empty_trash');
+      await loadTrashItems();
+      await loadUsageStats();
+      setMessage({
+        type: 'success',
+        text: `휴지통이 비워졌습니다. (환자 ${result.deleted_patients}명, 처방 ${result.deleted_prescriptions}개, 차트 ${result.deleted_initial_charts + result.deleted_progress_notes}개 삭제)`,
+      });
+    } catch (error) {
+      console.error('휴지통 비우기 실패:', error);
+      setMessage({ type: 'error', text: '휴지통 비우기에 실패했습니다.' });
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -618,21 +628,13 @@ export function Settings() {
 
     setIsResettingUserData(true);
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+      // 전체 사용자 데이터 삭제
+      await invoke('reset_all_user_data');
 
-      // 환자, 처방, 차트 데이터 삭제
-      db.run('DELETE FROM progress_notes');
-      db.run('DELETE FROM initial_charts');
-      db.run('DELETE FROM prescriptions');
-      db.run('DELETE FROM chart_records');
-      db.run('DELETE FROM patients');
+      // 처방정의 초기화
+      const prescriptionCount = await invoke<number>('reset_prescription_definitions');
 
-      // 처방정의 초기화 (265개로 복원)
-      const prescriptionCount = resetPrescriptionDefinitions();
-
-      saveDb();
-      loadUsageStats();
+      await loadUsageStats();
       setMessage({ type: 'success', text: `초기화 완료: 모든 데이터 삭제, 처방공부 ${prescriptionCount}개로 복원` });
     } catch (error) {
       console.error('데이터 초기화 실패:', error);
@@ -653,64 +655,27 @@ export function Settings() {
   };
 
   // 선택 데이터 내보내기 (JSON)
-  const handleExportSelected = () => {
+  const handleExportSelected = async () => {
     try {
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
+      const selectedTables = Object.entries(exportSelections)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
 
-      const selectedCount = Object.values(exportSelections).filter(Boolean).length;
-      if (selectedCount === 0) {
+      if (selectedTables.length === 0) {
         setMessage({ type: 'error', text: '내보낼 항목을 하나 이상 선택해주세요.' });
         return;
       }
 
-      const tableMap: Record<string, string> = {
-        patients: 'SELECT * FROM patients',
-        prescriptions: 'SELECT * FROM prescriptions',
-        initial_charts: 'SELECT * FROM initial_charts',
-        progress_notes: 'SELECT * FROM progress_notes',
-        prescription_definitions: 'SELECT * FROM prescription_definitions',
-        prescription_notes: 'SELECT * FROM prescription_notes',
-        prescription_case_studies: 'SELECT * FROM prescription_case_studies',
-        prescription_categories: 'SELECT * FROM prescription_categories',
-        survey_templates: 'SELECT * FROM survey_templates',
-        survey_responses: 'SELECT * FROM survey_responses',
-        medication_schedules: 'SELECT * FROM medication_schedules',
-        medication_logs: 'SELECT * FROM medication_logs',
-        clinic_settings: 'SELECT * FROM clinic_settings',
-      };
-
-      const data: Record<string, unknown[]> = {};
-      const counts: Record<string, number> = {};
-
-      for (const [key, query] of Object.entries(tableMap)) {
-        if (exportSelections[key]) {
-          try {
-            const rows = queryToObjects(db, query);
-            data[key] = rows;
-            counts[key] = rows.length;
-          } catch {
-            // 테이블이 없을 수 있음
-            data[key] = [];
-            counts[key] = 0;
-          }
-        }
-      }
-
+      const jsonStr = await invoke<string>('export_selected_data', { tables: selectedTables });
+      const parsed = JSON.parse(jsonStr);
       const exportData = {
         version: '1.0',
-        exported_at: new Date().toISOString(),
-        data,
-        counts,
+        ...parsed,
       };
 
       downloadJSON(exportData, 'gosibang_export');
 
-      const summary = Object.entries(counts)
-        .filter(([, v]) => v > 0)
-        .map(([k, v]) => `${EXPORT_LABELS[k] || k} ${v}개`)
-        .join(', ');
-      setMessage({ type: 'success', text: `내보내기 완료: ${summary}` });
+      setMessage({ type: 'success', text: `데이터 내보내기가 완료되었습니다.` });
     } catch (error) {
       console.error('Export error:', error);
       setMessage({ type: 'error', text: '데이터 내보내기에 실패했습니다.' });

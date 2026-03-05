@@ -121,7 +121,11 @@ pub fn delete_patient(id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn create_prescription(prescription: Prescription) -> Result<(), String> {
-    db::create_prescription(&prescription).map_err(|e| e.to_string())
+    log::info!("[CMD] create_prescription 호출됨: id={}", prescription.id);
+    db::create_prescription(&prescription).map_err(|e| {
+        log::error!("[CMD] create_prescription 실패: {}", e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -142,6 +146,11 @@ pub fn update_prescription(prescription: Prescription) -> Result<(), String> {
 #[tauri::command]
 pub fn soft_delete_prescription(id: String) -> Result<(), String> {
     db::soft_delete_prescription(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_all_prescriptions() -> Result<(), String> {
+    db::clear_all_prescriptions().map_err(|e| e.to_string())
 }
 
 // ============ 차팅 관리 명령어 ============
@@ -524,6 +533,50 @@ pub fn delete_survey_template(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn restore_default_survey_templates() -> Result<(), String> {
     db::restore_default_templates().map_err(|e| e.to_string())
+}
+
+// ============ 설문 세션 명령어 ============
+
+/// 설문 세션 목록 조회
+#[tauri::command]
+pub fn list_survey_sessions(patient_id: Option<String>, status: Option<String>) -> Result<Vec<db::SurveySessionWithPatient>, String> {
+    db::list_survey_sessions(patient_id.as_deref(), status.as_deref()).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 생성
+#[tauri::command]
+pub fn create_survey_session(patient_id: Option<String>, template_id: String, respondent_name: Option<String>, created_by: Option<String>) -> Result<db::SurveySessionDb, String> {
+    db::create_survey_session(patient_id.as_deref(), &template_id, respondent_name.as_deref(), created_by.as_deref()).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 토큰으로 조회
+#[tauri::command]
+pub fn get_survey_session_by_token(token: String) -> Result<Option<db::SurveySessionDb>, String> {
+    db::get_survey_session_by_token(&token).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 ID로 조회
+#[tauri::command]
+pub fn get_survey_session(id: String) -> Result<Option<db::SurveySessionDb>, String> {
+    db::get_survey_session(&id).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 완료 처리
+#[tauri::command]
+pub fn complete_survey_session(session_id: String) -> Result<(), String> {
+    db::complete_survey_session(&session_id).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 만료 처리
+#[tauri::command]
+pub fn expire_survey_session(id: String) -> Result<(), String> {
+    db::expire_survey_session(&id).map_err(|e| e.to_string())
+}
+
+/// 설문 세션 삭제
+#[tauri::command]
+pub fn delete_survey_session(id: String) -> Result<(), String> {
+    db::delete_survey_session(&id).map_err(|e| e.to_string())
 }
 
 // ============ QR 코드 생성 명령어 ============
@@ -910,5 +963,85 @@ pub fn delete_medication_log(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_usage_counts() -> Result<(i32, i32, i32), String> {
     db::get_usage_counts().map_err(|e| e.to_string())
+}
+
+// ============ 휴지통 관리 명령어 ============
+
+#[tauri::command]
+pub fn soft_delete_patient(id: String) -> Result<(), String> {
+    db::soft_delete_patient(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn soft_delete_initial_chart(id: String) -> Result<(), String> {
+    db::soft_delete_initial_chart(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn soft_delete_progress_note(id: String) -> Result<(), String> {
+    db::soft_delete_progress_note(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn restore_from_trash(table: String, id: String) -> Result<(), String> {
+    db::restore_from_trash(&table, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn permanent_delete(table: String, id: String) -> Result<(), String> {
+    db::permanent_delete(&table, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn empty_trash() -> Result<crate::models::TrashEmptyResult, String> {
+    db::empty_trash().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_trash_items() -> Result<Vec<crate::models::TrashItem>, String> {
+    db::get_trash_items().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_trash_count() -> Result<crate::models::TrashCount, String> {
+    db::get_trash_count().map_err(|e| e.to_string())
+}
+
+// ============ 사용량 통계 명령어 ============
+
+#[tauri::command]
+pub fn get_usage_stats() -> Result<crate::models::UsageStats, String> {
+    db::get_usage_stats().map_err(|e| e.to_string())
+}
+
+// ============ 초기화 명령어 ============
+
+#[tauri::command]
+pub fn reset_prescription_definitions() -> Result<i32, String> {
+    db::reset_prescription_definitions().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reset_all_user_data() -> Result<(), String> {
+    db::reset_all_user_data().map_err(|e| e.to_string())
+}
+
+// ============ 선택적 데이터 내보내기 명령어 ============
+
+#[tauri::command]
+pub fn export_selected_data(tables: Vec<String>) -> Result<String, String> {
+    db::export_selected_data(tables).map_err(|e| e.to_string())
+}
+
+// ============ DB 바이너리 백업/복원 명령어 ============
+
+#[tauri::command]
+pub fn export_db_binary() -> Result<Vec<u8>, String> {
+    db::export_db_binary().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_db_binary(data: Vec<u8>) -> Result<(), String> {
+    db::import_db_binary(data).map_err(|e| e.to_string())
 }
 

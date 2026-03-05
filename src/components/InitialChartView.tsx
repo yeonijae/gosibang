@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Save, Edit, Loader2, AlertCircle, Check, Cloud } from 'lucide-react';
-import { getDb, saveDb, generateUUID, queryOne } from '../lib/localDb';
+import { invoke } from '@tauri-apps/api/core';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { InitialChart } from '../types';
 
@@ -146,17 +146,9 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
   const loadChart = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-      if (!db) {
-        setLoading(false);
-        return;
-      }
 
-      const data = queryOne<InitialChart>(
-        db,
-        'SELECT * FROM initial_charts WHERE patient_id = ? ORDER BY created_at DESC LIMIT 1',
-        [patientId]
-      );
+      const charts = await invoke<InitialChart[]>('get_initial_charts_by_patient', { patientId });
+      const data = charts.length > 0 ? charts[0] : null;
 
       if (data) {
         setChart(data);
@@ -184,19 +176,18 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
 
     try {
       setSaveStatus('saving');
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
 
       const now = new Date().toISOString();
       const existingChartId = chart?.id || chartId;
 
       if (existingChartId) {
         // 기존 차트 업데이트
-        db.run(
-          `UPDATE initial_charts SET chart_date = ?, notes = ?, updated_at = ?
-           WHERE id = ?`,
-          [chartDate, formData.notes.trim(), now, existingChartId]
-        );
+        const existingChart = await invoke<InitialChart | null>('get_initial_chart', { id: existingChartId });
+        if (existingChart) {
+          await invoke('update_initial_chart', {
+            chart: { ...existingChart, chart_date: chartDate, notes: formData.notes.trim(), updated_at: now }
+          });
+        }
       } else {
         // 새 차트 생성 시 제한 확인
         const limitCheck = canAddChart();
@@ -206,17 +197,20 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
           return;
         }
 
-        const newId = generateUUID();
-        db.run(
-          `INSERT INTO initial_charts (id, patient_id, chart_date, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [newId, patientId, chartDate, formData.notes.trim(), now, now]
-        );
+        const newId = crypto.randomUUID();
+        await invoke('create_initial_chart', {
+          chart: {
+            id: newId, patient_id: patientId, doctor_name: null,
+            chart_date: chartDate, chief_complaint: null, present_illness: null,
+            past_medical_history: null, notes: formData.notes.trim(),
+            prescription_issued: false, prescription_issued_at: null,
+            deleted_at: null, created_at: now, updated_at: now,
+          }
+        });
         setChartId(newId);
         refreshUsage();
       }
 
-      saveDb();
       setSaveStatus('saved');
 
       // 3초 후 상태를 idle로 변경
@@ -285,20 +279,17 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
         return;
       }
 
-      const db = getDb();
-      if (!db) throw new Error('DB가 초기화되지 않았습니다.');
-
       const now = new Date().toISOString();
       const existingChartId = chart?.id || chartId;
 
       if (existingChartId) {
         // 기존 차트 업데이트
-        db.run(
-          `UPDATE initial_charts SET chart_date = ?, notes = ?, updated_at = ?
-           WHERE id = ?`,
-          [formData.chart_date, formData.notes.trim(), now, existingChartId]
-        );
-        saveDb();
+        const existingChart = await invoke<InitialChart | null>('get_initial_chart', { id: existingChartId });
+        if (existingChart) {
+          await invoke('update_initial_chart', {
+            chart: { ...existingChart, chart_date: formData.chart_date, notes: formData.notes.trim(), updated_at: now }
+          });
+        }
 
         alert('초진차트가 저장되었습니다');
         setIsEditing(false);
@@ -311,13 +302,16 @@ export function InitialChartView({ patientId, patientName, onClose, forceNew = f
           return;
         }
 
-        const id = generateUUID();
-        db.run(
-          `INSERT INTO initial_charts (id, patient_id, chart_date, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [id, patientId, formData.chart_date, formData.notes.trim(), now, now]
-        );
-        saveDb();
+        const id = crypto.randomUUID();
+        await invoke('create_initial_chart', {
+          chart: {
+            id, patient_id: patientId, doctor_name: null,
+            chart_date: formData.chart_date, chief_complaint: null, present_illness: null,
+            past_medical_history: null, notes: formData.notes.trim(),
+            prescription_issued: false, prescription_issued_at: null,
+            deleted_at: null, created_at: now, updated_at: now,
+          }
+        });
         refreshUsage();
 
         alert('새 진료차트가 생성되었습니다');

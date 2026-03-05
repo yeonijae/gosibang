@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { initLocalDb } from '../lib/localDb';
 import { useSurveyStore } from '../store/surveyStore';
 import { QuestionRenderer } from '../components/survey/QuestionRenderer';
 import type { SurveyTemplate, SurveySession, SurveyAnswer } from '../types';
@@ -29,9 +28,6 @@ export function PatientSurvey() {
       }
 
       try {
-        // DB 초기화 (공개 페이지이므로 직접 초기화)
-        await initLocalDb();
-
         const result = await getSessionByToken(token);
 
         if (!result) {
