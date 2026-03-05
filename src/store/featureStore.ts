@@ -4,7 +4,6 @@ import type { FeatureKey, PlanFeatures } from '../types';
 
 // 기본 기능 (비기너 플랜 기준)
 const DEFAULT_FEATURES: PlanFeatures = {
-  dashboard: true,
   patients: true,
   prescriptions: true,
   prescription_definitions: true,

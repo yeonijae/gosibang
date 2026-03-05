@@ -340,7 +340,6 @@ export interface UserSession {
 
 // 기능 키 (메뉴와 매핑)
 export type FeatureKey =
-  | 'dashboard'
   | 'patients'
   | 'prescriptions'
   | 'prescription_definitions'
@@ -355,7 +354,6 @@ export type FeatureKey =
 
 // 플랜별 기능 권한
 export interface PlanFeatures {
-  dashboard: boolean;
   patients: boolean;
   prescriptions: boolean;
   prescription_definitions: boolean;

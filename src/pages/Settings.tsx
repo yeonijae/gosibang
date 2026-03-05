@@ -87,7 +87,6 @@ const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
 
 // 기능 레이블 매핑 (gosibang-admin과 동기화)
 const FEATURE_LABELS: Record<string, string> = {
-  dashboard: '대시보드',
   patients: '환자관리',
   prescriptions: '처방관리',
   prescription_definitions: '처방공부',
@@ -106,7 +105,6 @@ const SURVEY_FEATURE_KEYS = ['survey_templates', 'survey_responses', 'survey_int
 
 // 기능 표시 순서 (플랜 비교에서 표시할 기능)
 const DISPLAY_FEATURES: string[] = [
-  'dashboard',
   'patients',
   'prescriptions',
   'prescription_definitions',

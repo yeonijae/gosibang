@@ -2,7 +2,6 @@ import type { FeatureKey, MenuItemMeta } from '../types';
 
 // 메뉴 아이템 정의
 export const MENU_ITEMS: MenuItemMeta[] = [
-  { key: 'dashboard', label: '대시보드', icon: 'LayoutDashboard', path: '/' },
   { key: 'patients', label: '환자관리', icon: 'Users', path: '/patients' },
   { key: 'prescriptions', label: '처방관리', icon: 'FileText', path: '/prescriptions' },
   { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
@@ -22,7 +21,6 @@ export const FIXED_MENU = {
 
 // 기본 메뉴 순서
 export const DEFAULT_MENU_ORDER: FeatureKey[] = [
-  'dashboard',
   'patients',
   'prescriptions',
   'survey_responses',

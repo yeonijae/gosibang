@@ -5,7 +5,6 @@ import { Loader2 } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { useZoom } from './hooks/useZoom';
-import { Dashboard } from './pages/Dashboard';
 import { Patients } from './pages/Patients';
 import { Prescriptions } from './pages/Prescriptions';
 import { PrescriptionDefinitions } from './pages/PrescriptionDefinitions';
@@ -132,7 +131,7 @@ function App() {
             )
           }
         >
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Navigate to="/patients" replace />} />
           <Route path="/patients" element={<Patients />} />
           <Route path="/prescriptions" element={<Prescriptions />} />
           <Route path="/prescription-definitions" element={<PrescriptionDefinitions />} />
