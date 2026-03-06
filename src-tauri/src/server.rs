@@ -899,6 +899,10 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
         async function createOnlineLink() {{
             const templateId = document.getElementById('modal-template').value;
             const name = document.getElementById('modal-name').value;
+            const patientName = document.getElementById('modal-patient-name').value;
+            const chartNumber = document.getElementById('modal-chart-number').value;
+            const gender = document.getElementById('modal-gender').value;
+            const age = document.getElementById('modal-age').value;
 
             if (!templateId) {{
                 alert('템플릿을 선택하세요');
@@ -911,7 +915,11 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         template_id: templateId,
-                        respondent_name: name || null
+                        respondent_name: name || patientName || null,
+                        patient_name: patientName || null,
+                        chart_number: chartNumber || null,
+                        patient_age: age || null,
+                        patient_gender: gender || null
                     }})
                 }});
 
@@ -953,6 +961,33 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
             <div class="form-group">
                 <label for="modal-name">응답자 이름 (선택)</label>
                 <input type="text" id="modal-name" placeholder="환자 또는 응답자 이름">
+            </div>
+            <div style="border:1px solid #e5e7eb;border-radius:0.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem;">
+                <p style="font-weight:600;color:#374151;margin-bottom:0.75rem;font-size:0.875rem;">환자 정보 (선택)</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                    <div class="form-group" style="margin-bottom:0.5rem;">
+                        <label for="modal-patient-name" style="font-size:0.75rem;color:#6b7280;">환자 이름</label>
+                        <input type="text" id="modal-patient-name" placeholder="홍길동" style="padding:0.5rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.5rem;">
+                        <label for="modal-chart-number" style="font-size:0.75rem;color:#6b7280;">차트번호</label>
+                        <input type="text" id="modal-chart-number" placeholder="12345" style="padding:0.5rem;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="modal-gender" style="font-size:0.75rem;color:#6b7280;">성별</label>
+                        <select id="modal-gender" style="padding:0.5rem;">
+                            <option value="">선택</option>
+                            <option value="male">남</option>
+                            <option value="female">여</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="modal-age" style="font-size:0.75rem;color:#6b7280;">나이</label>
+                        <input type="number" id="modal-age" placeholder="35" style="padding:0.5rem;">
+                    </div>
+                </div>
             </div>
             <button class="btn-submit" onclick="createOnlineLink()">링크 생성</button>
             <div class="result-box" id="online-result" style="display:none;">
@@ -1066,6 +1101,10 @@ struct CreateSessionRequest {
     template_id: String,
     respondent_name: Option<String>,
     patient_id: Option<String>,
+    patient_name: Option<String>,
+    chart_number: Option<String>,
+    patient_age: Option<String>,
+    patient_gender: Option<String>,
 }
 
 async fn create_session_api(
@@ -1198,6 +1237,8 @@ async fn create_online_session_api(
         "template_id": template.id,
         "token": survey_token,
         "respondent_name": payload.respondent_name,
+        "patient_name": payload.patient_name,
+        "chart_number": payload.chart_number,
         "expires_at": expires_at,
     });
 
@@ -1232,7 +1273,10 @@ async fn create_online_session_api(
         payload.respondent_name.as_deref(),
         Some(&user_id),
         Some(&survey_token),
-        None, None, None, None,
+        payload.patient_name.as_deref(),
+        payload.chart_number.as_deref(),
+        payload.patient_age.as_deref(),
+        payload.patient_gender.as_deref(),
     ) {
         log::warn!("로컬 DB 세션 저장 실패 (무시): {}", e);
     }
