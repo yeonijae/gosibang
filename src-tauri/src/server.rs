@@ -898,7 +898,6 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
 
         async function createOnlineLink() {{
             const templateId = document.getElementById('modal-template').value;
-            const name = document.getElementById('modal-name').value;
             const patientName = document.getElementById('modal-patient-name').value;
             const chartNumber = document.getElementById('modal-chart-number').value;
             const gender = document.getElementById('modal-gender').value;
@@ -915,7 +914,7 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         template_id: templateId,
-                        respondent_name: name || patientName || null,
+                        respondent_name: patientName || null,
                         patient_name: patientName || null,
                         chart_number: chartNumber || null,
                         patient_age: age || null,
@@ -959,22 +958,16 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
                 </select>
             </div>
             <div class="form-group">
-                <label for="modal-name">응답자 이름 (선택)</label>
-                <input type="text" id="modal-name" placeholder="환자 또는 응답자 이름">
+                <label for="modal-patient-name">환자 이름 (선택)</label>
+                <input type="text" id="modal-patient-name" placeholder="홍길동">
             </div>
             <div style="border:1px solid #e5e7eb;border-radius:0.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem;">
-                <p style="font-weight:600;color:#374151;margin-bottom:0.75rem;font-size:0.875rem;">환자 정보 (선택)</p>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-                    <div class="form-group" style="margin-bottom:0.5rem;">
-                        <label for="modal-patient-name" style="font-size:0.75rem;color:#6b7280;">환자 이름</label>
-                        <input type="text" id="modal-patient-name" placeholder="홍길동" style="padding:0.5rem;">
-                    </div>
-                    <div class="form-group" style="margin-bottom:0.5rem;">
+                <p style="font-weight:600;color:#374151;margin-bottom:0.75rem;font-size:0.875rem;">추가 정보 (선택)</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label for="modal-chart-number" style="font-size:0.75rem;color:#6b7280;">차트번호</label>
                         <input type="text" id="modal-chart-number" placeholder="12345" style="padding:0.5rem;">
                     </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
                     <div class="form-group" style="margin-bottom:0;">
                         <label for="modal-gender" style="font-size:0.75rem;color:#6b7280;">성별</label>
                         <select id="modal-gender" style="padding:0.5rem;">

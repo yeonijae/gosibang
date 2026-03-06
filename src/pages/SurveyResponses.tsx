@@ -558,7 +558,6 @@ interface LinkGeneratorModalProps {
 function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalProps) {
   const { loadSessions } = useSurveyStore();
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const [respondentName, setRespondentName] = useState('');
   // 환자 정보 필드
   const [patientName, setPatientName] = useState('');
   const [chartNumber, setChartNumber] = useState('');
@@ -608,7 +607,7 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
         await invoke('create_survey_session', {
           patientId: null,
           templateId: selectedTemplateId,
-          respondentName: respondentName || patientName || null,
+          respondentName: patientName || null,
           createdBy: userId,
           token,
           patientName: patientName || null,
@@ -645,7 +644,7 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
           user_id: userId,
           template_id: selectedTemplateId,
           token,
-          respondent_name: respondentName || null,
+          respondent_name: patientName || null,
           patient_name: patientName || null,
           chart_number: chartNumber || null,
           doctor_name: doctorName || null,
@@ -690,7 +689,6 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
   const handleNewLink = () => {
     setGeneratedLink(null);
     setSelectedTemplateId('');
-    setRespondentName('');
     setPatientName('');
     setChartNumber('');
     setDoctorName('');
