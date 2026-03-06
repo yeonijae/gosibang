@@ -27,6 +27,10 @@ interface TauriSurveySession {
   patient_id: string | null;
   template_id: string;
   respondent_name: string | null;
+  patient_name: string | null;
+  chart_number: string | null;
+  patient_age: string | null;
+  patient_gender: string | null;
   status: string;
   expires_at: string;
   created_at: string;
@@ -237,6 +241,10 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       templateId,
       respondentName: null,
       createdBy: createdBy || null,
+      patientName: patient?.name || null,
+      chartNumber: null,
+      patientAge: null,
+      patientGender: null,
     });
 
     // Supabase 동기화
@@ -316,6 +324,7 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       patient_id: result.patient_id || undefined,
       template_id: result.template_id,
       respondent_name: result.respondent_name || undefined,
+      patient_name: result.patient_name || undefined,
       status: result.status as SurveySession['status'],
       expires_at: result.expires_at,
       created_at: result.created_at,
@@ -364,6 +373,10 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
       templateId,
       respondentName,
       createdBy: 'kiosk',
+      patientName: respondentName || null,
+      chartNumber: null,
+      patientAge: null,
+      patientGender: null,
     });
 
     const session: SurveySession = {

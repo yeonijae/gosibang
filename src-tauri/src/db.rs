@@ -753,6 +753,12 @@ fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("[DB] 처방 정의 기본 데이터 삽입 완료");
     }
 
+    // survey_sessions 테이블에 환자 정보 컬럼 추가
+    let _ = conn.execute("ALTER TABLE survey_sessions ADD COLUMN patient_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE survey_sessions ADD COLUMN chart_number TEXT", []);
+    let _ = conn.execute("ALTER TABLE survey_sessions ADD COLUMN patient_age TEXT", []);
+    let _ = conn.execute("ALTER TABLE survey_sessions ADD COLUMN patient_gender TEXT", []);
+
     // 약재 기본 데이터 삽입 (비어있을 때만)
     let herb_count: i32 = conn.query_row(
         "SELECT COUNT(*) FROM herbs",
@@ -1319,6 +1325,10 @@ pub struct SurveySessionDb {
     pub patient_id: Option<String>,
     pub template_id: String,
     pub respondent_name: Option<String>,
+    pub patient_name: Option<String>,
+    pub chart_number: Option<String>,
+    pub patient_age: Option<String>,
+    pub patient_gender: Option<String>,
     pub status: SessionStatus,
     pub expires_at: String,
     pub created_at: String,
@@ -1353,7 +1363,7 @@ use crate::models::{SessionStatus, SurveyAnswer, SurveyQuestion};
 pub fn get_survey_session_by_token(token: &str) -> AppResult<Option<SurveySessionDb>> {
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
-        "SELECT id, token, patient_id, template_id, respondent_name, status, expires_at, created_at
+        "SELECT id, token, patient_id, template_id, respondent_name, status, expires_at, created_at, patient_name, chart_number, patient_age, patient_gender
          FROM survey_sessions WHERE token = ?1",
     )?;
 
@@ -1370,6 +1380,10 @@ pub fn get_survey_session_by_token(token: &str) -> AppResult<Option<SurveySessio
             patient_id: row.get(2)?,
             template_id: row.get(3)?,
             respondent_name: row.get(4)?,
+            patient_name: row.get(8)?,
+            chart_number: row.get(9)?,
+            patient_age: row.get(10)?,
+            patient_gender: row.get(11)?,
             status,
             expires_at: row.get(6)?,
             created_at: row.get(7)?,
@@ -1507,6 +1521,10 @@ pub fn create_survey_session(
     respondent_name: Option<&str>,
     created_by: Option<&str>,
     token_override: Option<&str>,
+    patient_name: Option<&str>,
+    chart_number: Option<&str>,
+    patient_age: Option<&str>,
+    patient_gender: Option<&str>,
 ) -> AppResult<SurveySessionDb> {
     let conn = get_conn()?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -1516,9 +1534,9 @@ pub fn create_survey_session(
     let created_at = now.to_rfc3339();
 
     conn.execute(
-        r#"INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, status, expires_at, created_by, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8)"#,
-        params![id, token, patient_id, template_id, respondent_name, expires_at, created_by, created_at],
+        r#"INSERT INTO survey_sessions (id, token, patient_id, template_id, respondent_name, status, expires_at, created_by, created_at, patient_name, chart_number, patient_age, patient_gender)
+           VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
+        params![id, token, patient_id, template_id, respondent_name, expires_at, created_by, created_at, patient_name, chart_number, patient_age, patient_gender],
     )?;
 
     Ok(SurveySessionDb {
@@ -1527,6 +1545,10 @@ pub fn create_survey_session(
         patient_id: patient_id.map(|s| s.to_string()),
         template_id: template_id.to_string(),
         respondent_name: respondent_name.map(|s| s.to_string()),
+        patient_name: patient_name.map(|s| s.to_string()),
+        chart_number: chart_number.map(|s| s.to_string()),
+        patient_age: patient_age.map(|s| s.to_string()),
+        patient_gender: patient_gender.map(|s| s.to_string()),
         status: SessionStatus::Pending,
         expires_at,
         created_at,
@@ -1603,7 +1625,7 @@ pub fn list_survey_sessions(patient_id: Option<&str>, status: Option<&str>) -> A
 pub fn get_survey_session(id: &str) -> AppResult<Option<SurveySessionDb>> {
     let conn = get_conn()?;
     let mut stmt = conn.prepare(
-        "SELECT id, token, patient_id, template_id, respondent_name, status, expires_at, created_at
+        "SELECT id, token, patient_id, template_id, respondent_name, status, expires_at, created_at, patient_name, chart_number, patient_age, patient_gender
          FROM survey_sessions WHERE id = ?1",
     )?;
 
@@ -1620,6 +1642,10 @@ pub fn get_survey_session(id: &str) -> AppResult<Option<SurveySessionDb>> {
             patient_id: row.get(2)?,
             template_id: row.get(3)?,
             respondent_name: row.get(4)?,
+            patient_name: row.get(8)?,
+            chart_number: row.get(9)?,
+            patient_age: row.get(10)?,
+            patient_gender: row.get(11)?,
             status,
             expires_at: row.get(6)?,
             created_at: row.get(7)?,

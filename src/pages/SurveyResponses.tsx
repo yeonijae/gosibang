@@ -611,6 +611,10 @@ function LinkGeneratorModal({ templates, userId, onClose }: LinkGeneratorModalPr
           respondentName: respondentName || patientName || null,
           createdBy: userId,
           token,
+          patientName: patientName || null,
+          chartNumber: chartNumber || null,
+          patientAge: age || null,
+          patientGender: gender || null,
         });
         console.log('[Survey] 로컬 DB에 세션 저장 완료 (token:', token, ')');
       } catch (localErr) {
