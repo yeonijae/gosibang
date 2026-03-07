@@ -229,6 +229,9 @@ export interface SurveySession {
   created_at: string;
   // 조인 데이터
   patient_name?: string;
+  chart_number?: string;
+  patient_age?: string;
+  patient_gender?: string;
   template_name?: string;
 }
 

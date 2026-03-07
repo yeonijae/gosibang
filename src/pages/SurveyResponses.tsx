@@ -245,8 +245,17 @@ export function SurveyResponses() {
                     <div className="font-medium text-gray-900 truncate">
                       {session.template_name || '알 수 없는 템플릿'}
                     </div>
-                    <div className="text-gray-600 truncate">
-                      {session.respondent_name || session.patient_name || '-'}
+                    <div className="text-gray-600">
+                      <span className="truncate">{session.patient_name || session.respondent_name || '-'}</span>
+                      {(session.chart_number || session.patient_age || session.patient_gender) && (
+                        <span className="text-xs text-gray-400 ml-1">
+                          {[
+                            session.chart_number && `#${session.chart_number}`,
+                            session.patient_gender === 'male' ? '남' : session.patient_gender === 'female' ? '여' : null,
+                            session.patient_age && `${session.patient_age}세`,
+                          ].filter(Boolean).join(' / ')}
+                        </span>
+                      )}
                     </div>
                     <div className="text-gray-500 text-sm">
                       {new Date(session.created_at).toLocaleString('ko-KR', {

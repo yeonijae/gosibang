@@ -1315,6 +1315,9 @@ pub struct SurveySessionWithPatient {
     pub created_at: String,
     pub completed_at: Option<String>,
     pub patient_name: Option<String>,
+    pub chart_number: Option<String>,
+    pub patient_age: Option<String>,
+    pub patient_gender: Option<String>,
 }
 
 /// 설문 세션 정보 (DB용)
@@ -1559,7 +1562,7 @@ pub fn create_survey_session(
 pub fn list_survey_sessions(patient_id: Option<&str>, status: Option<&str>) -> AppResult<Vec<SurveySessionWithPatient>> {
     let conn = get_conn()?;
     let mut sql = String::from(
-        "SELECT s.id, s.token, s.patient_id, s.template_id, s.respondent_name, s.status, s.expires_at, s.created_by, s.created_at, s.completed_at, p.name as patient_name
+        "SELECT s.id, s.token, s.patient_id, s.template_id, s.respondent_name, s.status, s.expires_at, s.created_by, s.created_at, s.completed_at, COALESCE(p.name, s.patient_name) as patient_name, s.chart_number, s.patient_age, s.patient_gender
          FROM survey_sessions s
          LEFT JOIN patients p ON s.patient_id = p.id
          WHERE 1=1"
@@ -1597,6 +1600,9 @@ pub fn list_survey_sessions(patient_id: Option<&str>, status: Option<&str>) -> A
             created_at: row.get(8)?,
             completed_at: row.get(9)?,
             patient_name: row.get(10)?,
+            chart_number: row.get(11)?,
+            patient_age: row.get(12)?,
+            patient_gender: row.get(13)?,
         })
     })?;
 

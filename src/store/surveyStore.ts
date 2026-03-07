@@ -18,6 +18,9 @@ interface TauriSurveySessionWithPatient {
   created_at: string;
   completed_at: string | null;
   patient_name: string | null;
+  chart_number: string | null;
+  patient_age: string | null;
+  patient_gender: string | null;
 }
 
 // Tauri에서 반환하는 세션 구조 (create/get)
@@ -218,6 +221,9 @@ export const useSurveyStore = create<SurveyStore>((set, get) => ({
         created_at: s.created_at,
         completed_at: s.completed_at || undefined,
         patient_name: s.patient_name || undefined,
+        chart_number: s.chart_number || undefined,
+        patient_age: s.patient_age || undefined,
+        patient_gender: s.patient_gender || undefined,
         template_name: templateMap.get(s.template_id) || '알 수 없는 템플릿',
       }));
 

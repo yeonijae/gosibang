@@ -936,11 +936,31 @@ fn render_staff_dashboard(clinic_name: &str, token: &str, survey_external: bool)
 
         function copyOnlineUrl() {{
             const url = document.getElementById('online-url-text').textContent;
-            navigator.clipboard.writeText(url).then(() => {{
+            if (navigator.clipboard && window.isSecureContext) {{
+                navigator.clipboard.writeText(url).then(() => {{
+                    alert('복사되었습니다');
+                }}).catch(() => {{
+                    fallbackCopy(url);
+                }});
+            }} else {{
+                fallbackCopy(url);
+            }}
+        }}
+
+        function fallbackCopy(text) {{
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {{
+                document.execCommand('copy');
                 alert('복사되었습니다');
-            }}).catch(() => {{
-                prompt('URL을 복사하세요:', url);
-            }});
+            }} catch {{
+                prompt('URL을 복사하세요:', text);
+            }}
+            document.body.removeChild(textarea);
         }}
     </script>
 
