@@ -881,8 +881,7 @@ function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalPr
   const [content, setContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if (!content.trim()) {
       alert('내용을 입력해주세요.');
       return;
@@ -897,8 +896,8 @@ function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalPr
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <StickyNote className="w-5 h-5 text-yellow-500" />
@@ -909,12 +908,12 @@ function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalPr
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
+          <div className="flex-1 min-h-0 flex flex-col">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               내용
             </label>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto min-h-0">
               <RichTextEditor
                 content={content}
                 onChange={setContent}
@@ -931,7 +930,8 @@ function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalPr
               취소
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={isSaving}
               className="flex-1 btn-primary flex items-center justify-center gap-2"
             >
@@ -943,7 +943,7 @@ function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalPr
               저장
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -963,8 +963,7 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
   const [content, setContent] = useState(caseStudy.content);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if (!title.trim()) {
       alert('제목을 입력해주세요.');
       return;
@@ -984,8 +983,8 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-blue-500" />
@@ -996,7 +995,7 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               제목 <span className="text-red-500">*</span>
@@ -1011,11 +1010,11 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
             />
           </div>
 
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               내용 <span className="text-red-500">*</span>
             </label>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto min-h-0">
               <RichTextEditor
                 content={content}
                 onChange={setContent}
@@ -1032,7 +1031,8 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
               취소
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={isSaving}
               className="flex-1 btn-primary flex items-center justify-center gap-2"
             >
@@ -1044,7 +1044,7 @@ function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: C
               저장
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

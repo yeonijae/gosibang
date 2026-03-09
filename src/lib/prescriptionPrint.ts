@@ -147,7 +147,7 @@ export function printPrescription(prescription: Prescription, layoutType: PrintL
       <!DOCTYPE html>
       <html>
       <head>
-        <title>처방전 - ${prescription.patient_name || '환자'}</title>
+        <title></title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: 'Malgun Gothic', sans-serif; padding: 5mm 15mm 15mm 15mm; }
