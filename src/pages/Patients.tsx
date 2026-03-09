@@ -10,6 +10,7 @@ import InitialChartView from '../components/InitialChartView';
 import { ResponseViewerModal } from '../components/survey/ResponseViewerModal';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import type { Patient, Prescription, InitialChart, SurveyResponse, SurveyTemplate } from '../types';
+import { printPrescription, type PrintLayoutType } from '../lib/prescriptionPrint';
 
 export function Patients() {
   const {
@@ -558,7 +559,7 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPrescription, setEditingPrescription] = useState<Prescription | null>(null);
-  const [printTarget, setPrintTarget] = useState<Prescription | null>(null);
+  const [printLayoutModal, setPrintLayoutModal] = useState<Prescription | null>(null);
 
   useEffect(() => {
     loadPrescriptions();
@@ -680,12 +681,9 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
     }
   };
 
-  const handlePrint = (prescription: Prescription) => {
-    setPrintTarget(prescription);
-    setTimeout(() => {
-      window.print();
-      setPrintTarget(null);
-    }, 100);
+  const handlePrint = (prescription: Prescription, layoutType: PrintLayoutType) => {
+    printPrescription(prescription, layoutType);
+    setPrintLayoutModal(null);
   };
 
   return (
@@ -770,7 +768,7 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
                         </div>
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => handlePrint(rx)}
+                            onClick={() => setPrintLayoutModal(rx)}
                             className="p-2 text-gray-400 hover:text-slate-600 hover:bg-slate-50 rounded"
                             title="인쇄"
                           >
@@ -844,15 +842,44 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
         </div>
       </div>
 
-      {/* 인쇄용 영역 */}
-      {printTarget && (
-        <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:p-8">
-          <h1 className="text-2xl font-bold mb-4">처방전</h1>
-          <p><strong>환자명:</strong> {patient.name}</p>
-          <p><strong>처방:</strong> {printTarget.formula}</p>
-          <p><strong>일수:</strong> {printTarget.days}일분</p>
-          <p><strong>팩수:</strong> {printTarget.total_packs}팩</p>
-          <p><strong>발행일:</strong> {new Date(printTarget.created_at).toLocaleDateString('ko-KR')}</p>
+      {/* 인쇄 레이아웃 선택 모달 */}
+      {printLayoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">인쇄 레이아웃 선택</h3>
+            <p className="text-gray-500 mb-4 text-sm">
+              {printLayoutModal.patient_name || patient.name} - {printLayoutModal.formula}
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'landscape')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 가로형</div>
+                <div className="text-xs text-gray-500">6열 그리드, 넓은 레이아웃</div>
+              </button>
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'portrait1')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 세로형 1</div>
+                <div className="text-xs text-gray-500">4열 그리드, 정리된 레이아웃</div>
+              </button>
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'portrait2')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 세로형 2</div>
+                <div className="text-xs text-gray-500">심플 테이블, 처방공식 포함</div>
+              </button>
+            </div>
+            <button
+              onClick={() => setPrintLayoutModal(null)}
+              className="w-full mt-4 btn-secondary"
+            >
+              취소
+            </button>
+          </div>
         </div>
       )}
     </div>
