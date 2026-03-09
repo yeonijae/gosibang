@@ -202,7 +202,7 @@ export function RichTextEditor({ content, onChange, onImageUpload, placeholder, 
       <ReactQuill
         ref={quillRef}
         theme="snow"
-        value={resolvedContent}
+        defaultValue={resolvedContent}
         onChange={handleChange}
         modules={modules}
         formats={formats}
