@@ -704,3 +704,33 @@ pub struct MedicationManagement {
     pub created_at: String,
     pub updated_at: String,
 }
+
+/// 약재 재고
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HerbInventory {
+    pub id: i64,
+    pub herb_id: Option<i64>,
+    pub name: String,
+    pub unit: String,
+    pub current_stock: f64,
+    pub min_stock: f64,
+    pub cost_per_unit: f64,
+    pub supplier: Option<String>,
+    pub memo: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 약재 입출고 이력
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HerbStockLog {
+    pub id: i64,
+    pub herb_inventory_id: i64,
+    pub log_type: String,
+    pub amount: f64,
+    pub prescription_id: Option<String>,
+    pub patient_name: Option<String>,
+    pub herb_name: Option<String>,
+    pub note: Option<String>,
+    pub created_at: String,
+}

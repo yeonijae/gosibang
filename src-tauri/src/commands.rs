@@ -1048,3 +1048,50 @@ pub fn import_db_binary(data: Vec<u8>) -> Result<(), String> {
     db::import_db_binary(data).map_err(|e| e.to_string())
 }
 
+// ============ 약재 재고관리 ============
+
+#[tauri::command]
+pub fn list_herb_inventory() -> Result<Vec<HerbInventory>, String> {
+    db::list_herb_inventory().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_herb_inventory(item: HerbInventory) -> Result<i64, String> {
+    db::create_herb_inventory(&item).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_herb_inventory(item: HerbInventory) -> Result<(), String> {
+    db::update_herb_inventory(&item).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_herb_inventory(id: i64) -> Result<(), String> {
+    db::delete_herb_inventory(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn bulk_import_herb_inventory() -> Result<i32, String> {
+    db::bulk_import_herb_inventory().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_herb_stock_logs(herb_inventory_id: Option<i64>, limit: Option<i32>) -> Result<Vec<HerbStockLog>, String> {
+    db::list_herb_stock_logs(herb_inventory_id, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_stock_log(log: HerbStockLog) -> Result<(), String> {
+    db::add_stock_log(&log).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn deduct_stock_by_prescription(prescription_id: String, patient_name: String, final_herbs_json: String) -> Result<Vec<String>, String> {
+    db::deduct_stock_by_prescription(&prescription_id, &patient_name, &final_herbs_json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn restore_stock_by_prescription(prescription_id: String) -> Result<(), String> {
+    db::restore_stock_by_prescription(&prescription_id).map_err(|e| e.to_string())
+}
+

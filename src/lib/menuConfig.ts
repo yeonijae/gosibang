@@ -6,6 +6,7 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'prescriptions', label: '처방관리', icon: 'FileText', path: '/prescriptions' },
   { key: 'survey_responses', label: '설문관리', icon: 'MessageSquare', path: '/survey-responses' },
   { key: 'medication', label: '복약관리', icon: 'Pill', path: '/medication' },
+  { key: 'inventory', label: '재고관리', icon: 'Package', path: '/inventory' },
   { key: 'prescription_definitions', label: '처방공부', icon: 'Book', path: '/prescription-definitions' },
   { key: 'homework', label: '나의숙제', icon: 'BookOpen', path: '/homework' },
   { key: 'questions', label: '질문&답변', icon: 'HelpCircle', path: '/questions' },
@@ -25,6 +26,7 @@ export const DEFAULT_MENU_ORDER: FeatureKey[] = [
   'prescriptions',
   'survey_responses',
   'medication',
+  'inventory',
   'prescription_definitions',
   'homework',
   'questions',
@@ -47,6 +49,8 @@ export function loadMenuOrder(): FeatureKey[] {
           [...allKeys].every(key => savedKeys.has(key))) {
         return order;
       }
+      // 새 메뉴가 추가된 경우: 저장된 순서 초기화
+      localStorage.removeItem(MENU_ORDER_KEY);
     }
   } catch (e) {
     console.error('Failed to load menu order:', e);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -15,6 +15,7 @@ import {
   GripVertical,
   Check,
   X,
+  Package,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
@@ -34,6 +35,7 @@ const iconMap: Record<string, LucideIcon> = {
   MessageSquare,
   HelpCircle,
   Pill,
+  Package,
   Settings,
   LayoutDashboard,
 };
@@ -44,9 +46,12 @@ export function Sidebar() {
   const { hasAccess, planName } = useFeatureStore();
   const [menuOrder, setMenuOrder] = useState<FeatureKey[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
+  const originalOrderRef = useRef<FeatureKey[]>([]);
   const [draggedKey, setDraggedKey] = useState<FeatureKey | null>(null);
   const [dragOverKey, setDragOverKey] = useState<FeatureKey | null>(null);
-  const originalOrderRef = useRef<FeatureKey[]>([]);
+  const dragStartY = useRef(0);
+  const isDragging = useRef(false);
+  const dragItemRef = useRef<HTMLDivElement | null>(null);
 
   // 메뉴 순서 로드
   useEffect(() => {
@@ -71,41 +76,50 @@ export function Sidebar() {
     setIsEditMode(false);
   };
 
-  // 드래그 시작
-  const handleDragStart = (key: FeatureKey) => {
+  // 포인터 기반 드래그
+  const handlePointerDown = useCallback((e: React.PointerEvent, key: FeatureKey) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragStartY.current = e.clientY;
+    isDragging.current = false;
     setDraggedKey(key);
-  };
+  }, []);
 
-  // 드래그 오버
-  const handleDragOver = (e: React.DragEvent, key: FeatureKey) => {
-    e.preventDefault();
-    if (draggedKey === null || draggedKey === key) return;
-    setDragOverKey(key);
-  };
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (draggedKey === null) return;
+    const dy = Math.abs(e.clientY - dragStartY.current);
+    if (dy > 5) isDragging.current = true;
+    if (!isDragging.current) return;
 
-  // 드래그 종료
-  const handleDragEnd = () => {
+    // 현재 포인터 아래의 메뉴 아이템 찾기
+    const elements = document.querySelectorAll('[data-menu-key]');
+    for (const el of elements) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const overKey = el.getAttribute('data-menu-key') as FeatureKey;
+        if (overKey && overKey !== draggedKey) {
+          setDragOverKey(overKey);
+          // 실시간 순서 변경
+          setMenuOrder(prev => {
+            const newOrder = [...prev];
+            const fromIdx = newOrder.indexOf(draggedKey);
+            const toIdx = newOrder.indexOf(overKey);
+            if (fromIdx === -1 || toIdx === -1) return prev;
+            newOrder.splice(fromIdx, 1);
+            newOrder.splice(toIdx, 0, draggedKey);
+            return newOrder;
+          });
+        }
+        break;
+      }
+    }
+  }, [draggedKey]);
+
+  const handlePointerUp = useCallback(() => {
     setDraggedKey(null);
     setDragOverKey(null);
-  };
-
-  // 드롭
-  const handleDrop = (e: React.DragEvent, dropKey: FeatureKey) => {
-    e.preventDefault();
-    if (draggedKey === null || draggedKey === dropKey) return;
-
-    const newOrder = [...menuOrder];
-    const draggedIndex = newOrder.indexOf(draggedKey);
-    const dropIndex = newOrder.indexOf(dropKey);
-
-    if (draggedIndex === -1 || dropIndex === -1) return;
-
-    newOrder.splice(draggedIndex, 1);
-    newOrder.splice(dropIndex, 0, draggedKey);
-    setMenuOrder(newOrder);
-    setDraggedKey(null);
-    setDragOverKey(null);
-  };
+    isDragging.current = false;
+  }, []);
 
   // 메뉴 순서에 따라 정렬된 메뉴 아이템
   const orderedMenuItems = menuOrder
@@ -162,29 +176,28 @@ export function Sidebar() {
 
           {/* 동적 메뉴 (순서 변경 가능, 권한 없는 메뉴는 숨김) */}
           {isEditMode ? (
-            // 편집 모드: 드래그앤드롭 가능 (권한 있는 메뉴만)
+            // 편집 모드: 드래그로 순서 변경
             orderedMenuItems
               .filter((item) => hasAccess(item.key))
               .map((item) => {
                 const Icon = getIcon(item.icon);
-                const isDragging = draggedKey === item.key;
-                const isDragOver = dragOverKey === item.key;
-
+                const isActive = draggedKey === item.key;
+                const isOver = dragOverKey === item.key;
                 return (
                   <div
                     key={item.key}
-                    draggable
-                    onDragStart={() => handleDragStart(item.key)}
-                    onDragOver={(e) => handleDragOver(e, item.key)}
-                    onDragEnd={handleDragEnd}
-                    onDrop={(e) => handleDrop(e, item.key)}
-                    className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-move transition-all ${
-                      isDragging
-                        ? 'opacity-50 bg-gray-100'
-                        : isDragOver
+                    data-menu-key={item.key}
+                    onPointerDown={(e) => handlePointerDown(e, item.key)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-grab select-none transition-all ${
+                      isActive
+                        ? 'opacity-60 bg-primary-100 scale-[1.02] shadow-md'
+                        : isOver
                         ? 'bg-primary-50 border-2 border-dashed border-primary-300'
                         : 'bg-gray-50 hover:bg-gray-100'
                     }`}
+                    style={{ touchAction: 'none' }}
                   >
                     <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <Icon className="w-5 h-5 text-gray-500" />

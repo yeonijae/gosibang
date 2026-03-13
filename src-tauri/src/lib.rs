@@ -187,6 +187,16 @@ pub fn run() {
             // DB 바이너리 백업/복원
             export_db_binary,
             import_db_binary,
+            // 약재 재고관리
+            list_herb_inventory,
+            create_herb_inventory,
+            update_herb_inventory,
+            delete_herb_inventory,
+            bulk_import_herb_inventory,
+            list_herb_stock_logs,
+            add_stock_log,
+            deduct_stock_by_prescription,
+            restore_stock_by_prescription,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

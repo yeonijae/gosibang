@@ -25,6 +25,7 @@ export interface PrescriptionData {
   finalTotalAmount: number;
   packVolume: number;
   waterAmount: number;
+  issuedAt?: string;
 }
 
 // Props 타입
@@ -43,6 +44,7 @@ export interface PrescriptionInputProps {
   initialDays?: number;
   initialDosesPerDay?: number;
   initialPackVolume?: number;
+  initialIssuedAt?: string;
   compact?: boolean;
 }
 
@@ -61,6 +63,7 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
   initialDays = 15,
   initialDosesPerDay = 2,
   initialPackVolume = 100,
+  initialIssuedAt,
   compact = false,
 }) => {
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
@@ -75,6 +78,7 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
   const [packVolume, setPackVolume] = useState(initialPackVolume);
   const [internalPatientName, setInternalPatientName] = useState('');
   const [notes, setNotes] = useState(initialNotes);
+  const [issuedAt, setIssuedAt] = useState(initialIssuedAt || '');
   const [showTemplateList, setShowTemplateList] = useState(false);
   const [templateSearchTerm, setTemplateSearchTerm] = useState('');
   const [herbAdjustment, setHerbAdjustment] = useState('');
@@ -395,7 +399,8 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
     finalTotalAmount,
     packVolume,
     waterAmount,
-  }), [formula, mergedHerbs, finalHerbs, totalDoses, days, dosesPerDay, totalPacks, herbAdjustment, notes, patientName, totalDosage, finalTotalAmount, packVolume, waterAmount]);
+    ...(issuedAt ? { issuedAt } : {}),
+  }), [formula, mergedHerbs, finalHerbs, totalDoses, days, dosesPerDay, totalPacks, herbAdjustment, notes, patientName, totalDosage, finalTotalAmount, packVolume, waterAmount, issuedAt]);
 
   useEffect(() => {
     if (onChange && mergedHerbs.length > 0) {
@@ -449,17 +454,30 @@ const PrescriptionInput: React.FC<PrescriptionInputProps> = ({
           </span>
         </h2>
 
-        {/* 환자명 */}
+        {/* 환자명 + 발급일 */}
         {showPatientInput && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">환자명</label>
-            <input
-              type="text"
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              placeholder="환자 이름 입력..."
-              className="input-field"
-            />
+          <div className="mb-4 flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">환자명</label>
+              <input
+                type="text"
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                placeholder="환자 이름 입력..."
+                className="input-field"
+              />
+            </div>
+            {initialIssuedAt !== undefined && (
+              <div className="w-56">
+                <label className="block text-sm font-medium text-gray-700 mb-1">발급일</label>
+                <input
+                  type="datetime-local"
+                  value={issuedAt ? issuedAt.slice(0, 16) : ''}
+                  onChange={(e) => setIssuedAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                  className="input-field"
+                />
+              </div>
+            )}
           </div>
         )}
 

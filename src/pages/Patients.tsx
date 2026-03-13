@@ -748,6 +748,11 @@ function PatientPrescriptionModal({ patient, onClose }: PatientPrescriptionModal
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <span className="font-medium text-gray-900">{rx.formula}</span>
+                            {rx.final_herbs?.some((h: { name: string }) => h.name === '녹용') && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">
+                                녹용
+                              </span>
+                            )}
                             <span className="text-xs px-2 py-0.5 bg-primary-100 text-primary-700 rounded">
                               {rx.days}일분
                             </span>

@@ -42,8 +42,9 @@ export function PrescriptionDefinitions() {
 
   // 노트 관련 상태
   const [notes, setNotes] = useState<PrescriptionNote[]>([]);
-  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<PrescriptionNote | null>(null);
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
+  const [noteContent, setNoteContent] = useState('');
 
   // 치험례 관련 상태
   const [caseStudies, setCaseStudies] = useState<PrescriptionCaseStudy[]>([]);
@@ -137,35 +138,55 @@ export function PrescriptionDefinitions() {
     }
   };
 
-  // 노트 저장
-  const handleSaveNote = async (note: PrescriptionNote) => {
+  // 노트 저장 (인라인)
+  const handleSaveNote = async () => {
+    if (!noteContent.trim() || !selectedDef) return;
     try {
       const now = new Date().toISOString();
-
-      if (note.id) {
+      if (editingNote) {
         await invoke('update_prescription_note', {
-          note: { ...note, updated_at: now },
+          note: { ...editingNote, content: noteContent.trim(), updated_at: now },
         });
       } else {
         await invoke('create_prescription_note', {
           note: {
             id: 0,
-            prescription_definition_id: note.prescription_definition_id,
-            content: note.content,
+            prescription_definition_id: selectedDef.id,
+            content: noteContent.trim(),
             created_at: now,
             updated_at: now,
           },
         });
       }
-      if (selectedDef) {
-        loadNotes(selectedDef.id);
-      }
-      setIsNoteModalOpen(false);
+      loadNotes(selectedDef.id);
+      setIsNoteEditorOpen(false);
       setEditingNote(null);
+      setNoteContent('');
     } catch (error) {
       console.error('노트 저장 실패:', error);
       alert('저장에 실패했습니다.');
     }
+  };
+
+  // 노트 편집 시작
+  const startEditNote = (note: PrescriptionNote) => {
+    setEditingNote(note);
+    setNoteContent(note.content);
+    setIsNoteEditorOpen(true);
+  };
+
+  // 노트 추가 시작
+  const startAddNote = () => {
+    setEditingNote(null);
+    setNoteContent('');
+    setIsNoteEditorOpen(true);
+  };
+
+  // 노트 편집 취소
+  const cancelNoteEditor = () => {
+    setIsNoteEditorOpen(false);
+    setEditingNote(null);
+    setNoteContent('');
   };
 
   // 노트 삭제
@@ -400,9 +421,9 @@ export function PrescriptionDefinitions() {
         />
       </div>
 
-      {/* 3-컬럼 레이아웃 */}
-      <div className="flex-1 grid grid-cols-12 gap-4 min-h-0">
-        {/* 왼쪽: 카테고리 사이드바 */}
+      {/* 4-컬럼 레이아웃 */}
+      <div className="flex-1 grid grid-cols-12 gap-3 min-h-0">
+        {/* col1: 분류 */}
         <div className="col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-700">카테고리</h3>
@@ -471,51 +492,36 @@ export function PrescriptionDefinitions() {
           </div>
         </div>
 
-        {/* 중간: 처방 목록 */}
-        <div className="col-span-4 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+        {/* col2: 처방이름 */}
+        <div className="col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-200 bg-gray-50">
             <h3 className="font-semibold text-sm text-gray-700">
-              처방 목록 ({filteredDefinitions.length})
+              처방 ({filteredDefinitions.length})
             </h3>
           </div>
           <div className="flex-1 overflow-y-auto">
             {filteredDefinitions.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                {searchTerm ? '검색 결과가 없습니다.' : '등록된 처방이 없습니다.'}
+              <div className="text-center py-8 text-gray-500 text-sm">
+                {searchTerm ? '검색 결과 없음' : '처방 없음'}
               </div>
             ) : (
               filteredDefinitions.map((def) => (
                 <div
                   key={def.id}
                   onClick={() => setSelectedDef(def)}
-                  className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
-                    selectedDef?.id === def.id ? 'bg-primary-50 border-l-4 border-l-primary-500' : ''
+                  className={`px-3 py-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors text-sm ${
+                    selectedDef?.id === def.id ? 'bg-primary-50 border-l-4 border-l-primary-500 font-semibold' : ''
                   }`}
                 >
-                  <div className="font-medium text-gray-900">{def.name}</div>
-                  {def.alias && (
-                    <div className="text-xs text-gray-500 mt-0.5">별명: {def.alias}</div>
-                  )}
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {def.category && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                        {def.category}
-                      </span>
-                    )}
-                    {def.source && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                        {def.source}
-                      </span>
-                    )}
-                  </div>
+                  {def.name}
                 </div>
               ))
             )}
           </div>
         </div>
 
-        {/* 오른쪽: 처방 상세 */}
-        <div className="col-span-6 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+        {/* col3: 처방구성 */}
+        <div className="col-span-4 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h3 className="font-semibold text-sm text-gray-700">처방 상세</h3>
             {selectedDef && canEdit && (
@@ -543,272 +549,176 @@ export function PrescriptionDefinitions() {
           <div className="flex-1 overflow-y-auto p-4">
             {selectedDef ? (
               <div className="space-y-4">
-                {/* 기본 정보 */}
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">{selectedDef.name}</h2>
+                  <h2 className="text-lg font-bold text-gray-900">{selectedDef.name}</h2>
                   {selectedDef.alias && (
-                    <p className="text-sm text-gray-500">별명: {selectedDef.alias}</p>
+                    <p className="text-xs text-gray-500">별명: {selectedDef.alias}</p>
                   )}
+                  <div className="flex gap-1.5 flex-wrap mt-1">
+                    {selectedDef.category && (
+                      <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">
+                        {selectedDef.category}
+                      </span>
+                    )}
+                    {selectedDef.source && (
+                      <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs">
+                        {selectedDef.source}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                {/* 카테고리/출전 */}
-                <div className="flex gap-2 flex-wrap">
-                  {selectedDef.category && (
-                    <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
-                      {selectedDef.category}
-                    </span>
-                  )}
-                  {selectedDef.source && (
-                    <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-sm">
-                      출전: {selectedDef.source}
-                    </span>
-                  )}
-                </div>
-
-                {/* 구성 */}
+                {/* 구성 약재 */}
                 <div>
-                  <h3 className="font-semibold text-gray-700 mb-2">구성</h3>
-                  <div className="flex flex-wrap gap-2">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">구성</h3>
+                  <div className="flex flex-wrap gap-1.5">
                     {parseComposition(selectedDef.composition).map((herb, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm"
+                        className="inline-flex items-center bg-green-50 text-green-700 px-2 py-1 rounded text-sm"
                       >
                         <span className="font-medium">{herb.name}</span>
                         {herb.dosage && (
-                          <span className="ml-1 text-green-600">{herb.dosage}g</span>
+                          <span className="ml-1 text-green-600 text-xs">{herb.dosage}g</span>
                         )}
                       </span>
                     ))}
                   </div>
                 </div>
 
-                {/* 원본 구성 문자열 */}
-                <div>
-                  <h3 className="font-semibold text-gray-700 mb-2">구성 문자열</h3>
-                  <code className="block bg-gray-100 p-3 rounded-lg text-sm font-mono text-gray-700 break-all">
-                    {selectedDef.composition}
-                  </code>
-                </div>
-
                 {/* 설명 */}
                 {selectedDef.description && (
                   <div>
-                    <h3 className="font-semibold text-gray-700 mb-2">설명</h3>
-                    <p className="text-gray-600 whitespace-pre-wrap">{selectedDef.description}</p>
+                    <h3 className="font-semibold text-gray-700 mb-2 text-sm">설명</h3>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{selectedDef.description}</p>
                   </div>
                 )}
 
-                {/* 나의 노트 */}
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-                      <StickyNote className="w-4 h-4" />
-                      나의 노트
-                    </h3>
-                    <button
-                      onClick={() => {
-                        setEditingNote({
-                          id: 0,
-                          prescription_definition_id: selectedDef.id,
-                          content: '',
-                          created_at: '',
-                          updated_at: '',
-                        });
-                        setIsNoteModalOpen(true);
-                      }}
-                      className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" />
-                      노트 추가
-                    </button>
-                  </div>
-
-                  {notes.length === 0 ? (
-                    <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg">
-                      <StickyNote className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">아직 노트가 없습니다.</p>
-                      <p className="text-xs mt-1">나만의 공부 메모를 추가해보세요!</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {notes.map((note) => (
-                        <div
-                          key={note.id}
-                          className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 group"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <RichContentDisplay content={note.content} className="text-gray-700" userId={authState?.user?.id} />
-                              <p className="text-xs text-gray-400 mt-2">
-                                {new Date(note.created_at).toLocaleDateString('ko-KR', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                })}
-                                {note.updated_at !== note.created_at && ' (수정됨)'}
-                              </p>
-                            </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => {
-                                  setEditingNote(note);
-                                  setIsNoteModalOpen(true);
-                                }}
-                                className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
-                                title="수정"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteNote(note.id)}
-                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                title="삭제"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* 조문 */}
+                <div className="border-t border-gray-200 pt-3">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">조문</h3>
+                  <p className="text-sm text-gray-400 italic">준비 중</p>
                 </div>
 
                 {/* 치험례 */}
-                <div className="border-t border-gray-200 pt-4">
-                  {/* 연결된 처방 기록 */}
-                  {linkedPrescriptions.length > 0 && (
-                    <div className="mb-4">
-                      <button
-                        onClick={() => setShowLinkedPrescriptions(!showLinkedPrescriptions)}
-                        className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-primary-600 mb-2"
-                      >
-                        <FileText className="w-4 h-4" />
-                        연결된 처방 기록 ({linkedPrescriptions.length}건)
-                        <ChevronDown className={`w-4 h-4 transition-transform ${showLinkedPrescriptions ? 'rotate-180' : ''}`} />
-                      </button>
-                      {showLinkedPrescriptions && (
-                        <div className="space-y-2 pl-6">
-                          {linkedPrescriptions.map((prescription) => (
-                            <div
-                              key={prescription.id}
-                              className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <span className="font-medium text-gray-900">
-                                    {prescription.patient_name || '익명'}
-                                  </span>
-                                  {prescription.patient_age && (
-                                    <span className="text-gray-500 ml-2">
-                                      ({prescription.patient_gender === 'F' ? '여' : '남'}, {prescription.patient_age}세)
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                    prescription.status === 'issued' ? 'bg-green-100 text-green-700' :
-                                    prescription.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-gray-100 text-gray-600'
-                                  }`}>
-                                    {prescription.status === 'issued' ? '발급' : prescription.status === 'completed' ? '완료' : '초안'}
-                                  </span>
-                                  <span className="text-gray-400">
-                                    {new Date(prescription.created_at).toLocaleDateString('ko-KR')}
-                                  </span>
-                                </div>
-                              </div>
-                              {prescription.chief_complaint && (
-                                <p className="text-gray-500 mt-1 text-xs truncate">
-                                  주소증: {prescription.chief_complaint}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 나의 치험례 */}
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-                      <BookOpen className="w-4 h-4" />
-                      나의 치험례
-                    </h3>
-                    <button
-                      onClick={() => {
-                        setEditingCaseStudy({
-                          id: 0,
-                          prescription_definition_id: selectedDef.id,
-                          title: '',
-                          content: '',
-                          created_at: '',
-                          updated_at: '',
-                        });
-                        setIsCaseStudyModalOpen(true);
-                      }}
-                      className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" />
-                      치험례 추가
-                    </button>
-                  </div>
-
-                  {caseStudies.length === 0 ? (
-                    <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg">
-                      <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">아직 치험례가 없습니다.</p>
-                      <p className="text-xs mt-1">임상 경험을 마크다운으로 기록해보세요!</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {caseStudies.map((caseStudy) => (
-                        <div
-                          key={caseStudy.id}
-                          className="bg-blue-50 border border-blue-200 rounded-lg p-3 group"
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <h4 className="font-medium text-gray-900">{caseStudy.title}</h4>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => {
-                                  setEditingCaseStudy(caseStudy);
-                                  setIsCaseStudyModalOpen(true);
-                                }}
-                                className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
-                                title="수정"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCaseStudy(caseStudy.id)}
-                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                title="삭제"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                          <RichContentDisplay content={caseStudy.content} className="text-gray-700" userId={authState?.user?.id} />
-                          <p className="text-xs text-gray-400 mt-2">
-                            {new Date(caseStudy.created_at).toLocaleDateString('ko-KR', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                            })}
-                            {caseStudy.updated_at !== caseStudy.created_at && ' (수정됨)'}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="border-t border-gray-200 pt-3">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-sm flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4" />
+                    치험례
+                  </h3>
+                  <p className="text-sm text-gray-400 italic">준비 중</p>
                 </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">
-                <p>처방을 선택하여 상세 내용을 확인하세요</p>
+                <p className="text-sm">처방을 선택하세요</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* col4: 노트 */}
+        <div className="col-span-4 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+            <h3 className="font-semibold text-sm text-gray-700 flex items-center gap-1.5">
+              <StickyNote className="w-4 h-4" />
+              나의 노트
+            </h3>
+            {selectedDef && notes.length > 0 && !isNoteEditorOpen && (
+              <button
+                onClick={startAddNote}
+                className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                추가
+              </button>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            {selectedDef ? (
+              <div>
+                {/* 인라인 노트 에디터 */}
+                {isNoteEditorOpen && (
+                  <div className="mb-3 border border-yellow-300 bg-yellow-50 rounded-lg p-3">
+                    <textarea
+                      autoFocus
+                      value={noteContent}
+                      onChange={(e) => setNoteContent(e.target.value)}
+                      placeholder="메모를 입력하세요..."
+                      className="w-full bg-transparent border-none outline-none resize-none text-gray-700 text-sm placeholder-gray-400 min-h-[80px]"
+                      rows={4}
+                    />
+                    <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-yellow-200">
+                      <button
+                        onClick={cancelNoteEditor}
+                        className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                      >
+                        취소
+                      </button>
+                      <button
+                        onClick={handleSaveNote}
+                        disabled={!noteContent.trim()}
+                        className="px-3 py-1 text-xs text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-40 rounded flex items-center gap-1"
+                      >
+                        <Save className="w-3 h-3" />
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {notes.length === 0 && !isNoteEditorOpen ? (
+                  <div
+                    onClick={startAddNote}
+                    className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <Plus className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                    <p className="text-sm">노트 추가</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {notes.map((note) => (
+                      <div
+                        key={note.id}
+                        className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{note.content}</p>
+                            <p className="text-xs text-gray-400 mt-2">
+                              {new Date(note.created_at).toLocaleDateString('ko-KR', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
+                              {note.updated_at !== note.created_at && ' (수정됨)'}
+                            </p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <button
+                              onClick={() => startEditNote(note)}
+                              className="p-1 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                              title="수정"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteNote(note.id)}
+                              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                              title="삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <p className="text-sm">처방을 선택하세요</p>
               </div>
             )}
           </div>
@@ -837,114 +747,7 @@ export function PrescriptionDefinitions() {
         />
       )}
 
-      {/* 노트 추가/수정 모달 */}
-      {isNoteModalOpen && editingNote && (
-        <NoteModal
-          note={editingNote}
-          onSave={handleSaveNote}
-          onImageUpload={handleImageUpload}
-          userId={authState?.user?.id}
-          onClose={() => {
-            setIsNoteModalOpen(false);
-            setEditingNote(null);
-          }}
-        />
-      )}
-
-      {/* 치험례 추가/수정 모달 */}
-      {isCaseStudyModalOpen && editingCaseStudy && (
-        <CaseStudyModal
-          caseStudy={editingCaseStudy}
-          onSave={handleSaveCaseStudy}
-          onImageUpload={handleImageUpload}
-          userId={authState?.user?.id}
-          onClose={() => {
-            setIsCaseStudyModalOpen(false);
-            setEditingCaseStudy(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// 노트 추가/수정 모달
-interface NoteModalProps {
-  note: PrescriptionNote;
-  onSave: (note: PrescriptionNote) => void;
-  onImageUpload: (file: File) => Promise<string | null>;
-  userId?: string;
-  onClose: () => void;
-}
-
-function NoteModal({ note, onSave, onImageUpload, userId, onClose }: NoteModalProps) {
-  const [content, setContent] = useState(note.content);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!content.trim()) {
-      alert('내용을 입력해주세요.');
-      return;
-    }
-
-    setIsSaving(true);
-    await onSave({
-      ...note,
-      content: content.trim(),
-    });
-    setIsSaving(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <StickyNote className="w-5 h-5 text-yellow-500" />
-            {note.id ? '노트 수정' : '새 노트 추가'}
-          </h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
-          <div className="flex-1 min-h-0 flex flex-col">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              내용
-            </label>
-            <div className="flex-1 overflow-auto min-h-0">
-              <RichTextEditor
-                content={content}
-                onChange={setContent}
-                onImageUpload={onImageUpload}
-                userId={userId}
-                placeholder="공부한 내용, 메모, 팁 등을 기록하세요..."
-                minHeight="200px"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">
-              취소
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSaving}
-              className="flex-1 btn-primary flex items-center justify-center gap-2"
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              저장
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* 치험례 모달 — 잠정 비활성화 */}
     </div>
   );
 }

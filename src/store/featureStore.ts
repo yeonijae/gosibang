@@ -12,6 +12,7 @@ const DEFAULT_FEATURES: PlanFeatures = {
   survey_templates: false,
   survey_responses: false,
   medication: false,
+  inventory: true,          // 재고관리는 기본 활성화
   survey_internal: false,   // 비기너: 내부 설문 불가
   survey_external: false,   // 비기너: 외부 설문 불가
   homework: false,          // 비기너: 숙제 기능 불가 (챌린저/마스터 플랜 전용)
@@ -79,6 +80,8 @@ export const useFeatureStore = create<FeatureStore>((set, get) => ({
 
   hasAccess: (featureKey: FeatureKey) => {
     const { features } = get();
+    // inventory는 모든 플랜에서 기본 활성화
+    if (featureKey === 'inventory') return true;
     return features[featureKey] ?? false;
   },
 

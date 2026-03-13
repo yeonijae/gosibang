@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, ArrowLeft, Printer, Trash2, Edit, Loader2, AlertCircle, X, Search } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import PrescriptionInput, { type PrescriptionData } from '../components/PrescriptionInput';
@@ -14,6 +15,7 @@ interface PrescriptionDefForSearch {
 }
 
 export function Prescriptions() {
+  const location = useLocation();
   const { canAddPrescription, refreshUsage, planInfo } = usePlanLimits();
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -30,6 +32,20 @@ export function Prescriptions() {
     loadPrescriptions();
     loadPrescriptionDefs();
   }, []);
+
+  // 복약관리에서 수정 요청으로 넘어온 경우
+  useEffect(() => {
+    const editId = (location.state as any)?.editId;
+    if (editId && prescriptions.length > 0) {
+      const target = prescriptions.find(p => p.id === editId);
+      if (target) {
+        setEditingPrescription(target);
+        setViewMode('edit');
+        // state 초기화 (뒤로가기 시 재진입 방지)
+        window.history.replaceState({}, '');
+      }
+    }
+  }, [location.state, prescriptions]);
 
   // 처방 정의 로드 (alias 검색용)
   const loadPrescriptionDefs = async () => {
@@ -143,6 +159,7 @@ export function Prescriptions() {
           total_dosage: data.totalDosage,
           final_total_amount: data.finalTotalAmount,
           notes: data.notes || null,
+          ...(data.issuedAt ? { issued_at: data.issuedAt } : {}),
           updated_at: now,
         }
       });
@@ -402,9 +419,16 @@ export function Prescriptions() {
                           {prescription.patient_name || '-'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                          {prescription.formula.length > 30
-                            ? prescription.formula.substring(0, 30) + '...'
-                            : prescription.formula}
+                          <span className="inline-flex items-center gap-1.5">
+                            {prescription.formula.length > 30
+                              ? prescription.formula.substring(0, 30) + '...'
+                              : prescription.formula}
+                            {prescription.final_herbs?.some((h: { name: string }) => h.name === '녹용') && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300 whitespace-nowrap">
+                                녹용
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-center text-gray-500">
                           {prescription.total_doses}첩
@@ -468,6 +492,7 @@ export function Prescriptions() {
             initialTotalDoses={editingPrescription.total_doses}
             initialDays={editingPrescription.days}
             initialDosesPerDay={editingPrescription.doses_per_day}
+            initialIssuedAt={editingPrescription.issued_at || ''}
           />
         ) : null}
       </div>

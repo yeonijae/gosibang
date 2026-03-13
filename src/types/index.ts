@@ -81,6 +81,34 @@ export interface FinalHerb {
   amount: number;
 }
 
+// ===== 약재 재고 타입 =====
+
+export interface HerbInventory {
+  id: number;
+  herb_id?: number;
+  name: string;
+  unit: string;
+  current_stock: number;
+  min_stock: number;
+  cost_per_unit: number;
+  supplier?: string;
+  memo?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HerbStockLog {
+  id: number;
+  herb_inventory_id: number;
+  log_type: 'in' | 'out' | 'adjust';
+  amount: number;
+  prescription_id?: string;
+  patient_name?: string;
+  herb_name?: string;
+  note?: string;
+  created_at: string;
+}
+
 // ===== 처방전 타입 =====
 
 // 처방전 (실제 환자에게 발급하는 처방)
@@ -351,6 +379,7 @@ export type FeatureKey =
   | 'survey_templates'
   | 'survey_responses'
   | 'medication'
+  | 'inventory'
   | 'homework'
   | 'questions'
   | 'staff_accounts';
@@ -365,6 +394,7 @@ export interface PlanFeatures {
   survey_templates: boolean;
   survey_responses: boolean;
   medication: boolean;
+  inventory: boolean;         // 약재 재고관리
   survey_internal: boolean;   // 내부 설문 (태블릿/인트라넷)
   survey_external: boolean;   // 외부 설문 (온라인 링크)
   homework: boolean;          // 숙제 기능 (챌린저 플랜)

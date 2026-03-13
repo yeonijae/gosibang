@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Pill,
   Plus,
@@ -15,9 +16,12 @@ import {
   FileText,
   User,
   AlertCircle,
+  Edit,
+  Printer,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import type { MedicationManagement, Prescription } from '../types';
+import { printPrescription, type PrintLayoutType } from '../lib/prescriptionPrint';
 
 // 처방전 + 복약관리 여부
 interface PrescriptionWithMedication extends Prescription {
@@ -33,6 +37,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bgColor: str
 };
 
 export function Medications() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'create' | 'list' | 'all'>('list');
   const [prescriptions, setPrescriptions] = useState<PrescriptionWithMedication[]>([]);
   const [medications, setMedications] = useState<MedicationManagement[]>([]);
@@ -54,6 +59,9 @@ export function Medications() {
   // 연기 모달
   const [showPostponeModal, setShowPostponeModal] = useState(false);
   const [postponeDays, setPostponeDays] = useState(1);
+
+  // 인쇄 레이아웃 모달
+  const [printLayoutModal, setPrintLayoutModal] = useState<PrescriptionWithMedication | null>(null);
 
   useEffect(() => {
     loadData();
@@ -224,6 +232,12 @@ export function Medications() {
       console.error('Failed to delete:', error);
       alert('삭제에 실패했습니다.');
     }
+  };
+
+  // 인쇄
+  const handlePrint = (prescription: PrescriptionWithMedication, layoutType: PrintLayoutType) => {
+    printPrescription(prescription, layoutType);
+    setPrintLayoutModal(null);
   };
 
   // 날짜 이동
@@ -532,25 +546,46 @@ export function Medications() {
                       <p className="font-medium text-gray-900">
                         {prescription.patient_name || '미지정'}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-gray-500 inline-flex items-center gap-1.5">
                         {prescription.formula || prescription.prescription_name || '처방'}
+                        {prescription.final_herbs?.some((h: { name: string }) => h.name === '녹용') && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">
+                            녹용
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-gray-400">
                         {prescription.days || 15}일분 · 발급: {formatDate(prescription.issued_at || prescription.created_at)}
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSelectedPrescription(prescription);
-                      setDeliveryDays(3);
-                      setShowCreateModal(true);
-                    }}
-                    className="btn-primary text-sm flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" />
-                    복약관리 생성
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => navigate('/prescriptions', { state: { editId: prescription.id } })}
+                      className="p-2 text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                      title="수정"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setPrintLayoutModal(prescription)}
+                      className="p-2 text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                      title="인쇄"
+                    >
+                      <Printer className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedPrescription(prescription);
+                        setDeliveryDays(3);
+                        setShowCreateModal(true);
+                      }}
+                      className="btn-primary text-sm flex items-center gap-1 ml-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                      복약관리 생성
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -581,7 +616,14 @@ export function Medications() {
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="font-medium text-gray-900">{selectedPrescription.patient_name || '미지정'}</p>
                 <p className="text-sm text-gray-500">{selectedPrescription.formula}</p>
-                <p className="text-xs text-gray-400">{selectedPrescription.days || 15}일분</p>
+                <div className="flex gap-3 mt-1">
+                  <p className="text-xs text-gray-400">{selectedPrescription.days || 15}일분</p>
+                  {selectedPrescription.issued_at && (
+                    <p className="text-xs text-gray-400">
+                      발급일: {new Date(selectedPrescription.issued_at).toLocaleDateString('ko-KR')}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -589,7 +631,7 @@ export function Medications() {
                   배송 소요일 (처방일로부터)
                 </label>
                 <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                  {[0, 1, 2, 3, 4, 5, 6, 7].map((day) => (
                     <button
                       key={day}
                       onClick={() => setDeliveryDays(day)}
@@ -599,7 +641,7 @@ export function Medications() {
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                     >
-                      {day}일
+                      {day === 0 ? '당일' : `${day}일`}
                     </button>
                   ))}
                 </div>
@@ -609,7 +651,7 @@ export function Medications() {
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5" />
                   <div className="text-sm text-blue-800">
-                    <p>복용 시작일: 처방일 + {deliveryDays}일</p>
+                    <p>복용 시작일: {deliveryDays === 0 ? '처방일 당일' : `처방일 + ${deliveryDays}일`}</p>
                     <p>해피콜 날짜: 복용 종료 3일 전</p>
                   </div>
                 </div>
@@ -769,6 +811,47 @@ export function Medications() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 인쇄 레이아웃 선택 모달 */}
+      {printLayoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">인쇄 레이아웃 선택</h3>
+            <p className="text-gray-500 mb-4 text-sm">
+              {printLayoutModal.patient_name || '환자'} - {printLayoutModal.formula}
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'landscape')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 가로형</div>
+                <div className="text-xs text-gray-500">6열 그리드, 넓은 레이아웃</div>
+              </button>
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'portrait1')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 세로형 1</div>
+                <div className="text-xs text-gray-500">4열 그리드, 정리된 레이아웃</div>
+              </button>
+              <button
+                onClick={() => handlePrint(printLayoutModal, 'portrait2')}
+                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors text-left"
+              >
+                <div className="font-semibold text-gray-900">A4 세로형 2</div>
+                <div className="text-xs text-gray-500">심플 테이블, 처방공식 포함</div>
+              </button>
+            </div>
+            <button
+              onClick={() => setPrintLayoutModal(null)}
+              className="w-full mt-4 btn-secondary"
+            >
+              취소
+            </button>
           </div>
         </div>
       )}

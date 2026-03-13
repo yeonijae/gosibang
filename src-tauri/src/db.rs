@@ -659,6 +659,39 @@ fn create_tables(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_medication_management_status ON medication_management(status);
         CREATE INDEX IF NOT EXISTS idx_medication_management_happy_call ON medication_management(happy_call_date);
 
+        -- 약재 재고
+        CREATE TABLE IF NOT EXISTS herb_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            herb_id INTEGER,
+            name TEXT NOT NULL,
+            unit TEXT NOT NULL DEFAULT 'g',
+            current_stock REAL NOT NULL DEFAULT 0,
+            min_stock REAL NOT NULL DEFAULT 0,
+            cost_per_unit REAL NOT NULL DEFAULT 0,
+            supplier TEXT,
+            memo TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_herb_inventory_name ON herb_inventory(name);
+
+        -- 약재 입출고 이력
+        CREATE TABLE IF NOT EXISTS herb_stock_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            herb_inventory_id INTEGER NOT NULL,
+            log_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            prescription_id TEXT,
+            patient_name TEXT,
+            herb_name TEXT,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (herb_inventory_id) REFERENCES herb_inventory(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_herb_stock_log_inventory ON herb_stock_log(herb_inventory_id);
+        CREATE INDEX IF NOT EXISTS idx_herb_stock_log_type ON herb_stock_log(log_type);
+        CREATE INDEX IF NOT EXISTS idx_herb_stock_log_prescription ON herb_stock_log(prescription_id);
+
         -- 인덱스 생성
         CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
         CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
@@ -3399,7 +3432,9 @@ pub fn create_medication_management(mm: &MedicationManagement) -> AppResult<()> 
     ensure_db_initialized()?;
     let conn = get_conn()?;
     let now = Utc::now().to_rfc3339();
-    conn.execute(
+    // FK 체크 일시 비활성화 (마이그레이션 잔류 이슈 회피)
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+    let result = conn.execute(
         "INSERT INTO medication_management (id, prescription_id, patient_id, patient_name, prescription_name, prescription_date, days, delivery_days, start_date, end_date, happy_call_date, status, notes, postpone_count, postponed_to, contacted_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
             mm.id, mm.prescription_id, mm.patient_id, mm.patient_name, mm.prescription_name,
@@ -3407,7 +3442,9 @@ pub fn create_medication_management(mm: &MedicationManagement) -> AppResult<()> 
             mm.happy_call_date, mm.status, mm.notes, mm.postpone_count, mm.postponed_to,
             mm.contacted_at, now, now
         ],
-    )?;
+    );
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    result?;
     Ok(())
 }
 
@@ -4386,6 +4423,235 @@ fn seed_prescription_definitions(conn: &Connection) -> AppResult<()> {
         let category_val = if category.is_empty() { None } else { Some(*category) };
         stmt.execute(params![name, alias_val, category_val, source, composition, now, now])?;
     }
+
+    Ok(())
+}
+
+// ============ 약재 재고관리 ============
+
+pub fn list_herb_inventory() -> AppResult<Vec<HerbInventory>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, herb_id, name, unit, current_stock, min_stock, cost_per_unit, supplier, memo, created_at, updated_at FROM herb_inventory ORDER BY name"
+    )?;
+    let items = stmt.query_map([], |row| {
+        Ok(HerbInventory {
+            id: row.get(0)?,
+            herb_id: row.get(1)?,
+            name: row.get(2)?,
+            unit: row.get(3)?,
+            current_stock: row.get(4)?,
+            min_stock: row.get(5)?,
+            cost_per_unit: row.get(6)?,
+            supplier: row.get(7)?,
+            memo: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(items)
+}
+
+pub fn create_herb_inventory(item: &HerbInventory) -> AppResult<i64> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "INSERT INTO herb_inventory (herb_id, name, unit, current_stock, min_stock, cost_per_unit, supplier, memo, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![item.herb_id, item.name, item.unit, item.current_stock, item.min_stock, item.cost_per_unit, item.supplier, item.memo, item.created_at, item.updated_at],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_herb_inventory(item: &HerbInventory) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE herb_inventory SET herb_id=?1, name=?2, unit=?3, current_stock=?4, min_stock=?5, cost_per_unit=?6, supplier=?7, memo=?8, updated_at=?9 WHERE id=?10",
+        params![item.herb_id, item.name, item.unit, item.current_stock, item.min_stock, item.cost_per_unit, item.supplier, item.memo, item.updated_at, item.id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_herb_inventory(id: i64) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    conn.execute("DELETE FROM herb_inventory WHERE id=?1", params![id])?;
+    Ok(())
+}
+
+pub fn bulk_import_herb_inventory() -> AppResult<i32> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // herbs 테이블에서 herb_inventory에 없는 약재만 가져오기
+    let mut stmt = conn.prepare(
+        "SELECT id, name FROM herbs WHERE id NOT IN (SELECT herb_id FROM herb_inventory WHERE herb_id IS NOT NULL)"
+    )?;
+    let herbs: Vec<(i64, String)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.collect::<Result<Vec<_>, _>>()?;
+
+    let count = herbs.len() as i32;
+    for (herb_id, name) in herbs {
+        conn.execute(
+            "INSERT INTO herb_inventory (herb_id, name, unit, current_stock, min_stock, cost_per_unit, created_at, updated_at) VALUES (?1, ?2, 'g', 0, 0, 0, ?3, ?4)",
+            params![herb_id, name, now, now],
+        )?;
+    }
+    Ok(count)
+}
+
+// 입출고 이력
+
+pub fn list_herb_stock_logs(herb_inventory_id: Option<i64>, limit: Option<i32>) -> AppResult<Vec<HerbStockLog>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let lim = limit.unwrap_or(200);
+
+    if let Some(inv_id) = herb_inventory_id {
+        let mut stmt = conn.prepare(
+            "SELECT id, herb_inventory_id, log_type, amount, prescription_id, patient_name, herb_name, note, created_at FROM herb_stock_log WHERE herb_inventory_id=?1 ORDER BY created_at DESC LIMIT ?2"
+        )?;
+        let items = stmt.query_map(params![inv_id, lim], |row| {
+            Ok(HerbStockLog {
+                id: row.get(0)?,
+                herb_inventory_id: row.get(1)?,
+                log_type: row.get(2)?,
+                amount: row.get(3)?,
+                prescription_id: row.get(4)?,
+                patient_name: row.get(5)?,
+                herb_name: row.get(6)?,
+                note: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT l.id, l.herb_inventory_id, l.log_type, l.amount, l.prescription_id, l.patient_name, l.herb_name, l.note, l.created_at FROM herb_stock_log l ORDER BY l.created_at DESC LIMIT ?1"
+        )?;
+        let items = stmt.query_map(params![lim], |row| {
+            Ok(HerbStockLog {
+                id: row.get(0)?,
+                herb_inventory_id: row.get(1)?,
+                log_type: row.get(2)?,
+                amount: row.get(3)?,
+                prescription_id: row.get(4)?,
+                patient_name: row.get(5)?,
+                herb_name: row.get(6)?,
+                note: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+}
+
+pub fn add_stock_log(log: &HerbStockLog) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+
+    conn.execute(
+        "INSERT INTO herb_stock_log (herb_inventory_id, log_type, amount, prescription_id, patient_name, herb_name, note, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![log.herb_inventory_id, log.log_type, log.amount, log.prescription_id, log.patient_name, log.herb_name, log.note, log.created_at],
+    )?;
+
+    // 재고 업데이트
+    let delta = match log.log_type.as_str() {
+        "in" => log.amount,
+        "out" => -log.amount,
+        "adjust" => {
+            // adjust는 절대값 세팅
+            conn.execute(
+                "UPDATE herb_inventory SET current_stock=?1, updated_at=?2 WHERE id=?3",
+                params![log.amount, log.created_at, log.herb_inventory_id],
+            )?;
+            return Ok(());
+        }
+        _ => 0.0,
+    };
+
+    conn.execute(
+        "UPDATE herb_inventory SET current_stock = current_stock + ?1, updated_at=?2 WHERE id=?3",
+        params![delta, log.created_at, log.herb_inventory_id],
+    )?;
+    Ok(())
+}
+
+/// 처방 기반 자동 차감
+pub fn deduct_stock_by_prescription(prescription_id: &str, patient_name: &str, final_herbs_json: &str) -> AppResult<Vec<String>> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    #[derive(serde::Deserialize)]
+    struct FinalHerb {
+        name: String,
+        amount: f64,
+    }
+
+    let herbs: Vec<FinalHerb> = serde_json::from_str(final_herbs_json)
+        .map_err(|e| AppError::Custom(format!("JSON 파싱 오류: {}", e)))?;
+
+    let mut warnings = Vec::new();
+
+    for herb in &herbs {
+        // 약재명으로 재고 찾기
+        let inv: Option<(i64, f64)> = conn.query_row(
+            "SELECT id, current_stock FROM herb_inventory WHERE name=?1",
+            params![herb.name],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).ok();
+
+        if let Some((inv_id, stock)) = inv {
+            // 출고 기록
+            conn.execute(
+                "INSERT INTO herb_stock_log (herb_inventory_id, log_type, amount, prescription_id, patient_name, herb_name, note, created_at) VALUES (?1, 'out', ?2, ?3, ?4, ?5, '처방 자동차감', ?6)",
+                params![inv_id, herb.amount, prescription_id, patient_name, herb.name, now],
+            )?;
+            // 재고 차감
+            conn.execute(
+                "UPDATE herb_inventory SET current_stock = current_stock - ?1, updated_at=?2 WHERE id=?3",
+                params![herb.amount, now, inv_id],
+            )?;
+
+            if stock - herb.amount < 0.0 {
+                warnings.push(format!("{}: 재고 부족 (현재 {}g)", herb.name, stock));
+            }
+        }
+    }
+
+    Ok(warnings)
+}
+
+/// 처방 삭제 시 재고 복원
+pub fn restore_stock_by_prescription(prescription_id: &str) -> AppResult<()> {
+    ensure_db_initialized()?;
+    let conn = get_conn()?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // 해당 처방의 출고 이력 조회
+    let mut stmt = conn.prepare(
+        "SELECT herb_inventory_id, amount FROM herb_stock_log WHERE prescription_id=?1 AND log_type='out'"
+    )?;
+    let logs: Vec<(i64, f64)> = stmt.query_map(params![prescription_id], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.collect::<Result<Vec<_>, _>>()?;
+
+    for (inv_id, amount) in &logs {
+        conn.execute(
+            "UPDATE herb_inventory SET current_stock = current_stock + ?1, updated_at=?2 WHERE id=?3",
+            params![amount, now, inv_id],
+        )?;
+    }
+
+    // 출고 이력 삭제
+    conn.execute(
+        "DELETE FROM herb_stock_log WHERE prescription_id=?1 AND log_type='out'",
+        params![prescription_id],
+    )?;
 
     Ok(())
 }

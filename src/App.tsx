@@ -18,6 +18,7 @@ import { SubscriptionAdmin } from './pages/SubscriptionAdmin';
 import { Homework } from './pages/Homework';
 import { HomeworkAdmin } from './pages/HomeworkAdmin';
 import { Questions } from './pages/Questions';
+import { Inventory } from './pages/Inventory';
 
 import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from './store/authStore';
@@ -142,6 +143,7 @@ function App() {
           <Route path="/survey-templates" element={<Navigate to="/survey-responses" replace />} />
           <Route path="/survey-responses" element={<SurveyResponses />} />
           <Route path="/medication" element={<Medications />} />
+          <Route path="/inventory" element={<Inventory />} />
           <Route path="/homework" element={<Homework />} />
           <Route path="/questions" element={<Questions />} />
           <Route path="/admin/subscriptions" element={<SubscriptionAdmin />} />
