@@ -1,13 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen, FileText } from 'lucide-react';
-import { RichTextEditor } from '../components/RichTextEditor';
-import { RichContentDisplay } from '../components/RichContentDisplay';
-import { uploadImageToStorage } from '../lib/contentUtils';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, Edit2, Trash2, X, Save, Loader2, Settings, ChevronUp, ChevronDown, Lock, StickyNote, BookOpen } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { SOURCES } from '../lib/prescriptionData';
 import { useFeatureStore } from '../store/featureStore';
-import { useAuthStore } from '../store/authStore';
-import type { PrescriptionNote, PrescriptionCaseStudy, Prescription } from '../types';
+import type { PrescriptionNote } from '../types';
 
 interface PrescriptionDefinition {
   id: number;
@@ -46,38 +42,21 @@ export function PrescriptionDefinitions() {
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [noteContent, setNoteContent] = useState('');
 
-  // 치험례 관련 상태
-  const [caseStudies, setCaseStudies] = useState<PrescriptionCaseStudy[]>([]);
-  const [linkedPrescriptions, setLinkedPrescriptions] = useState<Prescription[]>([]);
-  const [isCaseStudyModalOpen, setIsCaseStudyModalOpen] = useState(false);
-  const [editingCaseStudy, setEditingCaseStudy] = useState<PrescriptionCaseStudy | null>(null);
-  const [showLinkedPrescriptions, setShowLinkedPrescriptions] = useState(false);
-
   // 처방정의 수정 권한 체크
   const { hasAccess, planName } = useFeatureStore();
   const canEdit = hasAccess('prescription_definitions_edit');
-
-  // 이미지 업로드 핸들러
-  const { authState } = useAuthStore();
-  const handleImageUpload = useCallback(async (file: File) => {
-    return uploadImageToStorage(file, authState?.user?.id);
-  }, [authState?.user?.id]);
 
   useEffect(() => {
     loadDefinitions();
     loadCategories();
   }, []);
 
-  // 선택된 처방이 변경되면 노트와 치험례 로드
+  // 선택된 처방이 변경되면 노트 로드
   useEffect(() => {
     if (selectedDef) {
       loadNotes(selectedDef.id);
-      loadCaseStudies(selectedDef.id);
-      loadLinkedPrescriptions(selectedDef.name);
     } else {
       setNotes([]);
-      setCaseStudies([]);
-      setLinkedPrescriptions([]);
     }
   }, [selectedDef]);
 
@@ -115,29 +94,6 @@ export function PrescriptionDefinitions() {
   };
 
   // 치험례 로드
-  const loadCaseStudies = async (prescriptionDefId: number) => {
-    try {
-      const data = await invoke<PrescriptionCaseStudy[]>('list_prescription_case_studies', {
-        prescriptionDefinitionId: prescriptionDefId,
-      });
-      setCaseStudies(data);
-    } catch (error) {
-      console.error('치험례 로드 실패:', error);
-    }
-  };
-
-  // 연결된 처방 기록 로드
-  const loadLinkedPrescriptions = async (prescriptionName: string) => {
-    try {
-      // 연결 처방 기록은 기존 Tauri 커맨드가 없으므로 빈 배열
-      // TODO: 필요시 별도 커맨드 추가
-      void prescriptionName;
-      setLinkedPrescriptions([]);
-    } catch (error) {
-      console.error('연결 처방 기록 로드 실패:', error);
-    }
-  };
-
   // 노트 저장 (인라인)
   const handleSaveNote = async () => {
     if (!noteContent.trim() || !selectedDef) return;
@@ -204,52 +160,6 @@ export function PrescriptionDefinitions() {
     }
   };
 
-  // 치험례 저장
-  const handleSaveCaseStudy = async (caseStudy: PrescriptionCaseStudy) => {
-    try {
-      const now = new Date().toISOString();
-
-      if (caseStudy.id) {
-        await invoke('update_prescription_case_study', {
-          caseStudy: { ...caseStudy, updated_at: now },
-        });
-      } else {
-        await invoke('create_prescription_case_study', {
-          caseStudy: {
-            id: 0,
-            prescription_definition_id: caseStudy.prescription_definition_id,
-            title: caseStudy.title || null,
-            content: caseStudy.content,
-            created_at: now,
-            updated_at: now,
-          },
-        });
-      }
-      if (selectedDef) {
-        loadCaseStudies(selectedDef.id);
-      }
-      setIsCaseStudyModalOpen(false);
-      setEditingCaseStudy(null);
-    } catch (error) {
-      console.error('치험례 저장 실패:', error);
-      alert('저장에 실패했습니다.');
-    }
-  };
-
-  // 치험례 삭제
-  const handleDeleteCaseStudy = async (caseStudyId: number) => {
-    if (!confirm('이 치험례를 삭제하시겠습니까?')) return;
-
-    try {
-      await invoke('delete_prescription_case_study', { id: caseStudyId });
-      if (selectedDef) {
-        loadCaseStudies(selectedDef.id);
-      }
-    } catch (error) {
-      console.error('치험례 삭제 실패:', error);
-      alert('삭제에 실패했습니다.');
-    }
-  };
 
   const handleDelete = async (def: PrescriptionDefinition) => {
     if (!confirm(`"${def.name}" 처방을 삭제하시겠습니까?`)) return;
@@ -748,107 +658,6 @@ export function PrescriptionDefinitions() {
       )}
 
       {/* 치험례 모달 — 잠정 비활성화 */}
-    </div>
-  );
-}
-
-// 치험례 추가/수정 모달
-interface CaseStudyModalProps {
-  caseStudy: PrescriptionCaseStudy;
-  onSave: (caseStudy: PrescriptionCaseStudy) => void;
-  onImageUpload: (file: File) => Promise<string | null>;
-  userId?: string;
-  onClose: () => void;
-}
-
-function CaseStudyModal({ caseStudy, onSave, onImageUpload, userId, onClose }: CaseStudyModalProps) {
-  const [title, setTitle] = useState(caseStudy.title);
-  const [content, setContent] = useState(caseStudy.content);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!title.trim()) {
-      alert('제목을 입력해주세요.');
-      return;
-    }
-    if (!content.trim()) {
-      alert('내용을 입력해주세요.');
-      return;
-    }
-
-    setIsSaving(true);
-    await onSave({
-      ...caseStudy,
-      title: title.trim(),
-      content: content.trim(),
-    });
-    setIsSaving(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-blue-500" />
-            {caseStudy.id ? '치험례 수정' : '새 치험례 추가'}
-          </h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              제목 <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input-field"
-              placeholder="예: 소시호탕으로 만성 피로 개선 사례"
-              autoFocus
-            />
-          </div>
-
-          <div className="flex-1 min-h-0 flex flex-col">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              내용 <span className="text-red-500">*</span>
-            </label>
-            <div className="flex-1 overflow-auto min-h-0">
-              <RichTextEditor
-                content={content}
-                onChange={setContent}
-                onImageUpload={onImageUpload}
-                userId={userId}
-                placeholder="환자 정보, 주소증, 치료 경과 등을 기록하세요..."
-                minHeight="250px"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">
-              취소
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSaving}
-              className="flex-1 btn-primary flex items-center justify-center gap-2"
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              저장
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

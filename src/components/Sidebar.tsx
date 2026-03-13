@@ -51,7 +51,6 @@ export function Sidebar() {
   const [dragOverKey, setDragOverKey] = useState<FeatureKey | null>(null);
   const dragStartY = useRef(0);
   const isDragging = useRef(false);
-  const dragItemRef = useRef<HTMLDivElement | null>(null);
 
   // 메뉴 순서 로드
   useEffect(() => {
